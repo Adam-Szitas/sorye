@@ -1,0 +1,39 @@
+/**
+ * Design tokens — import once in your app shell:
+ *   import '@sorye/sdk/tokens.css';
+ *
+ * Components read these via inherited custom properties (works inside Shadow DOM).
+ */
+:root {
+  --sorye-font: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+
+  --sorye-surface: #0b0f17;
+  --sorye-surface-raised: #121826;
+  --sorye-border: rgba(255, 255, 255, 0.08);
+  --sorye-text: #f1f5f9;
+  --sorye-text-muted: #94a3b8;
+  --sorye-accent: #38bdf8;
+  --sorye-accent-hover: #7dd3fc;
+  --sorye-danger: #f87171;
+  --sorye-success: #34d399;
+  --sorye-warning: #fbbf24;
+
+  --sorye-radius-sm: 0.5rem;
+  --sorye-radius-md: 0.75rem;
+  --sorye-radius-lg: 1rem;
+  --sorye-radius-full: 9999px;
+
+  --sorye-focus-ring: 0 0 0 2px var(--sorye-surface), 0 0 0 4px var(--sorye-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sorye-transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --sorye-transition: 150ms ease;
+  }
+}

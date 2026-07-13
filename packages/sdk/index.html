@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sorye SDK</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--sorye-surface);
+        color: var(--sorye-text);
+        font-family: var(--sorye-font);
+        padding: 2rem;
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        color: var(--sorye-text-muted);
+        margin: 0 0 2rem;
+      }
+      section {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        margin-bottom: 2rem;
+      }
+      section h2 {
+        width: 100%;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--sorye-text-muted);
+        margin: 0 0 0.5rem;
+      }
+      sorye-card {
+        width: min(100%, 320px);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sorye SDK</h1>
+    <p>Lit web components — open DevTools → Performance to inspect repaints.</p>
+
+    <section>
+      <h2>Buttons</h2>
+      <sorye-button variant="primary">Primary</sorye-button>
+      <sorye-button variant="secondary">Secondary</sorye-button>
+      <sorye-button variant="ghost">Ghost</sorye-button>
+      <sorye-button variant="danger">Danger</sorye-button>
+      <sorye-button loading>Loading</sorye-button>
+    </section>
+
+    <section>
+      <h2>Badges</h2>
+      <sorye-badge variant="accent" dot>Pro</sorye-badge>
+      <sorye-badge variant="success">Active</sorye-badge>
+      <sorye-badge variant="warning">Beta</sorye-badge>
+    </section>
+
+    <section>
+      <h2>Input</h2>
+      <sorye-input
+        label="API endpoint"
+        placeholder="https://api.example.com"
+        hint="REST base URL for your connection"
+        style="width: 320px"
+      ></sorye-input>
+    </section>
+
+    <section>
+      <h2>Card</h2>
+      <sorye-card>
+        <span slot="header">Workspace</span>
+        Personal · 3 apps active
+        <span slot="footer">Updated just now</span>
+      </sorye-card>
+    </section>
+
+    <section>
+      <h2>Spinner &amp; Icon</h2>
+      <sorye-spinner></sorye-spinner>
+      <sorye-icon name="apps"></sorye-icon>
+      <sorye-icon name="link"></sorye-icon>
+    </section>
+
+    <script type="module" src="/dev/main.ts"></script>
+  </body>
+</html>

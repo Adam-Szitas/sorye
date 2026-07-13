@@ -1,0 +1,34 @@
+# fly.toml — deploy the hub to Fly.io
+# Run: fly launch (first time) then fly deploy
+
+app = "sorye-hub"
+primary_region = "ams"
+
+[build]
+  dockerfile = "apps/hub/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  STORE_DRIVER = "postgres"
+  AUTH_URL = "https://sorye-hub.fly.dev"
+  NEXT_PUBLIC_DASHBOARD_REMOTE = "https://sorye-dashboard.fly.dev/remoteEntry.js"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Secrets (set via CLI, not committed):
+#   fly secrets set AUTH_SECRET=...
+#   fly secrets set AUTH_GOOGLE_ID=...
+#   fly secrets set AUTH_GOOGLE_SECRET=...
+#   fly secrets set ADMIN_SECRET=...
+#   fly secrets set ADMIN_EMAILS=you@gmail.com
+#   fly secrets set DATABASE_URL=...   # from `fly postgres attach`

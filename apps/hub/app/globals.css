@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --color-surface: #0b0f17;
+  --color-surface-raised: #121826;
+  --color-surface-overlay: #1a2233;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+  --color-accent: #38bdf8;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: dark;
+    background: var(--color-surface);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56, 189, 248, 0.15), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(167, 139, 250, 0.1), transparent),
+      var(--color-surface);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  ::selection {
+    background: rgba(56, 189, 248, 0.35);
+  }
+}
+
+@layer utilities {
+  /* Solid surface — no blur, used for cards and panels */
+  .surface {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+  }
+
+  /* Glass — solid on mobile for GPU perf; blur only on md+ screens */
+  .glass {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+  }
+
+  @media (min-width: 768px) {
+    .glass {
+      background: rgba(18, 24, 38, 0.85);
+      backdrop-filter: blur(12px) saturate(1.2);
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .glass {
+      background: var(--color-surface-raised);
+      backdrop-filter: none;
+    }
+  }
+
+  .app-grid {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 400px;
+  }
+
+  .app-tile {
+    content-visibility: auto;
+    contain-intrinsic-size: 120px 140px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation-duration: 0.2s;
+    }
+  }
+}
