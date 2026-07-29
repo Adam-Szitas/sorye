@@ -27,6 +27,24 @@ const envSchema = z
       .url()
       .default('http://localhost:3001/remoteEntry.js'),
 
+    NEXT_PUBLIC_CALENDAR_REMOTE: z
+      .string()
+      .url()
+      .default('http://localhost:3003/remoteEntry.js')
+      .optional(),
+
+    NEXT_PUBLIC_NOTES_REMOTE: z
+      .string()
+      .url()
+      .default('http://localhost:3004/remoteEntry.js')
+      .optional(),
+
+    NEXT_PUBLIC_CANVAS_REMOTE: z
+      .string()
+      .url()
+      .default('http://localhost:3008/remoteEntry.js')
+      .optional(),
+
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
   })

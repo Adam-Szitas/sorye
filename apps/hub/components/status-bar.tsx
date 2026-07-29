@@ -1,4 +1,7 @@
+'use client';
+
 import type { SubscriptionPlan, WorkspaceKind } from '@sorye/types';
+import { useEffect, useMemo, useState } from 'react';
 
 interface StatusBarProps {
   plan: SubscriptionPlan;
@@ -13,8 +16,19 @@ export function StatusBar({
   connectionCount,
   workspaceKind,
 }: StatusBarProps) {
-  const now = new Date();
-  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const tick = () => setNow(new Date());
+    tick();
+    const id = window.setInterval(tick, 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const time = useMemo(() => {
+    if (!now) return '';
+    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, [now]);
 
   return (
     <footer className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between border-t border-white/5 bg-[var(--color-surface-raised)] px-4 py-1.5 text-[11px] text-[var(--color-text-muted)] sm:px-6">
@@ -37,7 +51,9 @@ export function StatusBar({
           {plan.maxConnections === 999 ? '∞' : plan.maxConnections} connected
         </span>
       </div>
-      <time dateTime={now.toISOString()}>{time}</time>
+      <time dateTime={now ? now.toISOString() : undefined} suppressHydrationWarning>
+        {time}
+      </time>
     </footer>
   );
 }

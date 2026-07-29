@@ -18,6 +18,14 @@ export default async function LoginPage({
           Your workspace OS — pick apps, connect APIs, collaborate with your
           team.
         </p>
+        {!process.env.AUTH_GOOGLE_ID ||
+        process.env.AUTH_GOOGLE_ID === 'your-google-client-id' ? (
+          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+            Set <code className="text-amber-200">AUTH_GOOGLE_ID</code> and{' '}
+            <code className="text-amber-200">AUTH_GOOGLE_SECRET</code> in{' '}
+            <code className="text-amber-200">apps/hub/.env.local</code>
+          </p>
+        ) : null}
         <form
           action={async () => {
             'use server';

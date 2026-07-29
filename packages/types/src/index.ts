@@ -1,6 +1,11 @@
 export * from './subscription';
 export * from './workspace';
 export * from './apps';
+export * from './canvas';
+export * from './embed';
+export * from './messenger';
+export * from './storage';
+export * from './events';
 
 import type { SubscriptionTierId } from './subscription';
 import type { UserWorkspace } from './workspace';

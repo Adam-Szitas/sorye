@@ -5,6 +5,7 @@ import './components/card';
 import './components/divider';
 import './components/icon';
 import './components/input';
+import './components/select';
 import './components/spinner';
 
 export {
@@ -14,6 +15,7 @@ export {
   SoryeDivider,
   SoryeIcon,
   SoryeInput,
+  SoryeSelect,
   SoryeSpinner,
 } from './components/index';
 

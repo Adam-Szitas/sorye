@@ -1,4 +1,6 @@
 import type { SubscriptionTierId, SubscriptionSource } from './subscription';
+import type { WorkspaceStoragePublic } from './storage';
+import { DEFAULT_WORKSPACE_STORAGE } from './storage';
 
 export type WorkspaceKind = 'personal' | 'team';
 
@@ -26,6 +28,7 @@ export interface Workspace {
   stripeSubscriptionId?: string;
   selectedAppIds: string[];
   connectedApps: ConnectedApp[];
+  storage?: WorkspaceStoragePublic;
   updatedAt: string;
 }
 

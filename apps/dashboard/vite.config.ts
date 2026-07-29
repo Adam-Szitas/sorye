@@ -9,12 +9,9 @@ export default defineConfig({
       name: 'dashboard',
       filename: 'remoteEntry.js',
       exposes: {
-        './App': './src/App.tsx',
+        './mount': './src/mount.tsx',
       },
-      shared: {
-        react: { singleton: true },
-        'react-dom': { singleton: true },
-      },
+      shared: {},
     }),
   ],
   server: {
@@ -22,6 +19,7 @@ export default defineConfig({
     strictPort: true,
     cors: true,
     origin: 'http://localhost:3001',
+    hmr: false,
   },
   preview: {
     port: 3001,

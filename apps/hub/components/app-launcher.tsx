@@ -2,6 +2,7 @@
 
 import type { AppCatalogEntry, SubscriptionPlan } from '@sorye/types';
 import { prefetchMicroFrontend } from '@/lib/prefetch';
+import { resolveRemoteEntry } from '@/lib/mf-remotes';
 import { AppIcon } from './app-icon';
 
 interface AppLauncherProps {
@@ -13,10 +14,7 @@ interface AppLauncherProps {
 
 function prefetchApp(app: AppCatalogEntry) {
   if (app.microFrontend) {
-    const entry =
-      process.env.NEXT_PUBLIC_DASHBOARD_REMOTE ??
-      app.microFrontend.remoteEntry;
-    prefetchMicroFrontend(entry);
+    prefetchMicroFrontend(resolveRemoteEntry(app.microFrontend));
   }
 }
 

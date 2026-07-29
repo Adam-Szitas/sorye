@@ -8,7 +8,9 @@ A subscription-based app platform monorepo. The **Hub** is your workspace OS —
 sorye/
 ├── apps/
 │   ├── hub/           # Next.js shell — auth, launcher, MF host
-│   └── dashboard/     # Vite micro-frontend remote (first app)
+│   ├── dashboard/     # Vite micro-frontend remote (first app)
+│   ├── calendar/      # Vite micro-frontend — scheduling
+│   └── notes/         # Vite micro-frontend — note taking
 ├── packages/
 │   ├── sdk/           # Lit web components (@sorye/sdk)
 │   ├── types/         # Shared catalog, plans, workspace models
@@ -53,13 +55,40 @@ Env validation lives in `apps/hub/lib/env.ts`. Production rejects `STORE_DRIVER=
 
 ## Quick start
 
-### 1. Install
+### 1. Install pnpm (once)
+
+This repo pins `pnpm@10.12.1` via `packageManager`. Pick one:
 
 ```bash
-npx pnpm@10.12.1 install
+# Recommended — uses Node's Corepack (then plain `pnpm` works)
+npm run setup
 ```
 
-### 2. Configure environment
+Or use the repo wrapper (no Corepack needed):
+
+```powershell
+# Windows PowerShell / cmd — from the repo root
+.\pn run setup
+.\pn install
+.\pn dev
+```
+
+```bash
+# macOS / Linux / Git Bash
+chmod +x pn   # once
+./pn run setup
+./pn install
+./pn dev
+```
+
+### 2. Install dependencies
+
+```bash
+pnpm install
+# or:  .\pn install
+```
+
+### 3. Configure environment
 
 ```bash
 cp .env.example apps/hub/.env.local
@@ -69,16 +98,27 @@ Fill in Google OAuth credentials and `AUTH_SECRET`.
 
 **Google OAuth redirect URI:** `http://localhost:3000/api/auth/callback/google`
 
-### 3. Run hub + dashboard
+### 4. Run hub + apps
 
 ```bash
-npx pnpm@10.12.1 dev
+pnpm dev
+# or:  .\pn dev
 ```
 
 - Hub: http://localhost:3000
 - Dashboard remote: http://localhost:3001
+- Calendar remote: http://localhost:3003
+- Notes remote: http://localhost:3004
+- Tasks remote: http://localhost:3005
+- Relay remote: http://localhost:3006
+- Protocolio remote: http://localhost:3007
+- Canvas remote: http://localhost:3008
+- DevKit remote: http://localhost:3009
+- Messenger remote: http://localhost:3010
 
-Sign in with Google → pick apps → open **Dashboard** from the launcher.
+Sign in with Google → open **Manage apps** → enable Canvas (and other apps) → launch from the hub.
+
+Team collaboration for Canvas: switch to a **team workspace**, create boards there, and teammates on the same workspace can open and edit the same board live.
 
 ## Architecture
 
@@ -87,9 +127,39 @@ Sign in with Google → pick apps → open **Dashboard** from the launcher.
 | Auth | Google via Auth.js (NextAuth v5) |
 | Billing | Admin-assigned plans now → Stripe later |
 | Sub-apps | Module Federation (Vite remotes) |
-| Connections | REST API + API key per endpoint |
+| Connections | Outbound REST keys + **inbound embed widgets** |
 | Workspaces | Personal (all plans) + Team (Pro/Enterprise) |
 | Storage | JSON file store in `apps/hub/.data/` (dev) |
+
+## Embed Sorye apps in your own product
+
+Users enable apps in the hub App Library (whitelist). They can then create an **embed widget** under **Connections → Embed widgets**:
+
+1. Whitelist your site origin (e.g. `https://app.example.com` or `http://localhost:5173`)
+2. Pick which enabled apps the key may host
+3. Copy the one-time API key and drop in the snippet
+
+```html
+<script src="http://localhost:3000/embed.js"></script>
+<div id="sorye-notes" style="height:640px"></div>
+<script>
+  SoryeEmbed.mount('#sorye-notes', {
+    app: 'notes',           // catalog slug
+    key: 'sk_embed_...'     // from Connections
+  });
+</script>
+```
+
+How it works:
+
+- `embed.js` calls `POST /api/embed/bootstrap` with your key + page origin
+- Hub checks origin allowlist and that the app is in both the widget’s enabled list and the workspace `selectedAppIds`
+- An iframe loads a chrome-less `/embed/[slug]` host with the same Module Federation app as the hub
+- Hub APIs inside the iframe use a short-lived embed session cookie
+
+Revoke a key anytime from Connections to cut off embeds.
+
+After schema changes (Postgres): `pnpm db:push`
 
 ## Subscription tiers
 
@@ -138,8 +208,17 @@ curl http://localhost:3000/api/admin/subscription \
 ## Scripts
 
 ```bash
-pnpm dev              # hub + dashboard
+pnpm run setup        # once: enable Corepack + pin pnpm@10.12.1
+pnpm install
+pnpm dev              # hub + all remotes
 pnpm dev:hub          # hub only
 pnpm dev:dashboard    # dashboard remote only
+pnpm dev:calendar     # calendar remote only
+pnpm dev:notes        # notes remote only
 pnpm build            # build all
+
+# Without Corepack, same commands via the wrapper:
+.\pn run setup
+.\pn install
+.\pn dev
 ```

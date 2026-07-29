@@ -1,0 +1,378 @@
+.protocolio-app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: #f1f5f9;
+  font-family: var(--sorye-font, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif);
+  background:
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(56, 189, 248, 0.08), transparent),
+    #0b0f17;
+}
+
+.protocolio-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0.75rem;
+  flex-shrink: 0;
+}
+
+.protocolio-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.protocolio-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+
+.protocolio-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.protocolio-badge {
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.protocolio-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.protocolio-tabs button {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.55rem;
+  cursor: pointer;
+}
+
+.protocolio-tabs button.active {
+  background: rgba(56, 189, 248, 0.18);
+  color: #e0f2fe;
+}
+
+.protocolio-builder {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.protocolio-app button:not(:disabled),
+.protocolio-app [role='button']:not([aria-disabled='true']),
+.protocolio-app a[href],
+.protocolio-app select:not(:disabled),
+.protocolio-app label[for],
+.protocolio-app summary,
+.protocolio-app input[type='checkbox']:not(:disabled),
+.protocolio-app input[type='radio']:not(:disabled),
+.protocolio-app input[type='file']:not(:disabled),
+.protocolio-app input[type='button']:not(:disabled),
+.protocolio-app input[type='submit']:not(:disabled) {
+  cursor: pointer;
+}
+
+.protocolio-app button:disabled,
+.protocolio-app [aria-disabled='true'],
+.protocolio-app input:disabled,
+.protocolio-app select:disabled,
+.protocolio-app textarea:disabled {
+  cursor: not-allowed;
+}
+
+/* Plugin-test-app builder components (ported into Sorye) */
+.protocolio-app .section {
+  background: rgba(18, 24, 38, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.protocolio-app .section h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.protocolio-app .section h3 {
+  margin: 14px 0 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.protocolio-app .section-hint {
+  margin: 0 0 8px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.protocolio-app .section-hint code {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.protocolio-app label {
+  display: block;
+  font-size: 0.85rem;
+  margin: 0 0 4px;
+  color: #cbd5e1;
+}
+
+.protocolio-app select,
+.protocolio-app input[type='text'],
+.protocolio-app input[type='number'],
+.protocolio-app textarea {
+  width: 100%;
+  background: rgba(18, 24, 38, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.protocolio-app textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  resize: vertical;
+}
+
+.protocolio-app .row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.protocolio-app button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.protocolio-app button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.protocolio-app button.primary {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #e0f2fe;
+}
+
+.protocolio-app button.primary:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.22);
+}
+
+.protocolio-app button.danger {
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
+.protocolio-app .btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+}
+
+.protocolio-app .btn-icon {
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+
+.protocolio-app .badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.protocolio-app .badge.green {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.protocolio-app .badge.red {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+}
+
+.protocolio-app .badge.blue {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.protocolio-app .error-banner,
+.protocolio-app .success-banner {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  color: #cbd5e1;
+}
+
+.protocolio-app .error-banner {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.25);
+  color: #fecaca;
+}
+
+.protocolio-app .success-banner {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.25);
+  color: #a7f3d0;
+}
+
+.protocolio-app .spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(56, 189, 248, 0.95);
+  border-radius: 50%;
+  animation: protocolio-spin 0.7s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes protocolio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.protocolio-app .block-card {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 24, 38, 0.55);
+  padding: 12px;
+}
+
+.protocolio-app .block-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.protocolio-app .block-card-header strong {
+  text-transform: capitalize;
+  font-size: 0.85rem;
+}
+
+.protocolio-app .block-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.protocolio-app .block-card-actions button {
+  padding: 6px 10px;
+}
+
+.protocolio-app .block-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.protocolio-app .preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.protocolio-app .preset-card {
+  border-radius: 14px;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.protocolio-app .preset-card:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.protocolio-app .pipeline-guide .guide-intro {
+  color: #cbd5e1;
+}
+
+.protocolio-app .token-notice p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.protocolio-app .json-textarea,
+.protocolio-app textarea.json-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: rgba(18, 24, 38, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.protocolio-app .json-textarea.readonly {
+  opacity: 0.95;
+}
+
+.protocolio-app .pdf-preview {
+  width: 100%;
+  height: 720px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.protocolio-json-preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.protocolio-json-preview .section {
+  margin-bottom: 0;
+}
+
+.protocolio-json-preview textarea {
+  /* keep preview compact even if content grows */
+  resize: vertical;
+}

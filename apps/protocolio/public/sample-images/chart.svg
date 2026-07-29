@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="180" viewBox="0 0 300 180">
+  <rect width="300" height="180" fill="#f5f5f5" stroke="#ddd"/>
+  <rect x="40" y="100" width="40" height="50" fill="#0066cc"/>
+  <rect x="100" y="70" width="40" height="80" fill="#0066cc"/>
+  <rect x="160" y="40" width="40" height="110" fill="#0066cc"/>
+  <rect x="220" y="85" width="40" height="65" fill="#0066cc"/>
+  <text x="150" y="25" text-anchor="middle" fill="#333" font-family="Arial, sans-serif" font-size="14">Sample Chart</text>
+</svg>

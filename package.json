@@ -2,11 +2,20 @@
   "name": "sorye",
   "private": true,
   "scripts": {
-    "dev": "turbo dev --filter=@sorye/hub --filter=@sorye/dashboard",
+    "setup": "corepack enable && corepack prepare pnpm@10.12.1 --activate",
+    "dev": "turbo dev --filter=@sorye/hub --filter=@sorye/dashboard --filter=@sorye/calendar --filter=@sorye/notes --filter=@sorye/tasks --filter=@sorye/relay --filter=@sorye/protocolio --filter=@sorye/canvas --filter=@sorye/devkit --filter=@sorye/messenger",
     "build": "turbo build",
     "lint": "turbo lint",
     "dev:hub": "turbo dev --filter=@sorye/hub",
     "dev:dashboard": "turbo dev --filter=@sorye/dashboard",
+    "dev:calendar": "turbo dev --filter=@sorye/calendar",
+    "dev:notes": "turbo dev --filter=@sorye/notes",
+    "dev:tasks": "turbo dev --filter=@sorye/tasks",
+    "dev:relay": "turbo dev --filter=@sorye/relay",
+    "dev:protocolio": "turbo dev --filter=@sorye/protocolio",
+    "dev:canvas": "turbo dev --filter=@sorye/canvas",
+    "dev:devkit": "turbo dev --filter=@sorye/devkit",
+    "dev:messenger": "turbo dev --filter=@sorye/messenger",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:push": "pnpm --filter @sorye/db db:push",
@@ -18,6 +27,12 @@
     "typescript": "^5.8.3"
   },
   "packageManager": "pnpm@10.12.1",
+  "pnpm": {
+    "overrides": {
+      "react": "19.2.7",
+      "react-dom": "19.2.7"
+    }
+  },
   "engines": {
     "node": ">=20"
   }

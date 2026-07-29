@@ -14,6 +14,7 @@ import {
 } from '@sorye/types';
 import { randomUUID } from 'crypto';
 import { and, eq, sql } from 'drizzle-orm';
+import { toPublicStorage } from '@/lib/workspace-storage-util';
 
 async function loadConnections(workspaceId: string): Promise<ConnectedApp[]> {
   const db = getDb();
@@ -46,6 +47,22 @@ async function loadWorkspaceRow(
 
   if (!row) return null;
 
+  const storage =
+    row.storageDriver === 'default' || !row.databaseUrlEncrypted
+      ? toPublicStorage(undefined)
+      : toPublicStorage({
+          driver: 'postgres',
+          status:
+            row.storageStatus === 'connected' || row.storageStatus === 'error'
+              ? row.storageStatus
+              : 'connected',
+          hostHint: row.storageHostHint ?? undefined,
+          databaseHint: row.storageDatabaseHint ?? undefined,
+          updatedAt: row.storageUpdatedAt?.toISOString(),
+          lastError: row.storageLastError ?? undefined,
+          databaseUrlEncrypted: row.databaseUrlEncrypted,
+        });
+
   return {
     id: row.id,
     kind: row.kind,
@@ -58,6 +75,7 @@ async function loadWorkspaceRow(
     stripeSubscriptionId: row.stripeSubscriptionId ?? undefined,
     selectedAppIds: row.selectedAppIds,
     connectedApps: await loadConnections(row.id),
+    storage,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -149,7 +167,7 @@ export async function getOrCreateUser(input: {
       .set({
         displayName: input.displayName,
         image: input.image,
-        isAdmin: input.isAdmin || existing.isAdmin,
+        isAdmin: input.isAdmin,
         updatedAt: new Date(),
       })
       .where(eq(schema.users.id, input.id));
@@ -158,21 +176,11 @@ export async function getOrCreateUser(input: {
       ...existing,
       displayName: input.displayName,
       image: input.image ?? existing.image,
-      isAdmin: input.isAdmin || existing.isAdmin,
+      isAdmin: input.isAdmin,
     });
   }
 
   const workspaceId = `ws-personal-${randomUUID().slice(0, 8)}`;
-
-  await db.insert(schema.workspaces).values({
-    id: workspaceId,
-    kind: 'personal',
-    name: 'Personal',
-    ownerId: input.id,
-    subscriptionId: 'free',
-    subscriptionSource: 'admin',
-    selectedAppIds: ['dashboard'],
-  });
 
   await db.insert(schema.users).values({
     id: input.id,
@@ -182,6 +190,16 @@ export async function getOrCreateUser(input: {
     personalWorkspaceId: workspaceId,
     activeWorkspaceId: workspaceId,
     isAdmin: input.isAdmin,
+  });
+
+  await db.insert(schema.workspaces).values({
+    id: workspaceId,
+    kind: 'personal',
+    name: 'Personal',
+    ownerId: input.id,
+    subscriptionId: 'free',
+    subscriptionSource: 'admin',
+    selectedAppIds: ['dashboard'],
   });
 
   await db.insert(schema.workspaceMembers).values({
@@ -209,6 +227,47 @@ export async function getHubSession(userId: string): Promise<HubSession | null> 
 
   if (!userRow) return null;
   return buildSession(userRow);
+}
+
+export async function getHubSessionForWorkspace(
+  userId: string,
+  workspaceId: string,
+): Promise<HubSession | null> {
+  const db = getDb();
+  const [userRow] = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+
+  if (!userRow) return null;
+
+  const memberIds = await loadMemberIds(workspaceId);
+  if (!memberIds.includes(userId)) return null;
+
+  const workspace = await loadWorkspaceRow(workspaceId, memberIds);
+  if (!workspace) return null;
+
+  const user = await buildHubUser(userRow);
+  const summaries: WorkspaceSummary[] = [];
+  for (const id of [user.personalWorkspaceId, ...user.teamWorkspaceIds]) {
+    const [row] = await db
+      .select({
+        id: schema.workspaces.id,
+        kind: schema.workspaces.kind,
+        name: schema.workspaces.name,
+      })
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, id))
+      .limit(1);
+    if (row) summaries.push(row);
+  }
+
+  return {
+    user: { ...user, activeWorkspaceId: workspaceId },
+    workspace,
+    workspaces: summaries,
+  };
 }
 
 export async function updateWorkspace(
@@ -411,4 +470,30 @@ export async function listUsers(): Promise<
   }
 
   return results;
+}
+
+export async function getWorkspaceMembers(
+  workspaceId: string,
+): Promise<
+  Array<{
+    id: string;
+    displayName: string;
+    email: string;
+    image?: string;
+  }>
+> {
+  const db = getDb();
+  const memberIds = await loadMemberIds(workspaceId);
+  if (memberIds.length === 0) return [];
+
+  const rows = await db.select().from(schema.users);
+  return rows
+    .filter((u) => memberIds.includes(u.id))
+    .map((u) => ({
+      id: u.id,
+      displayName: u.displayName,
+      email: u.email,
+      image: u.image ?? undefined,
+    }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }

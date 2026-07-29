@@ -12,6 +12,10 @@ import {
   type Workspace,
   type WorkspaceSummary,
 } from '@sorye/types';
+import {
+  getWorkspaceStoragePublic,
+  getWorkspaceStorageRecord,
+} from './workspace-storage';
 
 interface StoreData {
   users: Record<string, HubUser>;
@@ -52,6 +56,14 @@ function createPersonalWorkspace(userId: string): Workspace {
   };
 }
 
+async function attachStorage(workspace: Workspace): Promise<Workspace> {
+  const record = await getWorkspaceStorageRecord(workspace.id);
+  return {
+    ...workspace,
+    storage: getWorkspaceStoragePublic(record),
+  };
+}
+
 function toSummaries(
   user: HubUser,
   workspaces: Record<string, Workspace>,
@@ -79,7 +91,7 @@ export async function getOrCreateUser(input: {
   if (existing) {
     existing.displayName = input.displayName;
     existing.image = input.image;
-    existing.isAdmin = input.isAdmin || existing.isAdmin;
+    existing.isAdmin = input.isAdmin;
     store.users[input.id] = existing;
     await writeStore(store);
     return existing;
@@ -113,7 +125,25 @@ export async function getHubSession(userId: string): Promise<HubSession | null> 
 
   return {
     user,
-    workspace,
+    workspace: await attachStorage(workspace),
+    workspaces: toSummaries(user, store.workspaces),
+  };
+}
+
+export async function getHubSessionForWorkspace(
+  userId: string,
+  workspaceId: string,
+): Promise<HubSession | null> {
+  const store = await readStore();
+  const user = store.users[userId];
+  if (!user) return null;
+
+  const workspace = store.workspaces[workspaceId];
+  if (!workspace || !workspace.memberIds.includes(userId)) return null;
+
+  return {
+    user: { ...user, activeWorkspaceId: workspaceId },
+    workspace: await attachStorage(workspace),
     workspaces: toSummaries(user, store.workspaces),
   };
 }
@@ -240,4 +270,29 @@ export async function listUsers(): Promise<
       isAdmin: user.isAdmin,
     };
   });
+}
+
+export async function getWorkspaceMembers(
+  workspaceId: string,
+): Promise<
+  Array<{
+    id: string;
+    displayName: string;
+    email: string;
+    image?: string;
+  }>
+> {
+  const store = await readStore();
+  const workspace = store.workspaces[workspaceId];
+  if (!workspace) return [];
+  return workspace.memberIds
+    .map((id) => store.users[id])
+    .filter((u): u is HubUser => Boolean(u))
+    .map((u) => ({
+      id: u.id,
+      displayName: u.displayName,
+      email: u.email,
+      image: u.image,
+    }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }

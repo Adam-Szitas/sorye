@@ -6,6 +6,7 @@ import { SoryeCard } from '../components/card';
 import { SoryeDivider } from '../components/divider';
 import { SoryeIcon } from '../components/icon';
 import { SoryeInput } from '../components/input';
+import { SoryeSelect } from '../components/select';
 import { SoryeSpinner } from '../components/spinner';
 
 type InputDetail = { value: string; name: string };
@@ -49,6 +50,17 @@ export const Input = createComponent({
     onSoryeChange: 'sorye-change' as EventName<CustomEvent<InputDetail>>,
   },
 });
+
+export const Select = createComponent({
+  tagName: 'sorye-select',
+  elementClass: SoryeSelect,
+  react: React,
+  events: {
+    onSoryeChange: 'sorye-change' as EventName<CustomEvent<InputDetail>>,
+  },
+});
+
+export type { SelectOption } from '../components/select';
 
 export const Spinner = createComponent({
   tagName: 'sorye-spinner',

@@ -1,0 +1,415 @@
+{
+    "blocks": [
+      {
+        "type": "grid",
+        "rows": 1,
+        "columns": 2,
+        "gap": 12,
+        "align": "left",
+        "valign": "center",
+        "cells": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "image",
+                  "src": "{{companyLogoBase64}}",
+                  "width": 140,
+                  "align": "center"
+                }
+              ],
+              "align": "left",
+              "valign": "center"
+            },
+            {
+              "blocks": [
+                {
+                  "type": "text",
+                  "content": "{{translation.offerTitle = 'Offer'}} {{offerCode}}",
+                  "font": {
+                    "size": 24,
+                    "bold": true
+                  }
+                }
+              ],
+              "align": "right",
+              "valign": "center"
+            }
+          ]
+        ],
+        "rowSettings": [
+          {}
+        ]
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "header": "Column 1",
+            "align": "left",
+            "width": 350
+          },
+          {
+            "header": "Column 2",
+            "align": "left"
+          }
+        ],
+        "rows": [
+          [
+            "{{companyName}}",
+            "{{customerName}}"
+          ],
+          [
+            "{{companyStreet}}",
+            "{{customerStreet}} {{customerNumber}}"
+          ],
+          [
+            "{{companyZip}} {{companyCity}}",
+            "{{customerZIP}} {{customerCity}}"
+          ],
+          [
+            "{{companyCountry}}",
+            "{{customerCountry}}"
+          ],
+          [
+            "{{companyICO}}",
+            "{{customerICO}}"
+          ],
+          [
+            "{{companyDIC}}",
+            "{{customerDIC}}"
+          ],
+          [
+            "{{companyVAT}}",
+            "{{customerVAT}}"
+          ]
+        ],
+        "showBorder": true,
+        "columnGap": 0,
+        "rowGap": 0,
+        "showHeader": false,
+        "border": {
+          "width": 0
+        },
+        "outerBorder": {
+          "width": 0
+        },
+        "marginTop": 20
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "header": "Column 1",
+            "align": "left"
+          },
+          {
+            "header": "Column 2",
+            "align": "right"
+          },
+          {
+            "header": "Column 3",
+            "align": "center",
+            "width": 20
+          },
+          {
+            "header": "Column 4",
+            "align": "left"
+          },
+          {
+            "header": "Column 5",
+            "align": "right"
+          }
+        ],
+        "rows": [
+          [
+            "**{{translation.offerDate = 'Offer date'}}:**",
+            "{{offer.createdAt}}",
+            "",
+            "**{{translation.termsOfDelivery = 'Terms of delivery'}}:**",
+            "{{offer.text.termsOfDelivery}}"
+          ],
+          [
+            "**{{translation.offerValidity = 'Offer validity'}}:**",
+            "{{offer.text.validity}}",
+            "",
+            "**{{translation.termsOfPayment = 'Terms of payment'}}:**",
+            "{{offer.text.termsOfPayment}}"
+          ],
+          [
+            "**{{translation.warranty = 'Warranty'}}:**",
+            "{{offer.text.warranty}}",
+            "",
+            "**{{translation.createdBy = 'Created by'}}:**",
+            "{{offer.inserter}}"
+          ]
+        ],
+        "showBorder": true,
+        "columnGap": 0,
+        "rowGap": 0,
+        "marginTop": 42,
+        "border": {
+          "width": 0
+        },
+        "outerBorder": {
+          "width": 0
+        },
+        "showHeader": false
+      },
+      {
+        "type": "divider",
+        "anchorBottom": true,
+        "thickness": 1,
+        "margin": 12
+      },
+      {
+        "type": "text",
+        "content": "{{translation.note = 'Note'}}:\n{{offer.note}}",
+        "marginTop": 200
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "header": "Column 1",
+            "align": "right"
+          },
+          {
+            "header": "Column 2",
+            "align": "right"
+          }
+        ],
+        "rows": [
+          [
+            "**{{translation.totalValueWithoutVAT = 'Total value (without VAT)'}}**",
+            "**{{calculated.totalValueWithoutVAT}}**"
+          ]
+        ],
+        "showBorder": true,
+        "columnGap": 0,
+        "rowGap": 0,
+        "rowHeights": [
+          22
+        ],
+        "showHeader": false,
+        "border": {
+          "width": 0
+        },
+        "outerBorder": {
+          "width": 0
+        },
+        "marginTop": 42
+      },
+      {
+        "type": "headerFooter",
+        "position": "footer",
+        "blocks": [
+          {
+            "type": "text",
+            "content": "{{offer.code}}"
+          },
+          {
+            "type": "text",
+            "content": "{{pageNumberIncrement}}"
+          },
+          {
+            "type": "text",
+            "content": "{{currentDate}}"
+          }
+        ],
+        "repeat": false,
+        "pages": [
+          {
+            "blocks": [
+              {
+                "type": "text",
+                "content": "{{offer.code}}"
+              },
+              {
+                "type": "text",
+                "content": "{{pageNumberIncrement}}"
+              },
+              {
+                "type": "text",
+                "content": "{{currentDate}}"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "pageBreak"
+      },
+      {
+        "type": "grid",
+        "rows": 1,
+        "columns": 2,
+        "gap": 12,
+        "align": "left",
+        "valign": "center",
+        "cells": [
+          [
+            {
+              "blocks": [
+                {
+                  "type": "image",
+                  "src": "{{companyLogoBase64}}",
+                  "width": 140,
+                  "align": "center"
+                }
+              ],
+              "align": "left",
+              "valign": "center"
+            },
+            {
+              "blocks": [
+                {
+                  "type": "text",
+                  "content": "{{translation.offerTitle = 'Offer'}} {{offer.code}}",
+                  "font": {
+                    "size": 24,
+                    "bold": true
+                  }
+                }
+              ],
+              "align": "right",
+              "valign": "center"
+            }
+          ]
+        ],
+        "rowSettings": [
+          {}
+        ],
+        "marginTop": 32
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "header": "{{offer.categories[0].name}}",
+            "align": "left",
+            "width": 250
+          },
+          {
+            "header": "{{translation.quantity = 'Quantity'}}",
+            "align": "right"
+          },
+          {
+            "header": "{{translation.price = 'Price'}} {{company.currency}}",
+            "align": "right"
+          },
+          {
+            "header": "{{translation.totalPrice = 'Total price'}} {{company.currency}}",
+            "align": "right"
+          }
+        ],
+        "rows": [
+          [
+            "**{{offer.categories[0].items[0].name}}**\n{{offer.categories[0].items[0].description}}",
+            "{{offer.categories[0].items[0].quantity}} {{offer.categories[0].items[0].unit}}",
+            "{{offer.categories[0].items[0].price}}",
+            "{{offer.categories[0].items[0].totalPrice}}"
+          ],
+          [
+            "**{{offer.categories[0].items[1].name}}**\n{{offer.categories[0].items[1].description}}",
+            "{{offer.categories[0].items[1].quantity}} {{offer.categories[0].items[1].unit}}",
+            "{{offer.categories[0].items[1].price}}",
+            "{{offer.categories[0].items[1].totalPrice}}"
+          ]
+        ],
+        "showBorder": true,
+        "columnGap": 0,
+        "rowGap": 0,
+        "marginTop": 32,
+        "headerBackground": "#d2d2d2",
+        "outerBorder": {
+          "width": 0
+        }
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "header": "{{translation.total = 'Total'}} {{offer.categories[0].name}}",
+            "align": "center",
+            "width": 250
+          },
+          {
+            "header": "{{offer.categories[0].calculated.totalValueWithoutVAT}}",
+            "align": "right"
+          }
+        ],
+        "rows": [],
+        "showBorder": true,
+        "columnGap": 0,
+        "rowGap": 0,
+        "border": {
+          "width": 0
+        },
+        "outerBorder": {
+          "width": 0
+        }
+      },
+      {
+        "type": "divider",
+        "thickness": 1,
+        "color": "#222222",
+        "margin": 8
+      },
+      {
+        "type": "table",
+        "columns": [
+          {
+            "header": "{{translation.totalValueWithoutVAT = 'Total value (without VAT)'}}",
+            "align": "center"
+          },
+          {
+            "header": "{{offer.categories[ALL].calculated.totalValueWithoutVAT: Should calculate all the categories' all items' total value without VAT}} {{company.currency}}",
+            "align": "right"
+          }
+        ],
+        "rows": [],
+        "showBorder": true,
+        "columnGap": 0,
+        "rowGap": 0,
+        "border": {
+          "width": 0
+        },
+        "outerBorder": {
+          "width": 0
+        }
+      },
+      {
+        "type": "headerFooter",
+        "position": "footer",
+        "blocks": [
+          {
+            "type": "text",
+            "content": "{{offer.code}}"
+          },
+          {
+            "type": "text",
+            "content": "{{pageNumberIncrement}}"
+          },
+          {
+            "type": "text",
+            "content": "{{currentDate}}"
+          }
+        ],
+        "page": 2,
+        "repeat": false
+      }
+    ],
+    "page": {
+      "margins": {
+        "top": 24,
+        "right": 24,
+        "bottom": 24,
+        "left": 24
+      },
+      "defaultRowGap": 12
+    },
+    "defaultFont": {
+      "size": 10
+    }
+  }

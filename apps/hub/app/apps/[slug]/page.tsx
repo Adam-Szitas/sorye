@@ -74,8 +74,8 @@ export default function MicroAppPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="glass flex items-center gap-4 px-4 py-3 sm:px-6">
+    <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
+      <header className="glass flex shrink-0 items-center gap-4 px-4 py-3 sm:px-6">
         <Link
           href="/"
           className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
@@ -84,7 +84,7 @@ export default function MicroAppPage() {
         </Link>
         <span className="text-sm font-medium">{app.name}</span>
       </header>
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col">
         <MicroAppLoader config={app.microFrontend} />
       </div>
     </div>
