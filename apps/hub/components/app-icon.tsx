@@ -14,6 +14,8 @@ const ICON_PATHS: Record<string, string> = {
   tasks: 'M4 6h16M4 12h10M4 18h14',
   chat: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4V6z',
   reports: 'M6 20V10m6 20V4m6 16v-8',
+  susm: 'M4 7h16v10H4zm4 3h8m-8 3h5',
+  espm: 'M12 3l8 4v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V7l8-4z',
 };
 
 interface AppIconProps {

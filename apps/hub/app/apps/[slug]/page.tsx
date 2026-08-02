@@ -1,5 +1,6 @@
 'use client';
 
+import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
 import {
   APP_CATALOG,
@@ -28,7 +29,7 @@ export default function MicroAppPage() {
       const data = await res.json();
       const isAllowed =
         catalogApp &&
-        catalogApp.status === 'available' &&
+        (catalogApp.status === 'available' || catalogApp.status === 'beta') &&
         data.workspace.selectedAppIds.includes(catalogApp.id);
       setAllowed(Boolean(isAllowed));
     }
@@ -60,7 +61,7 @@ export default function MicroAppPage() {
     );
   }
 
-  if (!app.microFrontend) {
+  if (!app.microFrontend && !app.external) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
         <p className="text-[var(--color-text-muted)]">
@@ -83,9 +84,23 @@ export default function MicroAppPage() {
           ← Hub
         </Link>
         <span className="text-sm font-medium">{app.name}</span>
+        {app.external ? (
+          <a
+            href={app.external.url}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto text-xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+          >
+            Open externally ↗
+          </a>
+        ) : null}
       </header>
       <div className="flex min-h-0 flex-1 flex-col">
-        <MicroAppLoader config={app.microFrontend} />
+        {app.external ? (
+          <ExternalAppFrame config={app.external} appName={app.name} />
+        ) : app.microFrontend ? (
+          <MicroAppLoader config={app.microFrontend} />
+        ) : null}
       </div>
     </div>
   );

@@ -8,7 +8,7 @@ export default async function HubPage() {
     authSession?.user?.id ? await ensureHubUser() : null;
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden">
+    <div className="relative flex h-dvh max-h-dvh min-h-0 flex-col overflow-hidden">
       <HubShell initialSession={initialSession} />
     </div>
   );

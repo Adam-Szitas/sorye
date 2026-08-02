@@ -14,6 +14,13 @@ export interface MicroFrontendConfig {
   exposedModule: string;
 }
 
+/** Host an external web app inside the Hub via iframe. */
+export interface ExternalAppConfig {
+  url: string;
+  /** Optional title for the iframe (accessibility). */
+  title?: string;
+}
+
 export interface AppCatalogEntry {
   id: string;
   name: string;
@@ -25,6 +32,7 @@ export interface AppCatalogEntry {
   color: string;
   mountPath: string;
   microFrontend?: MicroFrontendConfig;
+  external?: ExternalAppConfig;
 }
 
 export const APP_CATALOG: AppCatalogEntry[] = [
@@ -187,6 +195,36 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteName: 'messenger',
       remoteEntry: 'http://localhost:3010/remoteEntry.js',
       exposedModule: './mount',
+    },
+  },
+  {
+    id: 'susm',
+    name: 'SUSM',
+    description: 'External SUSM workspace hosted on Vercel.',
+    slug: 'susm',
+    category: 'productivity',
+    status: 'available',
+    icon: 'susm',
+    color: '#38bdf8',
+    mountPath: '/apps/susm',
+    external: {
+      url: 'https://susm.vercel.app',
+      title: 'SUSM',
+    },
+  },
+  {
+    id: 'espm',
+    name: 'ESPM',
+    description: 'External ESPM workspace hosted on Vercel.',
+    slug: 'espm',
+    category: 'productivity',
+    status: 'available',
+    icon: 'espm',
+    color: '#a78bfa',
+    mountPath: '/apps/espm',
+    external: {
+      url: 'https://espm-beta.vercel.app',
+      title: 'ESPM',
     },
   },
   {

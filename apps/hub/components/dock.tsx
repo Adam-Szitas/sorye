@@ -9,6 +9,8 @@ interface DockProps {
   appCount: number;
   connectionCount: number;
   onNavigate: (panel: Panel) => void;
+  workspaceOpen?: boolean;
+  onOpenWorkspace?: () => void;
 }
 
 const items: { id: Panel; label: string; icon: string }[] = [
@@ -34,6 +36,8 @@ export function Dock({
   appCount,
   connectionCount,
   onNavigate,
+  workspaceOpen,
+  onOpenWorkspace,
 }: DockProps) {
   const badges: Record<Panel, number | undefined> = {
     launcher: undefined,
@@ -94,6 +98,29 @@ export function Dock({
             </button>
           );
         })}
+
+        {workspaceOpen && onOpenWorkspace ? (
+          <button
+            type="button"
+            onClick={onOpenWorkspace}
+            className="relative flex flex-col items-center gap-0.5 rounded-xl px-4 py-2 text-[var(--color-accent)] transition hover:bg-white/8"
+            aria-label="Open split workspace"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M4 5h7v14H4zm9 0h7v14h-7z" />
+            </svg>
+            <span className="text-[10px] font-medium">Split</span>
+          </button>
+        ) : null}
       </div>
     </nav>
   );

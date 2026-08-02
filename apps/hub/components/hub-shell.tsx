@@ -16,6 +16,10 @@ import { signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AppLauncher } from '@/components/app-launcher';
+import {
+  AppWorkspace,
+  type PaneSide,
+} from '@/components/app-workspace';
 import { Dock } from '@/components/dock';
 import { PanelSkeleton } from '@/components/panel-skeleton';
 import { StatusBar } from '@/components/status-bar';
@@ -43,7 +47,33 @@ const ConnectionsPanel = dynamic(
   { loading: () => <PanelSkeleton /> },
 );
 
-type Panel = 'launcher' | 'picker' | 'connections';
+type Panel = 'launcher' | 'picker' | 'connections' | 'workspace';
+
+const PANES_STORAGE_KEY = 'sorye:hub:panes';
+
+interface PaneState {
+  leftId: string | null;
+  rightId: string | null;
+  focus: PaneSide;
+}
+
+function readPaneState(): PaneState {
+  if (typeof window === 'undefined') {
+    return { leftId: null, rightId: null, focus: 'left' };
+  }
+  try {
+    const raw = sessionStorage.getItem(PANES_STORAGE_KEY);
+    if (!raw) return { leftId: null, rightId: null, focus: 'left' };
+    const parsed = JSON.parse(raw) as PaneState;
+    return {
+      leftId: parsed.leftId ?? null,
+      rightId: parsed.rightId ?? null,
+      focus: parsed.focus === 'right' ? 'right' : 'left',
+    };
+  } catch {
+    return { leftId: null, rightId: null, focus: 'left' };
+  }
+}
 
 interface HubShellProps {
   initialSession?: HubSession | null;
@@ -54,6 +84,29 @@ export function HubShell({ initialSession }: HubShellProps) {
   const { session, loading, error, patchWorkspace, switchWorkspace, createTeam } =
     useHubSession({ initialData: initialSession });
   const [panel, setPanel] = useState<Panel>('launcher');
+  const [panes, setPanes] = useState<PaneState>({
+    leftId: null,
+    rightId: null,
+    focus: 'left',
+  });
+  const [panesReady, setPanesReady] = useState(false);
+
+  useEffect(() => {
+    setPanes(readPaneState());
+    setPanesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!panesReady) return;
+    sessionStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(panes));
+  }, [panes, panesReady]);
+
+  useEffect(() => {
+    if (!panesReady) return;
+    if (panes.leftId || panes.rightId) {
+      setPanel('workspace');
+    }
+  }, [panesReady, panes.leftId, panes.rightId]);
 
   const logState = useCallback(
     (action: string, extra?: Record<string, unknown>) => {
@@ -82,14 +135,104 @@ export function HubShell({ initialSession }: HubShellProps) {
     }
   }, [loading, session, router]);
 
+  const resolveApp = useCallback((id: string | null) => {
+    if (!id) return null;
+    return APP_CATALOG.find((a) => a.id === id) ?? null;
+  }, []);
+
   const openApp = useCallback(
-    (app: AppCatalogEntry) => {
-      if (app.status !== 'available') return;
-      logState('app.open', { appId: app.id, mountPath: app.mountPath });
-      router.push(app.mountPath);
+    (app: AppCatalogEntry, side?: PaneSide) => {
+      if (app.status !== 'available' && app.status !== 'beta') return;
+
+      // No explicit side → same as before: full-page route.
+      if (!side) {
+        logState('app.open', { appId: app.id, mountPath: app.mountPath });
+        router.push(app.mountPath);
+        return;
+      }
+
+      if (!app.microFrontend && !app.external) {
+        router.push(app.mountPath);
+        return;
+      }
+
+      setPanes((prev) => {
+        let leftId = prev.leftId;
+        let rightId = prev.rightId;
+        let focus: PaneSide = side;
+
+        if (side === 'left') {
+          if (rightId === app.id) rightId = null;
+          leftId = app.id;
+        } else {
+          if (leftId === app.id) leftId = null;
+          rightId = app.id;
+        }
+
+        return { leftId, rightId, focus };
+      });
+      setPanel('workspace');
+      logState('app.open.split', { appId: app.id, side });
     },
     [router, logState],
   );
+
+  const closePane = useCallback((side: PaneSide) => {
+    setPanes((prev) => {
+      const next = {
+        ...prev,
+        leftId: side === 'left' ? null : prev.leftId,
+        rightId: side === 'right' ? null : prev.rightId,
+      };
+      if (!next.leftId && !next.rightId) {
+        setPanel('launcher');
+      } else if (side === prev.focus) {
+        next.focus = next.leftId ? 'left' : 'right';
+      }
+      return next;
+    });
+  }, []);
+
+  const expandPane = useCallback((side: PaneSide) => {
+    setPanes((prev) => ({
+      leftId: side === 'left' ? prev.leftId : null,
+      rightId: side === 'right' ? prev.rightId : null,
+      focus: side,
+    }));
+  }, []);
+
+  const swapPanes = useCallback(() => {
+    setPanes((prev) => ({
+      leftId: prev.rightId,
+      rightId: prev.leftId,
+      focus: prev.focus === 'left' ? 'right' : 'left',
+    }));
+  }, []);
+
+  const movePane = useCallback((side: PaneSide) => {
+    setPanes((prev) => {
+      if (side === 'left' && prev.leftId) {
+        return {
+          leftId: prev.rightId,
+          rightId: prev.leftId,
+          focus: 'right',
+        };
+      }
+      if (side === 'right' && prev.rightId) {
+        return {
+          leftId: prev.rightId,
+          rightId: prev.leftId,
+          focus: 'left',
+        };
+      }
+      return prev;
+    });
+  }, []);
+
+  const closeWorkspace = useCallback(() => {
+    setPanes({ leftId: null, rightId: null, focus: 'left' });
+    setPanel('launcher');
+  }, []);
 
   const toggleApp = useCallback(
     async (appId: string) => {
@@ -186,6 +329,9 @@ export function HubShell({ initialSession }: HubShellProps) {
   const { workspace, user, workspaces } = session;
   const plan = getPlanById(SUBSCRIPTION_PLANS, workspace.subscriptionId);
   const selectedApps = getSelectedApps(APP_CATALOG, workspace.selectedAppIds);
+  const leftApp = resolveApp(panes.leftId);
+  const rightApp = resolveApp(panes.rightId);
+  const workspaceOpen = Boolean(leftApp || rightApp);
 
   return (
     <>
@@ -223,15 +369,86 @@ export function HubShell({ initialSession }: HubShellProps) {
         />
       </div>
 
-      <main className="flex flex-1 flex-col px-4 pb-28 pt-4 sm:px-8">
+      <main
+        className={`flex flex-1 flex-col px-4 pt-4 sm:px-8 ${
+          panel === 'workspace'
+            ? 'min-h-0 pb-24'
+            : 'pb-28'
+        }`}
+      >
         {panel === 'launcher' && (
           <AppLauncher
             apps={selectedApps}
             plan={plan}
+            openLeftId={panes.leftId}
+            openRightId={panes.rightId}
             onOpenApp={openApp}
             onManageApps={() => navigatePanel('picker')}
           />
         )}
+
+        {panel === 'workspace' && workspaceOpen ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigatePanel('launcher')}
+                className="rounded-lg bg-white/8 px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/12 hover:text-[var(--color-text)]"
+              >
+                ← App grid
+              </button>
+              <button
+                type="button"
+                onClick={closeWorkspace}
+                className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-red-300"
+              >
+                Close all
+              </button>
+              <div className="ml-auto flex flex-wrap gap-1">
+                {selectedApps
+                  .filter(
+                    (a) =>
+                      a.id !== panes.leftId &&
+                      a.id !== panes.rightId &&
+                      (a.microFrontend || a.external),
+                  )
+                  .slice(0, 6)
+                  .map((app) => (
+                    <div key={app.id} className="flex overflow-hidden rounded-lg bg-white/6">
+                      <button
+                        type="button"
+                        onClick={() => openApp(app, 'left')}
+                        className="px-2 py-1 text-[11px] text-[var(--color-text-muted)] transition hover:bg-white/12 hover:text-[var(--color-text)]"
+                        title={`Open ${app.name} on the left`}
+                      >
+                        L {app.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openApp(app, 'right')}
+                        className="border-l border-white/10 px-2 py-1 text-[11px] text-[var(--color-text-muted)] transition hover:bg-white/12 hover:text-[var(--color-text)]"
+                        title={`Open ${app.name} on the right`}
+                      >
+                        R
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </div>
+            <AppWorkspace
+              left={leftApp}
+              right={rightApp}
+              focus={panes.focus}
+              onFocus={(side) =>
+                setPanes((prev) => ({ ...prev, focus: side }))
+              }
+              onClose={closePane}
+              onExpand={expandPane}
+              onSwap={swapPanes}
+              onMove={movePane}
+            />
+          </div>
+        ) : null}
 
         {panel === 'picker' && (
           <AppPicker
@@ -240,7 +457,9 @@ export function HubShell({ initialSession }: HubShellProps) {
             plan={plan}
             subscriptionSource={workspace.subscriptionSource}
             onToggleApp={toggleApp}
-            onClose={() => navigatePanel('launcher')}
+            onClose={() =>
+              navigatePanel(workspaceOpen ? 'workspace' : 'launcher')
+            }
           />
         )}
 
@@ -251,16 +470,22 @@ export function HubShell({ initialSession }: HubShellProps) {
             plan={plan}
             onAdd={addConnection}
             onRemove={removeConnection}
-            onClose={() => navigatePanel('launcher')}
+            onClose={() =>
+              navigatePanel(workspaceOpen ? 'workspace' : 'launcher')
+            }
           />
         )}
       </main>
 
       <Dock
-        activePanel={panel}
+        activePanel={
+          panel === 'picker' || panel === 'connections' ? panel : 'launcher'
+        }
         appCount={selectedApps.length}
         connectionCount={workspace.connectedApps.length}
         onNavigate={navigatePanel}
+        workspaceOpen={workspaceOpen}
+        onOpenWorkspace={() => navigatePanel('workspace')}
       />
 
       <StatusBar

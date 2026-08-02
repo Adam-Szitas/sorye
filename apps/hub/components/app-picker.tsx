@@ -104,6 +104,16 @@ export function AppPicker({
                         Live
                       </span>
                     )}
+                    {app.status === 'beta' && (
+                      <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] uppercase text-violet-300">
+                        Beta
+                      </span>
+                    )}
+                    {app.external && (
+                      <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] uppercase text-sky-300">
+                        External
+                      </span>
+                    )}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
                     {app.description}
