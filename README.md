@@ -115,6 +115,7 @@ pnpm dev
 - Canvas remote: http://localhost:3008
 - DevKit remote: http://localhost:3009
 - Messenger remote: http://localhost:3010
+- OCR remote: http://localhost:3011
 
 Sign in with Google → open **Manage apps** → enable Canvas (and other apps) → launch from the hub.
 

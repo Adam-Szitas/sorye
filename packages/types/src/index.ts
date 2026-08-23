@@ -6,6 +6,7 @@ export * from './embed';
 export * from './messenger';
 export * from './storage';
 export * from './events';
+export * from './ocr';
 
 import type { SubscriptionTierId } from './subscription';
 import type { UserWorkspace } from './workspace';

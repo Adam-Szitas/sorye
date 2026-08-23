@@ -228,6 +228,23 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     },
   },
   {
+    id: 'ocr',
+    name: 'OCR',
+    description:
+      'Upload a scan or phone photo, extract a data matrix, and review it as a table.',
+    slug: 'ocr',
+    category: 'productivity',
+    status: 'available',
+    icon: 'ocr',
+    color: '#f59e0b',
+    mountPath: '/apps/ocr',
+    microFrontend: {
+      remoteName: 'ocr',
+      remoteEntry: 'http://localhost:3011/remoteEntry.js',
+      exposedModule: './mount',
+    },
+  },
+  {
     id: 'reports',
     name: 'Reports',
     description: 'Scheduled exports and automated reporting.',

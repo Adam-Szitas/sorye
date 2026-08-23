@@ -10,6 +10,7 @@ const REMOTE_ENV_OVERRIDES: Record<string, string | undefined> = {
   canvas: process.env.NEXT_PUBLIC_CANVAS_REMOTE,
   devkit: process.env.NEXT_PUBLIC_DEVKIT_REMOTE,
   messenger: process.env.NEXT_PUBLIC_MESSENGER_REMOTE,
+  ocr: process.env.NEXT_PUBLIC_OCR_REMOTE,
 };
 
 export function resolveRemoteEntry(config: MicroFrontendConfig): string {

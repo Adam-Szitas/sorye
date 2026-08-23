@@ -16,6 +16,7 @@ const ICON_PATHS: Record<string, string> = {
   reports: 'M6 20V10m6 20V4m6 16v-8',
   susm: 'M4 7h16v10H4zm4 3h8m-8 3h5',
   espm: 'M12 3l8 4v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V7l8-4z',
+  ocr: 'M4 5h16v14H4zm3 4h10M7 12h7M7 15h5',
 };
 
 interface AppIconProps {
