@@ -217,6 +217,17 @@ export async function getOrCreateUser(input: {
   return buildHubUser(created);
 }
 
+export async function getUserByEmail(email: string): Promise<HubUser | null> {
+  const db = getDb();
+  const [userRow] = await db
+    .select()
+    .from(schema.users)
+    .where(sql`lower(${schema.users.email}) = lower(${email})`)
+    .limit(1);
+
+  return userRow ? buildHubUser(userRow) : null;
+}
+
 export async function getHubSession(userId: string): Promise<HubSession | null> {
   const db = getDb();
   const [userRow] = await db

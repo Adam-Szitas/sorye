@@ -20,15 +20,15 @@ interface EventsGuideProps {
 const STEPS = [
   {
     title: 'Enable Messenger + another app',
-    body: 'App events need Messenger (the feed) and at least one producer app such as Tasks, Calendar, or Notes.',
+    body: 'App events need Messenger (the feed) and at least one producer app such as OCR, Tasks, Calendar, or Protocolio.',
   },
   {
     title: 'Turn on the feature flag',
     body: 'Use the switch below. Until this is on, apps may still try to emit — nothing is delivered.',
   },
   {
-    title: 'Watch Messenger #events',
-    body: 'Core movements (task created/moved, calendar saves, note saves) land in #events by default.',
+    title: 'Route in Relay',
+    body: 'Open Relay → Configure to choose which apps notify Messenger #events, email, or webhooks.',
   },
 ] as const;
 
@@ -191,7 +191,26 @@ export function EventsGuide({
           <li>
             <code>sorye.notes.saved</code> — notes created or edited
           </li>
+          <li>
+            <code>sorye.ocr.analyzed</code> — OCR scan finished
+          </li>
+          <li>
+            <code>sorye.ocr.ready</code> — OCR layout ready for Protocolio PDF
+          </li>
+          <li>
+            <code>sorye.protocolio.generated</code> — Protocolio PDF generated
+          </li>
+          <li>
+            <code>sorye.studio.loaded</code> — Studio opened a 3D mesh
+          </li>
+          <li>
+            <code>sorye.studio.too_much</code> — Studio Too-much monitor shut the GPU path down
+          </li>
         </ul>
+        <p style={{ marginTop: '0.75rem', fontSize: '0.875rem' }}>
+          Route which apps notify Messenger (and email/webhooks) in{' '}
+          <a href="/apps/relay">Relay → Configure</a>.
+        </p>
       </aside>
     </section>
   );

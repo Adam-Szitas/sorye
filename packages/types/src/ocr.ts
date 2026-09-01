@@ -1,4 +1,18 @@
-/** Structured OCR output — matrix + consumable object for downstream use. */
+/** Structured OCR / PDF text output — layout matrix + consumable object. */
+
+export interface OcrTextStyle {
+  /** Font size in rendered pixels (approx). */
+  fontSize: number;
+  /** PDF font name when available. */
+  fontName?: string;
+  bold: boolean;
+  italic: boolean;
+  /**
+   * Size vs page median:
+   * sm < ~0.85× · md ≈ normal · lg ≥ ~1.2× · xl ≥ ~1.5×
+   */
+  sizeRank: 'sm' | 'md' | 'lg' | 'xl';
+}
 
 export interface OcrWordBox {
   text: string;
@@ -7,6 +21,7 @@ export interface OcrWordBox {
   y0: number;
   x1: number;
   y1: number;
+  style?: OcrTextStyle;
 }
 
 export interface OcrCell {
@@ -15,13 +30,68 @@ export interface OcrCell {
   text: string;
   confidence: number;
   words: OcrWordBox[];
+  style?: OcrTextStyle;
 }
 
-/** One logical block from the photo: header + note + amounts. */
+export type OcrCellAlign = 'left' | 'center' | 'right';
+
+/** Evaluated role of a layout row from typography + structure. */
+export type OcrRowRole = 'title' | 'header' | 'body' | 'emphasis' | 'empty';
+
+export interface OcrLayoutCell {
+  text: string;
+  align: OcrCellAlign;
+  style: OcrTextStyle;
+  confidence: number;
+  /** Original word boxes that formed this cell. */
+  words: OcrWordBox[];
+}
+
+export interface OcrLayoutRow {
+  role: OcrRowRole;
+  cells: OcrLayoutCell[];
+  /** Median font size of non-empty cells in this row. */
+  fontSize: number;
+  boldShare: number;
+}
+
+/** Precise page grid from layout analysis (not forced header/note/amounts). */
+export interface OcrPageLayout {
+  rows: OcrLayoutRow[];
+  cols: number;
+  /** Column widths as percentages (sum ≈ 100). */
+  columnWidths: number[];
+  /** Page-level median font size used for sizeRank. */
+  medianFontSize: number;
+  /** Plain string matrix mirror for consumers. */
+  matrix: string[][];
+}
+
+/** @deprecated Prefer OcrPageLayout — kept for older item-table UI. */
+export interface OcrDocumentCell {
+  text: string;
+  colspan?: number;
+  align?: OcrCellAlign;
+  style?: OcrTextStyle;
+}
+
+/** @deprecated Prefer OcrPageLayout. */
 export interface OcrDocumentItem {
-  header: string[];
-  note: string[];
-  amounts: string[];
+  header: OcrDocumentCell[];
+  note: OcrDocumentCell[];
+  amounts: OcrDocumentCell[];
+  columnWidths: number[];
+  segmentCount: number;
+}
+
+/** @deprecated Use OcrDocumentCell[] — kept for quick text access. */
+export function itemRowTexts(cells: OcrDocumentCell[]): string[] {
+  const out: string[] = [];
+  for (const cell of cells) {
+    const span = cell.colspan ?? 1;
+    for (let i = 0; i < span; i += 1) out.push(i === 0 ? cell.text : '');
+  }
+  return out;
 }
 
 export interface OcrMatrix {
@@ -33,21 +103,22 @@ export interface OcrMatrix {
     originalBytes: number;
     processedWidth: number;
     processedHeight: number;
+    pdfPage?: number;
+    pdfPageCount?: number;
+    /** How text was obtained. */
+    extractMode?: 'pdf-text' | 'ocr';
   };
   /** Row-major cell text (empty string for blanks). */
   matrix: string[][];
   rows: number;
   cols: number;
   cells: OcrCell[];
-  /** Semantic items reconstructed from layout (header / note / amounts). */
+  /** Precise evaluated layout matrix with style metadata. */
+  layout: OcrPageLayout;
+  /** @deprecated Semantic item split — prefer `layout`. */
   items: OcrDocumentItem[];
   rawText: string;
   meanConfidence: number;
-  /**
-   * Consumable payload:
-   * - cells: flat "r{n}c{n}" map
-   * - records: row objects when a header row is detected
-   */
   object: {
     rows: number;
     cols: number;
@@ -95,4 +166,26 @@ function slugKey(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
+}
+
+export function sizeRankFromFont(
+  fontSize: number,
+  medianFontSize: number,
+): OcrTextStyle['sizeRank'] {
+  const base = Math.max(1, medianFontSize);
+  const ratio = fontSize / base;
+  if (ratio >= 1.5) return 'xl';
+  if (ratio >= 1.18) return 'lg';
+  if (ratio <= 0.85) return 'sm';
+  return 'md';
+}
+
+export function inferBoldFromFontName(fontName: string | undefined): boolean {
+  if (!fontName) return false;
+  return /bold|black|heavy|semibold|demi|extrabold|fett/i.test(fontName);
+}
+
+export function inferItalicFromFontName(fontName: string | undefined): boolean {
+  if (!fontName) return false;
+  return /italic|oblique|kursiv/i.test(fontName);
 }

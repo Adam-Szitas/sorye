@@ -2,19 +2,36 @@
 
 A subscription-based app platform monorepo. The **Hub** is your workspace OS — sign in, pick apps, connect REST APIs, and launch micro-frontends.
 
+## Documentation
+
+| Doc | Contents |
+|-----|----------|
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Core platform design — Hub, MF, events, storage |
+| [docs/SECURITY.md](./docs/SECURITY.md) | Threat model and mitigations |
+| [docs/apps/APPS.md](./docs/apps/APPS.md) | Every app in detail + communication patterns |
+
 ## Structure
 
 ```
 sorye/
 ├── apps/
-│   ├── hub/           # Next.js shell — auth, launcher, MF host
-│   ├── dashboard/     # Vite micro-frontend remote (first app)
-│   ├── calendar/      # Vite micro-frontend — scheduling
-│   └── notes/         # Vite micro-frontend — note taking
+│   ├── hub/           # Next.js shell — auth, launcher, MF host, all APIs
+│   ├── dashboard/     # Workspace overview + App events toggle
+│   ├── calendar/      # Scheduling
+│   ├── notes/         # Note taking
+│   ├── tasks/         # Kanban boards
+│   ├── relay/         # Event routing UI
+│   ├── protocolio/    # PDF template builder
+│   ├── canvas/        # Collaborative boards
+│   ├── devkit/        # API / embed developer tools
+│   ├── messenger/     # Chat + #events feed
+│   ├── ocr/           # PDF layout matrix → Protocolio
+│   └── studio/        # WebGPU CAD mesh viewer + Too-much monitor
 ├── packages/
 │   ├── sdk/           # Lit web components (@sorye/sdk)
 │   ├── types/         # Shared catalog, plans, workspace models
 │   └── db/            # Drizzle + Postgres client
+├── docs/              # Architecture, security, per-app reference
 └── turbo.json
 ```
 
@@ -94,9 +111,18 @@ pnpm install
 cp .env.example apps/hub/.env.local
 ```
 
-Fill in Google OAuth credentials and `AUTH_SECRET`.
+Fill in `AUTH_SECRET`. For local Hub, keep `AUTH_DEV_BYPASS=true` (already set in `.env.example`). Open http://localhost:3000 — you land in the launcher without Google.
 
-**Google OAuth redirect URI:** `http://localhost:3000/api/auth/callback/google`
+**Never set `AUTH_DEV_BYPASS` on Fly.io.** Production boot fails if it is `true`. Deployed auth stays Google OAuth.
+
+To exercise Google sign-in locally, set `AUTH_DEV_BYPASS=false` (or remove it) and fill:
+
+In [Google Cloud Console](https://console.cloud.google.com/apis/credentials) create a **Web application** OAuth client and set:
+
+- **Authorized JavaScript origins:** `http://localhost:3000`
+- **Authorized redirect URI:** `http://localhost:3000/api/auth/callback/google`
+
+If the consent screen is in **Testing**, add your Google account under **Test users**. Sign in at `http://localhost:3000` (not `127.0.0.1`) in a regular Chrome, Edge, or Firefox window. Google blocks sign-in in Cursor Simple Browser and in Chrome launched with remote debugging (`This browser or app may not be secure`).
 
 ### 4. Run hub + apps
 
@@ -116,8 +142,9 @@ pnpm dev
 - DevKit remote: http://localhost:3009
 - Messenger remote: http://localhost:3010
 - OCR remote: http://localhost:3011
+- Studio remote: http://localhost:3012
 
-Sign in with Google → open **Manage apps** → enable Canvas (and other apps) → launch from the hub.
+Sign in (or open Hub locally with `AUTH_DEV_BYPASS=true`) → open **Manage apps** → enable Canvas (and other apps) → launch from the hub.
 
 Team collaboration for Canvas: switch to a **team workspace**, create boards there, and teammates on the same workspace can open and edit the same board live.
 

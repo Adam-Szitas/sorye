@@ -17,6 +17,8 @@ const ICON_PATHS: Record<string, string> = {
   susm: 'M4 7h16v10H4zm4 3h8m-8 3h5',
   espm: 'M12 3l8 4v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V7l8-4z',
   ocr: 'M4 5h16v14H4zm3 4h10M7 12h7M7 15h5',
+  studio: 'M12 3l8 5v8l-8 5-8-5V8l8-5zm0 5v10m-7.5-6.5L12 13l7.5-4.5',
+  catalog: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',
 };
 
 interface AppIconProps {

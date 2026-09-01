@@ -11,6 +11,7 @@ interface AppLauncherProps {
   plan: SubscriptionPlan;
   openLeftId?: string | null;
   openRightId?: string | null;
+  unreadByApp?: Record<string, number>;
   onOpenApp: (app: AppCatalogEntry, side?: PaneSide) => void;
   onManageApps: () => void;
 }
@@ -26,10 +27,15 @@ export function AppLauncher({
   plan,
   openLeftId,
   openRightId,
+  unreadByApp = {},
   onOpenApp,
   onManageApps,
 }: AppLauncherProps) {
-  const slotsRemaining = Math.max(0, plan.maxApps - apps.length);
+  const optionalCount = apps.filter((app) => !app.alwaysAvailable).length;
+  const slotsRemaining = Math.max(0, plan.maxApps - optionalCount);
+  // High-cap plans (Enterprise uses 999 as "unlimited") would otherwise
+  // render hundreds of placeholder tiles.
+  const emptySlots = Math.min(slotsRemaining, 4);
 
   return (
     <section className="mx-auto w-full max-w-5xl flex-1">
@@ -38,12 +44,13 @@ export function AppLauncher({
           Welcome to your workspace
         </h1>
         <p className="mt-2 text-[var(--color-text-muted)]">
-          {apps.length} of {plan.maxApps === 999 ? '∞' : plan.maxApps} apps
-          active on the <span style={{ color: plan.accent }}>{plan.name}</span>{' '}
-          plan
+          {optionalCount} of {plan.maxApps === 999 ? '∞' : plan.maxApps} optional
+          apps on the <span style={{ color: plan.accent }}>{plan.name}</span>{' '}
+          plan · Catalog always on
         </p>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-          Tap an app to open it full screen, or use L / R for a side-by-side desk
+          Tap an app to open it full screen, or use L / R for a side-by-side desk.
+          Badges show unread notifications per app.
         </p>
       </header>
 
@@ -52,6 +59,7 @@ export function AppLauncher({
           const onLeft = openLeftId === app.id;
           const onRight = openRightId === app.id;
           const isOpen = onLeft || onRight;
+          const unread = unreadByApp[app.id] ?? 0;
 
           return (
             <div
@@ -65,11 +73,24 @@ export function AppLauncher({
                 onClick={() => onOpenApp(app)}
                 onPointerEnter={() => prefetchApp(app)}
                 onFocus={() => prefetchApp(app)}
-                className="app-tile flex w-full flex-col items-center gap-2 rounded-2xl p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
-                aria-label={`Open ${app.name}`}
+                className="app-tile relative flex w-full flex-col items-center gap-2 rounded-2xl p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+                aria-label={
+                  unread > 0
+                    ? `Open ${app.name}, ${unread} unread notifications`
+                    : `Open ${app.name}`
+                }
+                title={`${app.name} — ${app.usageIntro.summary}`}
               >
-                <div className="transition group-hover:scale-105 group-active:scale-95">
+                <div className="relative transition group-hover:scale-105 group-active:scale-95">
                   <AppIcon app={app} />
+                  {unread > 0 ? (
+                    <span
+                      className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-md ring-2 ring-[var(--color-surface)]"
+                      aria-hidden
+                    >
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  ) : null}
                 </div>
                 <span className="max-w-full truncate text-center text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
                   {app.name}
@@ -119,7 +140,7 @@ export function AppLauncher({
           );
         })}
 
-        {Array.from({ length: slotsRemaining }).map((_, i) => (
+        {Array.from({ length: emptySlots }).map((_, i) => (
           <button
             key={`empty-${i}`}
             type="button"

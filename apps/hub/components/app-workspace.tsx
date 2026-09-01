@@ -3,6 +3,8 @@
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
 import { AppIcon } from '@/components/app-icon';
+import { AppCatalogBrowser } from '@/components/app-catalog';
+import { AppUsageGuide } from '@/components/app-usage-guide';
 import type { AppCatalogEntry } from '@sorye/types';
 import { useEffect, useRef, useState } from 'react';
 
@@ -76,8 +78,11 @@ function AppPane({
           Close
         </button>
       </header>
+      <AppUsageGuide app={app} variant="pane" />
       <div className="flex min-h-0 flex-1 flex-col">
-        {app.external ? (
+        {app.id === 'catalog' ? (
+          <AppCatalogBrowser paneSide={side} />
+        ) : app.external ? (
           <ExternalAppFrame config={app.external} appName={app.name} />
         ) : app.microFrontend ? (
           <MicroAppLoader config={app.microFrontend} />
@@ -114,17 +119,34 @@ export function AppWorkspace({
 }: AppWorkspaceProps) {
   const [ratio, setRatio] = useState(0.5);
   const dragging = useRef(false);
+  const liveRatio = useRef(0.5);
   const shellRef = useRef<HTMLDivElement>(null);
+  const leftWrapRef = useRef<HTMLDivElement>(null);
+  const rightWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // During the drag we write flex directly to the DOM — re-rendering both
+    // micro-frontend hosts on every pointermove is wasted work. React state
+    // is committed once, on pointerup.
     function onMovePointer(e: PointerEvent) {
       if (!dragging.current || !shellRef.current) return;
       const rect = shellRef.current.getBoundingClientRect();
-      const next = (e.clientX - rect.left) / rect.width;
-      setRatio(Math.min(0.72, Math.max(0.28, next)));
+      const next = Math.min(
+        0.72,
+        Math.max(0.28, (e.clientX - rect.left) / rect.width),
+      );
+      liveRatio.current = next;
+      if (leftWrapRef.current) {
+        leftWrapRef.current.style.flex = `${next} 1 0%`;
+      }
+      if (rightWrapRef.current) {
+        rightWrapRef.current.style.flex = `${1 - next} 1 0%`;
+      }
     }
     function onUp() {
+      if (!dragging.current) return;
       dragging.current = false;
+      setRatio(liveRatio.current);
     }
     window.addEventListener('pointermove', onMovePointer);
     window.addEventListener('pointerup', onUp);
@@ -161,9 +183,13 @@ export function AppWorkspace({
         }`}
       >
         {left ? (
+          // key={app.id} lets React move a pane's subtree on swap/move
+          // instead of unmounting and remounting the federation remote.
           <div
+            key={left.id}
+            ref={leftWrapRef}
             className="flex min-h-0 min-w-0 flex-1 flex-col max-md:min-h-[40dvh]"
-            style={both ? { flex: `${ratio} 1 0` } : undefined}
+            style={both ? { flex: `${ratio} 1 0%` } : undefined}
           >
             <AppPane
               side="left"
@@ -180,6 +206,7 @@ export function AppWorkspace({
 
         {both ? (
           <div
+            key="splitter"
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize panes"
@@ -195,8 +222,10 @@ export function AppWorkspace({
 
         {right ? (
           <div
+            key={right.id}
+            ref={rightWrapRef}
             className="flex min-h-0 min-w-0 flex-1 flex-col max-md:min-h-[40dvh]"
-            style={both ? { flex: `${1 - ratio} 1 0` } : undefined}
+            style={both ? { flex: `${1 - ratio} 1 0%` } : undefined}
           >
             <AppPane
               side="right"

@@ -2,11 +2,15 @@
 
 import {
   APP_CATALOG,
+  HUB_MANAGE_APPS_EVENT,
+  HUB_OPEN_APP_EVENT,
   SUBSCRIPTION_PLANS,
   canAddConnection,
   canSelectMoreApps,
   getPlanById,
   getSelectedApps,
+  isAlwaysAvailableApp,
+  selectableAppCount,
   type AppCatalogEntry,
   type ConnectedApp,
   type HubSession,
@@ -21,10 +25,16 @@ import {
   type PaneSide,
 } from '@/components/app-workspace';
 import { Dock } from '@/components/dock';
+import { NotificationCenter } from '@/components/notification-center';
+import { NotificationToasts } from '@/components/notification-toasts';
 import { PanelSkeleton } from '@/components/panel-skeleton';
 import { StatusBar } from '@/components/status-bar';
 import { TopBar } from '@/components/top-bar';
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
+import {
+  NotificationProvider,
+  useNotifications,
+} from '@/lib/use-notifications';
 import { useHubSession } from '@/lib/use-hub-session';
 import { getClientFeatureFlags } from '@/lib/feature-flags';
 import { logHubInteraction } from '@/lib/hub-state-logger';
@@ -105,6 +115,9 @@ export function HubShell({ initialSession }: HubShellProps) {
     if (!panesReady) return;
     if (panes.leftId || panes.rightId) {
       setPanel('workspace');
+    } else {
+      // All panes closed → leave the (now empty) workspace view.
+      setPanel((current) => (current === 'workspace' ? 'launcher' : current));
     }
   }, [panesReady, panes.leftId, panes.rightId]);
 
@@ -151,7 +164,11 @@ export function HubShell({ initialSession }: HubShellProps) {
         return;
       }
 
-      if (!app.microFrontend && !app.external) {
+      const canMountInPane =
+        Boolean(app.microFrontend) ||
+        Boolean(app.external) ||
+        app.alwaysAvailable === true;
+      if (!canMountInPane) {
         router.push(app.mountPath);
         return;
       }
@@ -178,15 +195,16 @@ export function HubShell({ initialSession }: HubShellProps) {
   );
 
   const closePane = useCallback((side: PaneSide) => {
+    // Panel fallback to the launcher is handled by the panes effect above —
+    // never call setPanel from inside a state updater (it can be replayed
+    // under StrictMode/concurrent rendering).
     setPanes((prev) => {
       const next = {
         ...prev,
         leftId: side === 'left' ? null : prev.leftId,
         rightId: side === 'right' ? null : prev.rightId,
       };
-      if (!next.leftId && !next.rightId) {
-        setPanel('launcher');
-      } else if (side === prev.focus) {
+      if ((next.leftId || next.rightId) && side === prev.focus) {
         next.focus = next.leftId ? 'left' : 'right';
       }
       return next;
@@ -237,6 +255,7 @@ export function HubShell({ initialSession }: HubShellProps) {
   const toggleApp = useCallback(
     async (appId: string) => {
       if (!session) return;
+      if (isAlwaysAvailableApp(APP_CATALOG, appId)) return;
       const { workspace } = session;
       const isSelected = workspace.selectedAppIds.includes(appId);
       const plan = getPlanById(SUBSCRIPTION_PLANS, workspace.subscriptionId);
@@ -245,7 +264,8 @@ export function HubShell({ initialSession }: HubShellProps) {
       if (isSelected) {
         nextIds = workspace.selectedAppIds.filter((id) => id !== appId);
       } else {
-        if (!canSelectMoreApps(plan, workspace.selectedAppIds.length)) return;
+        const used = selectableAppCount(APP_CATALOG, workspace.selectedAppIds);
+        if (!canSelectMoreApps(plan, used)) return;
         nextIds = [...workspace.selectedAppIds, appId];
       }
 
@@ -328,6 +348,145 @@ export function HubShell({ initialSession }: HubShellProps) {
 
   const { workspace, user, workspaces } = session;
   const plan = getPlanById(SUBSCRIPTION_PLANS, workspace.subscriptionId);
+
+  return (
+    <NotificationProvider
+      workspaceId={workspace.id}
+      onNavigateToApp={(appId) => {
+        const app = APP_CATALOG.find((a) => a.id === appId);
+        if (!app) return;
+        if (app.status !== 'available' && app.status !== 'beta') return;
+        if (app.microFrontend || app.external) {
+          setPanel('workspace');
+          openApp(app, 'left');
+        } else {
+          router.push(app.mountPath);
+        }
+      }}
+    >
+      <HubShellLoaded
+        session={session}
+        workspace={workspace}
+        user={user}
+        workspaces={workspaces}
+        plan={plan}
+        panel={panel}
+        setPanel={setPanel}
+        panes={panes}
+        setPanes={setPanes}
+        panesReady={panesReady}
+        navigatePanel={navigatePanel}
+        openApp={openApp}
+        closePane={closePane}
+        expandPane={expandPane}
+        swapPanes={swapPanes}
+        movePane={movePane}
+        closeWorkspace={closeWorkspace}
+        resolveApp={resolveApp}
+        toggleApp={toggleApp}
+        addConnection={addConnection}
+        removeConnection={removeConnection}
+        logState={logState}
+        switchWorkspace={switchWorkspace}
+        createTeam={createTeam}
+        signOut={() => {
+          logState('auth.signOut');
+          signOut({ callbackUrl: '/login' });
+        }}
+      />
+    </NotificationProvider>
+  );
+}
+
+interface HubShellLoadedProps {
+  session: HubSession;
+  workspace: HubSession['workspace'];
+  user: HubSession['user'];
+  workspaces: HubSession['workspaces'];
+  plan: ReturnType<typeof getPlanById>;
+  panel: Panel;
+  setPanel: (p: Panel) => void;
+  panes: PaneState;
+  setPanes: React.Dispatch<React.SetStateAction<PaneState>>;
+  panesReady: boolean;
+  navigatePanel: (next: Panel) => void;
+  openApp: (app: AppCatalogEntry, side?: PaneSide) => void;
+  closePane: (side: PaneSide) => void;
+  expandPane: (side: PaneSide) => void;
+  swapPanes: () => void;
+  movePane: (side: PaneSide) => void;
+  closeWorkspace: () => void;
+  resolveApp: (id: string | null) => AppCatalogEntry | null;
+  toggleApp: (appId: string) => void;
+  addConnection: (
+    connection: Omit<ConnectedApp, 'id' | 'connectedAt' | 'status'>,
+  ) => Promise<void>;
+  removeConnection: (connectionId: string) => Promise<void>;
+  logState: (action: string, extra?: Record<string, unknown>) => void;
+  switchWorkspace: (workspaceId: string) => Promise<HubSession>;
+  createTeam: (name: string) => Promise<HubSession>;
+  signOut: () => void;
+}
+
+function HubShellLoaded({
+  workspace,
+  user,
+  workspaces,
+  plan,
+  panel,
+  setPanel,
+  panes,
+  setPanes,
+  navigatePanel,
+  openApp: openAppBase,
+  closePane,
+  expandPane,
+  swapPanes,
+  movePane,
+  closeWorkspace,
+  resolveApp,
+  toggleApp,
+  addConnection,
+  removeConnection,
+  logState,
+  switchWorkspace,
+  createTeam,
+  signOut,
+}: HubShellLoadedProps) {
+  const {
+    unreadByApp,
+    unreadTotal,
+    openCenter,
+    markAppRead,
+  } = useNotifications();
+
+  const openApp = useCallback(
+    (app: AppCatalogEntry, side?: PaneSide) => {
+      void markAppRead(app.id);
+      openAppBase(app, side);
+    },
+    [markAppRead, openAppBase],
+  );
+
+  useEffect(() => {
+    function onOpen(event: Event) {
+      const detail = (event as CustomEvent<{ appId?: string; side?: PaneSide }>)
+        .detail;
+      const app = APP_CATALOG.find((entry) => entry.id === detail?.appId);
+      if (!app) return;
+      openApp(app, detail.side);
+    }
+    function onManage() {
+      navigatePanel('picker');
+    }
+    window.addEventListener(HUB_OPEN_APP_EVENT, onOpen);
+    window.addEventListener(HUB_MANAGE_APPS_EVENT, onManage);
+    return () => {
+      window.removeEventListener(HUB_OPEN_APP_EVENT, onOpen);
+      window.removeEventListener(HUB_MANAGE_APPS_EVENT, onManage);
+    };
+  }, [openApp, navigatePanel]);
+
   const selectedApps = getSelectedApps(APP_CATALOG, workspace.selectedAppIds);
   const leftApp = resolveApp(panes.leftId);
   const rightApp = resolveApp(panes.rightId);
@@ -339,6 +498,8 @@ export function HubShell({ initialSession }: HubShellProps) {
         user={user}
         workspace={workspace}
         plan={plan}
+        notificationCount={unreadTotal}
+        onOpenNotifications={openCenter}
         onOpenPicker={() => {
           logState('panel.open', { panel: 'picker' });
           setPanel('picker');
@@ -347,10 +508,7 @@ export function HubShell({ initialSession }: HubShellProps) {
           logState('panel.open', { panel: 'connections' });
           setPanel('connections');
         }}
-        onSignOut={() => {
-          logState('auth.signOut');
-          signOut({ callbackUrl: '/login' });
-        }}
+        onSignOut={signOut}
       />
 
       <div className="flex justify-center px-4 pt-3 sm:px-8">
@@ -382,13 +540,20 @@ export function HubShell({ initialSession }: HubShellProps) {
             plan={plan}
             openLeftId={panes.leftId}
             openRightId={panes.rightId}
+            unreadByApp={unreadByApp}
             onOpenApp={openApp}
             onManageApps={() => navigatePanel('picker')}
           />
         )}
 
-        {panel === 'workspace' && workspaceOpen ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
+        {workspaceOpen ? (
+          // Kept mounted (hidden) while picker/connections/launcher are open
+          // so Module Federation remotes keep their in-app state.
+          <div
+            className={`min-h-0 flex-1 flex-col gap-3 ${
+              panel === 'workspace' ? 'flex' : 'hidden'
+            }`}
+          >
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -410,7 +575,7 @@ export function HubShell({ initialSession }: HubShellProps) {
                     (a) =>
                       a.id !== panes.leftId &&
                       a.id !== panes.rightId &&
-                      (a.microFrontend || a.external),
+                      (a.microFrontend || a.external || a.alwaysAvailable),
                   )
                   .slice(0, 6)
                   .map((app) => (
@@ -483,6 +648,7 @@ export function HubShell({ initialSession }: HubShellProps) {
         }
         appCount={selectedApps.length}
         connectionCount={workspace.connectedApps.length}
+        notificationCount={unreadTotal}
         onNavigate={navigatePanel}
         workspaceOpen={workspaceOpen}
         onOpenWorkspace={() => navigatePanel('workspace')}
@@ -490,10 +656,13 @@ export function HubShell({ initialSession }: HubShellProps) {
 
       <StatusBar
         plan={plan}
-        selectedCount={workspace.selectedAppIds.length}
+        selectedCount={selectableAppCount(APP_CATALOG, workspace.selectedAppIds)}
         connectionCount={workspace.connectedApps.length}
         workspaceKind={workspace.kind}
       />
+
+      <NotificationCenter />
+      <NotificationToasts />
     </>
   );
 }

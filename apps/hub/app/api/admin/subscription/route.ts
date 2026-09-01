@@ -3,13 +3,15 @@ import {
   adminAssignSubscription,
   listUsers,
 } from '@/lib/store';
+import { timingSafeEqualString } from '@/lib/security';
 import type { SubscriptionTierId } from '@sorye/types';
 import { NextResponse } from 'next/server';
 
 function isAuthorized(req: Request): boolean {
   try {
     const header = req.headers.get('x-admin-secret');
-    return header === getEnv().ADMIN_SECRET;
+    if (!header) return false;
+    return timingSafeEqualString(header, getEnv().ADMIN_SECRET);
   } catch {
     return false;
   }

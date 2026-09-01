@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PdfTemplate } from '@protocolio/sdk';
 import './styles.css';
 import TokenProvision from './components/TokenProvision';
@@ -11,10 +11,25 @@ import type { ResultState } from './components/ResultPanel';
 import ActionToolbar from './components/ActionToolbar';
 import PresetSelector from './components/PresetSelector';
 import PipelineGuide from './components/PipelineGuide';
-import { getClient, initClient, hasToken, getBaseUrl } from './services/clientService';
+import {
+  getClient,
+  initClient,
+  hasToken,
+  getBaseUrl,
+  generate as generatePdf,
+  useHubBridge,
+  bridgeHealth,
+} from './services/clientService';
 import * as TBS from './services/templateBuilderService';
 import { mergePageSettings } from './defaults';
 import { minimalPreset } from './presets';
+import {
+  fetchHandoff,
+  fetchLatestProtocolioHandoff,
+  isPdfTemplate,
+  markHandoffConsumed,
+  subscribeToHandoffs,
+} from './handoff';
 
 type EditorMode = 'visual' | 'json';
 type Panel = 'builder' | 'json';
@@ -27,9 +42,12 @@ export default function App() {
   const [parseError, setParseError] = useState<string | undefined>();
   const [jsonParsed, setJsonParsed] = useState<PdfTemplate | null>(minimalPreset);
   const [showProvision, setShowProvision] = useState(false);
-  const [connected, setConnected] = useState(() => getClient() !== null);
+  const [connected, setConnected] = useState(true);
   const [tokenReady, setTokenReady] = useState(() => hasToken());
   const [jsonEditorKey, setJsonEditorKey] = useState(0);
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<string | null>(null);
+  const handledHandoffRef = useRef<string | null>(null);
 
   const refreshBuilder = useCallback(() => {
     setBuilderVersion((v) => v + 1);
@@ -37,10 +55,92 @@ export default function App() {
 
   const baseUrl = getBaseUrl();
 
+  const ingestHandoff = useCallback(
+    async (handoffId: string, opts?: { autoGenerate?: boolean }) => {
+      if (handledHandoffRef.current === handoffId) return;
+      const handoff = await fetchHandoff(handoffId);
+      if (!handoff || !isPdfTemplate(handoff.payload)) return;
+
+      handledHandoffRef.current = handoffId;
+      const template = handoff.payload;
+      TBS.loadTemplate(template);
+      refreshBuilder();
+      setJsonParsed(template);
+      setJsonEditorKey((k) => k + 1);
+      setParseError(undefined);
+      setPanel('builder');
+      setMode('visual');
+      setHandoffNotice(
+        `Loaded from OCR · ${handoff.title}${handoff.summary ? ` · ${handoff.summary}` : ''}`,
+      );
+
+      await markHandoffConsumed(handoffId);
+
+      if (opts?.autoGenerate !== false && getClient() && hasToken()) {
+        setResult({ status: 'loading' });
+        try {
+          const generated = await generatePdf(template);
+          setResult({ status: 'generate-success', result: generated });
+          setHandoffNotice(
+            (prev) => `${prev ?? 'OCR handoff'} · PDF generated`,
+          );
+        } catch (err) {
+          setResult({
+            status: 'network-error',
+            message:
+              err instanceof Error
+                ? err.message
+                : 'Could not generate PDF from OCR handoff',
+          });
+        }
+      }
+    },
+    [refreshBuilder],
+  );
+
+  useEffect(() => {
+    useHubBridge(true);
+    setTokenReady(hasToken());
+    setConnected(true);
+    void bridgeHealth().then((health) => {
+      if (health.ok) {
+        setBridgeStatus(
+          `Developer bridge ready${health.apiUrl ? ` · ${health.apiUrl}` : ''}`,
+        );
+      } else {
+        setBridgeStatus(
+          health.detail
+            ? `Bridge: ${health.detail}`
+            : 'Bridge unreachable — start Protocolio API on PORT=3100',
+        );
+      }
+    });
+  }, []);
+
   useEffect(() => {
     TBS.loadTemplate(minimalPreset);
     refreshBuilder();
   }, [refreshBuilder]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const latest = await fetchLatestProtocolioHandoff();
+      if (!cancelled && latest) {
+        await ingestHandoff(latest.id, { autoGenerate: true });
+      }
+    })();
+
+    const unsubscribe = subscribeToHandoffs((id) => {
+      void ingestHandoff(id, { autoGenerate: true });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [ingestHandoff]);
 
   const handleProvisioned = useCallback(
     (token: string) => {
@@ -53,6 +153,7 @@ export default function App() {
   );
 
   const handleConnect = useCallback(() => {
+    useHubBridge(false);
     setConnected(true);
     setTokenReady(hasToken());
   }, []);
@@ -124,7 +225,10 @@ export default function App() {
       <header className="protocolio-header">
         <div>
           <h1>Protocolio</h1>
-          <p>Full PdfTemplate builder — same field coverage as the Protocolio tester app</p>
+          <p>
+            Full PdfTemplate builder — receives OCR layouts via workspace events
+            and generates PDFs
+          </p>
         </div>
         <div className="protocolio-header-actions">
           <span className="protocolio-badge">Developer</span>
@@ -154,14 +258,30 @@ export default function App() {
       <div className="protocolio-builder">
         <PipelineGuide />
 
+        {handoffNotice ? (
+          <div className="section handoff-notice">
+            <p>
+              <span className="badge blue">OCR handoff</span> {handoffNotice}
+            </p>
+          </div>
+        ) : null}
+
+        {bridgeStatus ? (
+          <div className="section handoff-notice">
+            <p>
+              <span className="badge green">Dev bridge</span> {bridgeStatus}
+            </p>
+          </div>
+        ) : null}
+
         <ConnectionForm onConnect={handleConnect} onHealthResult={() => {}} />
 
         {!tokenReady && (
           <div className="section token-notice">
             <p>
-              <span className="badge blue">Token required</span> Generate and
-              validate need a Bearer token. Provision one or paste an existing
-              token above.
+              <span className="badge blue">Token required</span> Direct API mode
+              needs a Bearer token. Prefer the Hub developer bridge (default), or
+              provision / paste a token below.
             </p>
             <button type="button" onClick={() => setShowProvision((v) => !v)}>
               {showProvision ? 'Hide' : 'Provision token'}

@@ -1,9 +1,21 @@
-import type { OcrDocumentItem, OcrWordBox } from '@sorye/types';
+import type {
+  OcrCellAlign,
+  OcrDocumentCell,
+  OcrDocumentItem,
+  OcrWordBox,
+} from '@sorye/types';
+
+interface OcrCellBox {
+  text: string;
+  x0: number;
+  x1: number;
+}
 
 interface OcrLine {
   y: number;
   height: number;
-  cells: string[];
+  cells: OcrCellBox[];
+  words: OcrWordBox[];
 }
 
 function median(values: number[]): number {
@@ -48,12 +60,8 @@ function nearestIndex(value: number, centers: number[]): number {
   return best;
 }
 
-function lineHasContent(cells: string[]): boolean {
-  return cells.some((cell) => cell.trim().length > 0);
-}
-
-function padRow(row: string[], cols: number): string[] {
-  return Array.from({ length: cols }, (_, i) => row[i]?.trim() ?? '');
+function lineHasContent(cells: OcrCellBox[]): boolean {
+  return cells.some((cell) => cell.text.trim().length > 0);
 }
 
 function numericScore(text: string): number {
@@ -66,25 +74,37 @@ function numericScore(text: string): number {
   return numeric / tokens.length;
 }
 
-function rowNumericScore(cells: string[]): number {
-  const filled = cells.filter((c) => c.trim());
+function rowNumericScore(cells: OcrCellBox[]): number {
+  const filled = cells.filter((c) => c.text.trim());
   if (filled.length === 0) return 0;
   let sum = 0;
-  for (const cell of filled) sum += numericScore(cell);
+  for (const cell of filled) sum += numericScore(cell.text);
   return sum / filled.length;
 }
 
-function rowTextScore(cells: string[]): number {
-  const text = cells.join(' ').trim();
+function rowTextScore(cells: OcrCellBox[]): number {
+  const text = cells.map((c) => c.text).join(' ').trim();
   if (!text) return 0;
   const words = text.split(/\s+/).length;
-  const letters = (text.match(/[a-zA-Z]/g) ?? []).length;
+  const letters = (text.match(/[a-zA-ZäöüÄÖÜß]/g) ?? []).length;
   return words + letters * 0.05;
+}
+
+function cellBoxFromWords(words: OcrWordBox[]): OcrCellBox {
+  const sorted = [...words].sort((a, b) => a.x0 - b.x0);
+  return {
+    text: sorted
+      .map((w) => w.text.trim())
+      .filter(Boolean)
+      .join(' '),
+    x0: Math.min(...sorted.map((w) => w.x0)),
+    x1: Math.max(...sorted.map((w) => w.x1)),
+  };
 }
 
 function wordsToLines(words: OcrWordBox[]): OcrLine[] {
   const usable = words.filter(
-    (w) => w.text.trim().length > 0 && w.confidence >= 20,
+    (w) => w.text.trim().length > 0,
   );
   if (usable.length === 0) return [];
 
@@ -126,13 +146,9 @@ function wordsToLines(words: OcrWordBox[]): OcrLine[] {
       cellBuckets[c]!.push(word);
     }
 
-    const cells = cellBuckets.map((bucket) =>
-      bucket
-        .sort((a, b) => a.x0 - b.x0)
-        .map((w) => w.text.trim())
-        .filter(Boolean)
-        .join(' '),
-    );
+    const cells = cellBuckets
+      .filter((bucket) => bucket.length > 0)
+      .map((bucket) => cellBoxFromWords(bucket));
 
     if (!lineHasContent(cells)) continue;
 
@@ -142,15 +158,15 @@ function wordsToLines(words: OcrWordBox[]): OcrLine[] {
       y: rowCenters[i]!,
       height: Math.max(1, Math.max(...ye) - Math.min(...ys)),
       cells,
+      words: lineWords,
     });
   }
 
   return lines.sort((a, b) => a.y - b.y);
 }
 
-function isHeaderLikeRow(cells: string[]): boolean {
-  const filled = cells.filter((c) => c.trim());
-  if (filled.length < 2) return false;
+function isHeaderLikeRow(cells: OcrCellBox[]): boolean {
+  if (cells.length < 2) return false;
   return rowNumericScore(cells) < 0.35;
 }
 
@@ -186,81 +202,145 @@ function splitLinesIntoItems(lines: OcrLine[]): OcrLine[][] {
   return items;
 }
 
-function itemFromLines(lines: OcrLine[]): OcrDocumentItem | null {
-  const rows = lines
-    .map((line) => line.cells.map((c) => c.trim()))
-    .filter(lineHasContent);
-  if (rows.length === 0) return null;
+/** Fixed full-width segment grid aligned to the source image. */
+function segmentCount(words: OcrWordBox[]): number {
+  if (words.length === 0) return 6;
+  const widths = words.map((w) => Math.max(1, w.x1 - w.x0));
+  const threshold = Math.max(8, median(widths) * 0.5);
+  const centers = cluster1D(
+    words.map((w) => (w.x0 + w.x1) / 2),
+    threshold,
+  );
+  return Math.min(24, Math.max(centers.length, 4));
+}
 
-  const header = rows[0]!;
-  const rest = rows.slice(1);
+function segmentIndex(word: OcrWordBox, n: number, imageWidth: number): number {
+  if (imageWidth <= 0) return 0;
+  const cx = (word.x0 + word.x1) / 2;
+  const idx = Math.floor((cx / imageWidth) * n);
+  return Math.max(0, Math.min(n - 1, idx));
+}
 
-  if (rest.length === 0) {
-    const cols = header.length;
+function equalSegmentWidths(n: number): number[] {
+  const pct = 100 / n;
+  return Array.from({ length: n }, () => pct);
+}
+
+function rowToSegmentRow(
+  words: OcrWordBox[],
+  n: number,
+  imageWidth: number,
+  kind: 'header' | 'note' | 'amounts',
+): OcrDocumentCell[] {
+  if (words.length === 0) {
+    return Array.from({ length: n }, () => ({
+      text: '',
+      align: inferCellAlign('', kind),
+    }));
+  }
+
+  const buckets: OcrWordBox[][] = Array.from({ length: n }, () => []);
+  for (const word of words) {
+    buckets[segmentIndex(word, n, imageWidth)]!.push(word);
+  }
+
+  return buckets.map((bucket) => {
+    const text = bucket.length > 0 ? cellBoxFromWords(bucket).text : '';
     return {
-      header: padRow(header, cols),
-      note: padRow([], cols),
-      amounts: padRow([], cols),
+      text,
+      align: inferCellAlign(text, kind),
+    };
+  });
+}
+
+function inferCellAlign(
+  text: string,
+  kind: 'header' | 'note' | 'amounts',
+): OcrCellAlign {
+  const trimmed = text.trim();
+  if (!trimmed) return kind === 'amounts' ? 'right' : 'left';
+  if (kind === 'amounts' || numericScore(trimmed) >= 0.55) return 'right';
+  if (kind === 'header' && trimmed.length <= 18) return 'center';
+  return 'left';
+}
+
+function itemFromLines(
+  lines: OcrLine[],
+  imageWidth: number,
+): OcrDocumentItem | null {
+  const usable = lines.filter(
+    (line) => lineHasContent(line.cells) || line.words.length > 0,
+  );
+  if (usable.length === 0) return null;
+
+  const allWords = usable.flatMap((line) => line.words);
+  const n = segmentCount(allWords);
+  const columnWidths = equalSegmentWidths(n);
+  const width = imageWidth > 0 ? imageWidth : 1;
+
+  const headerLine = usable[0]!;
+  const header = rowToSegmentRow(headerLine.words, n, width, 'header');
+
+  const rest = usable.slice(1);
+  if (rest.length === 0) {
+    return {
+      header,
+      note: Array.from({ length: n }, () => ({ text: '', align: 'left' as const })),
+      amounts: Array.from({ length: n }, () => ({ text: '', align: 'right' as const })),
+      columnWidths,
+      segmentCount: n,
     };
   }
 
   if (rest.length === 1) {
-    const cols = Math.max(header.length, rest[0]!.length);
     const only = rest[0]!;
-    if (rowNumericScore(only) >= 0.55) {
+    if (rowNumericScore(only.cells) >= 0.55) {
       return {
-        header: padRow(header, cols),
-        note: padRow([], cols),
-        amounts: padRow(only, cols),
+        header,
+        note: Array.from({ length: n }, () => ({ text: '', align: 'left' as const })),
+        amounts: rowToSegmentRow(only.words, n, width, 'amounts'),
+        columnWidths,
+        segmentCount: n,
       };
     }
     return {
-      header: padRow(header, cols),
-      note: padRow(only, cols),
-      amounts: padRow([], cols),
+      header,
+      note: rowToSegmentRow(only.words, n, width, 'note'),
+      amounts: Array.from({ length: n }, () => ({ text: '', align: 'right' as const })),
+      columnWidths,
+      segmentCount: n,
     };
   }
 
-  let noteIdx = 0;
-  let amountsIdx = rest.length - 1;
+  let noteLine = rest[0]!;
+  let amountsLine = rest[rest.length - 1]!;
+  let bestNoteScore = -1;
+  let bestAmountsScore = -1;
 
-  if (rest.length >= 2) {
-    let bestNote = 0;
-    let bestNoteScore = -1;
-    let bestAmounts = rest.length - 1;
-    let bestAmountsScore = -1;
-
-    for (let i = 0; i < rest.length; i += 1) {
-      const textScore = rowTextScore(rest[i]!);
-      const numScore = rowNumericScore(rest[i]!);
-      if (textScore > bestNoteScore) {
-        bestNoteScore = textScore;
-        bestNote = i;
-      }
-      if (numScore > bestAmountsScore) {
-        bestAmountsScore = numScore;
-        bestAmounts = i;
-      }
+  for (const line of rest) {
+    const textScore = rowTextScore(line.cells);
+    const numScore = rowNumericScore(line.cells);
+    if (textScore > bestNoteScore) {
+      bestNoteScore = textScore;
+      noteLine = line;
     }
-
-    noteIdx = bestNote;
-    amountsIdx = bestAmounts;
-    if (noteIdx === amountsIdx && rest.length >= 2) {
-      amountsIdx = noteIdx === rest.length - 1 ? rest.length - 2 : rest.length - 1;
+    if (numScore > bestAmountsScore) {
+      bestAmountsScore = numScore;
+      amountsLine = line;
     }
   }
 
-  const cols = Math.max(
-    header.length,
-    rest[noteIdx]?.length ?? 0,
-    rest[amountsIdx]?.length ?? 0,
-    ...rest.map((r) => r.length),
-  );
+  if (noteLine === amountsLine && rest.length >= 2) {
+    amountsLine = rest[rest.length - 1]!;
+    noteLine = rest[0]!;
+  }
 
   return {
-    header: padRow(header, cols),
-    note: padRow(rest[noteIdx] ?? [], cols),
-    amounts: padRow(rest[amountsIdx] ?? [], cols),
+    header,
+    note: rowToSegmentRow(noteLine.words, n, width, 'note'),
+    amounts: rowToSegmentRow(amountsLine.words, n, width, 'amounts'),
+    columnWidths,
+    segmentCount: n,
   };
 }
 
@@ -289,44 +369,143 @@ function splitMatrixIntoItems(matrix: string[][]): string[][][] {
   const filled = matrix.filter(matrixRowHasContent);
   if (filled.length <= 3) return [filled];
 
-  const itemSize = 3;
   const grouped: string[][][] = [];
-  for (let i = 0; i < filled.length; i += itemSize) {
-    grouped.push(filled.slice(i, i + itemSize));
+  for (let i = 0; i < filled.length; i += 3) {
+    grouped.push(filled.slice(i, i + 3));
   }
   return grouped;
 }
 
-function itemFromMatrixRows(rows: string[][]): OcrDocumentItem | null {
-  const lines: OcrLine[] = rows.map((cells, i) => ({
-    y: i,
-    height: 1,
-    cells,
+function cellsFromTextRow(
+  row: string[],
+  kind: 'header' | 'note' | 'amounts',
+): OcrDocumentCell[] {
+  const filled = row.filter((c) => c.trim());
+  if (filled.length === 1 && row.length > 1 && kind === 'note') {
+    return [{ text: filled[0]!, colspan: row.length, align: 'left' }];
+  }
+  return row.map((text) => ({
+    text,
+    align: inferCellAlign(text, kind),
   }));
-  return itemFromLines(lines);
+}
+
+function padRowToSegments(row: OcrDocumentCell[], n: number): OcrDocumentCell[] {
+  if (row.length >= n) return row.slice(0, n);
+  return [
+    ...row,
+    ...Array.from({ length: n - row.length }, () => ({
+      text: '',
+      align: 'left' as const,
+    })),
+  ];
+}
+
+function itemFromMatrixRows(rows: string[][]): OcrDocumentItem | null {
+  const usable = rows.filter(matrixRowHasContent);
+  if (usable.length === 0) return null;
+
+  const cols = Math.max(...usable.map((r) => r.length));
+  const pad = (row: string[]) =>
+    Array.from({ length: cols }, (_, i) => row[i]?.trim() ?? '');
+  const columnWidths = equalSegmentWidths(cols);
+
+  const header = padRowToSegments(cellsFromTextRow(pad(usable[0]!), 'header'), cols);
+  const rest = usable.slice(1);
+
+  if (rest.length === 0) {
+    return {
+      header,
+      note: Array.from({ length: cols }, () => ({ text: '', align: 'left' as const })),
+      amounts: Array.from({ length: cols }, () => ({ text: '', align: 'right' as const })),
+      columnWidths,
+      segmentCount: cols,
+    };
+  }
+
+  if (rest.length === 1) {
+    const row = pad(rest[0]!);
+    if (rowNumericScore(row.map((text) => ({ text, x0: 0, x1: 1 }))) >= 0.55) {
+      return {
+        header,
+        note: Array.from({ length: cols }, () => ({ text: '', align: 'left' as const })),
+        amounts: padRowToSegments(cellsFromTextRow(row, 'amounts'), cols),
+        columnWidths,
+        segmentCount: cols,
+      };
+    }
+    return {
+      header,
+      note: padRowToSegments(cellsFromTextRow(row, 'note'), cols),
+      amounts: Array.from({ length: cols }, () => ({ text: '', align: 'right' as const })),
+      columnWidths,
+      segmentCount: cols,
+    };
+  }
+
+  return {
+    header,
+    note: padRowToSegments(cellsFromTextRow(pad(rest[0]!), 'note'), cols),
+    amounts: padRowToSegments(
+      cellsFromTextRow(pad(rest[rest.length - 1]!), 'amounts'),
+      cols,
+    ),
+    columnWidths,
+    segmentCount: cols,
+  };
 }
 
 export function parseDocumentItems(
   words: OcrWordBox[],
   matrix: string[][],
+  imageWidth = 0,
 ): OcrDocumentItem[] {
   const lines = wordsToLines(words);
   const lineItems = splitLinesIntoItems(lines)
-    .map(itemFromLines)
+    .map((group) => itemFromLines(group, imageWidth))
     .filter((item): item is OcrDocumentItem => item !== null);
 
-  if (lineItems.length > 0) return lineItems;
+  if (lineItems.length > 0 && itemsHaveContent(lineItems)) return lineItems;
 
   return splitMatrixIntoItems(matrix)
     .map(itemFromMatrixRows)
     .filter((item): item is OcrDocumentItem => item !== null);
 }
 
+function textLinesFromDocument(rawText: string, matrix: string[][]): string[] {
+  const fromText = rawText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (fromText.length > 0) return fromText;
+
+  return matrix
+    .map((row) => row.map((cell) => cell.trim()).filter(Boolean).join(' '))
+    .filter(Boolean);
+}
+
+/** Plain line-by-line view when header/note/amounts layout cannot be inferred. */
+export function parseFallbackItemsFromText(
+  rawText: string,
+  matrix: string[][] = [],
+): OcrDocumentItem[] {
+  const lines = textLinesFromDocument(rawText, matrix);
+  if (lines.length === 0) return [];
+
+  return lines.map((line) => ({
+    header: [{ text: line, align: 'left' as const }],
+    note: [{ text: '', align: 'left' as const }],
+    amounts: [{ text: '', align: 'right' as const }],
+    columnWidths: [100],
+    segmentCount: 1,
+  }));
+}
+
 export function itemsHaveContent(items: OcrDocumentItem[]): boolean {
   return items.some(
     (item) =>
-      item.header.some((c) => c.trim()) ||
-      item.note.some((c) => c.trim()) ||
-      item.amounts.some((c) => c.trim()),
+      item.header.some((c) => c.text.trim()) ||
+      item.note.some((c) => c.text.trim()) ||
+      item.amounts.some((c) => c.text.trim()),
   );
 }

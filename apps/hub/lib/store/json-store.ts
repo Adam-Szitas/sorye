@@ -1,6 +1,4 @@
 import { randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import {
   SUBSCRIPTION_PLANS,
   canCreateTeamWorkspace,
@@ -12,6 +10,7 @@ import {
   type Workspace,
   type WorkspaceSummary,
 } from '@sorye/types';
+import { jsonDataFile } from './json-file';
 import {
   getWorkspaceStoragePublic,
   getWorkspaceStorageRecord,
@@ -22,24 +21,12 @@ interface StoreData {
   workspaces: Record<string, Workspace>;
 }
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-const STORE_PATH = path.join(DATA_DIR, 'store.json');
+const storeFile = jsonDataFile<StoreData>('store.json', () => ({
+  users: {},
+  workspaces: {},
+}));
 
-const DEFAULT_STORE: StoreData = { users: {}, workspaces: {} };
-
-async function readStore(): Promise<StoreData> {
-  try {
-    const raw = await readFile(STORE_PATH, 'utf-8');
-    return JSON.parse(raw) as StoreData;
-  } catch {
-    return structuredClone(DEFAULT_STORE);
-  }
-}
-
-async function writeStore(data: StoreData): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
+const readStore = () => storeFile.read();
 
 function createPersonalWorkspace(userId: string): Workspace {
   return {
@@ -86,33 +73,54 @@ export async function getOrCreateUser(input: {
   image?: string;
   isAdmin: boolean;
 }): Promise<HubUser> {
-  const store = await readStore();
-  const existing = store.users[input.id];
-  if (existing) {
-    existing.displayName = input.displayName;
-    existing.image = input.image;
-    existing.isAdmin = input.isAdmin;
-    store.users[input.id] = existing;
-    await writeStore(store);
-    return existing;
+  // Fast path: profile unchanged → no write. This runs on every request
+  // via ensureHubUser(), so skipping the disk write matters.
+  const snapshot = await readStore();
+  const cached = snapshot.users[input.id];
+  if (
+    cached &&
+    cached.displayName === input.displayName &&
+    cached.image === input.image &&
+    cached.isAdmin === input.isAdmin
+  ) {
+    return cached;
   }
 
-  const workspace = createPersonalWorkspace(input.id);
-  const user: HubUser = {
-    id: input.id,
-    email: input.email,
-    displayName: input.displayName,
-    image: input.image,
-    personalWorkspaceId: workspace.id,
-    teamWorkspaceIds: [],
-    activeWorkspaceId: workspace.id,
-    isAdmin: input.isAdmin,
-  };
+  return storeFile.update((store) => {
+    const existing = store.users[input.id];
+    if (existing) {
+      existing.displayName = input.displayName;
+      existing.image = input.image;
+      existing.isAdmin = input.isAdmin;
+      return existing;
+    }
 
-  store.workspaces[workspace.id] = workspace;
-  store.users[input.id] = user;
-  await writeStore(store);
-  return user;
+    const workspace = createPersonalWorkspace(input.id);
+    const user: HubUser = {
+      id: input.id,
+      email: input.email,
+      displayName: input.displayName,
+      image: input.image,
+      personalWorkspaceId: workspace.id,
+      teamWorkspaceIds: [],
+      activeWorkspaceId: workspace.id,
+      isAdmin: input.isAdmin,
+    };
+
+    store.workspaces[workspace.id] = workspace;
+    store.users[input.id] = user;
+    return user;
+  });
+}
+
+export async function getUserByEmail(email: string): Promise<HubUser | null> {
+  const store = await readStore();
+  const needle = email.toLowerCase();
+  return (
+    Object.values(store.users).find(
+      (user) => user.email.toLowerCase() === needle,
+    ) ?? null
+  );
 }
 
 export async function getHubSession(userId: string): Promise<HubSession | null> {
@@ -155,20 +163,35 @@ export async function updateWorkspace(
     Pick<Workspace, 'selectedAppIds' | 'connectedApps' | 'name' | 'memberIds'>
   >,
 ): Promise<HubSession | null> {
-  const store = await readStore();
-  const user = store.users[userId];
-  if (!user) return null;
+  const applied = await storeFile.update((store) => {
+    const user = store.users[userId];
+    if (!user) return false;
 
-  const workspace = store.workspaces[workspaceId];
-  if (!workspace || !workspace.memberIds.includes(userId)) return null;
+    const workspace = store.workspaces[workspaceId];
+    if (!workspace || !workspace.memberIds.includes(userId)) return false;
 
-  store.workspaces[workspaceId] = {
-    ...workspace,
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  };
+    const safePatch: Partial<
+      Pick<Workspace, 'selectedAppIds' | 'connectedApps' | 'name'>
+    > = {};
+    if (patch.selectedAppIds !== undefined) {
+      safePatch.selectedAppIds = patch.selectedAppIds;
+    }
+    if (patch.connectedApps !== undefined) {
+      safePatch.connectedApps = patch.connectedApps;
+    }
+    if (patch.name !== undefined) {
+      safePatch.name = patch.name;
+    }
 
-  await writeStore(store);
+    store.workspaces[workspaceId] = {
+      ...workspace,
+      ...safePatch,
+      updatedAt: new Date().toISOString(),
+    };
+    return true;
+  });
+
+  if (!applied) return null;
   return getHubSession(userId);
 }
 
@@ -176,16 +199,18 @@ export async function switchActiveWorkspace(
   userId: string,
   workspaceId: string,
 ): Promise<HubSession | null> {
-  const store = await readStore();
-  const user = store.users[userId];
-  if (!user) return null;
+  const applied = await storeFile.update((store) => {
+    const user = store.users[userId];
+    if (!user) return false;
 
-  const allowed = [user.personalWorkspaceId, ...user.teamWorkspaceIds];
-  if (!allowed.includes(workspaceId)) return null;
+    const allowed = [user.personalWorkspaceId, ...user.teamWorkspaceIds];
+    if (!allowed.includes(workspaceId)) return false;
 
-  user.activeWorkspaceId = workspaceId;
-  store.users[userId] = user;
-  await writeStore(store);
+    user.activeWorkspaceId = workspaceId;
+    return true;
+  });
+
+  if (!applied) return null;
   return getHubSession(userId);
 }
 
@@ -193,36 +218,38 @@ export async function createTeamWorkspace(
   userId: string,
   name: string,
 ): Promise<HubSession | null> {
-  const store = await readStore();
-  const user = store.users[userId];
-  if (!user) return null;
+  const applied = await storeFile.update((store) => {
+    const user = store.users[userId];
+    if (!user) return false;
 
-  const personal = store.workspaces[user.personalWorkspaceId];
-  if (!personal) return null;
+    const personal = store.workspaces[user.personalWorkspaceId];
+    if (!personal) return false;
 
-  const plan = getPlanById(SUBSCRIPTION_PLANS, personal.subscriptionId);
-  if (!canCreateTeamWorkspace(plan, user.teamWorkspaceIds.length)) {
-    return null;
-  }
+    const plan = getPlanById(SUBSCRIPTION_PLANS, personal.subscriptionId);
+    if (!canCreateTeamWorkspace(plan, user.teamWorkspaceIds.length)) {
+      return false;
+    }
 
-  const team: Workspace = {
-    id: `ws-team-${randomUUID().slice(0, 8)}`,
-    kind: 'team',
-    name,
-    ownerId: userId,
-    memberIds: [userId],
-    subscriptionId: personal.subscriptionId,
-    subscriptionSource: personal.subscriptionSource,
-    selectedAppIds: [...personal.selectedAppIds],
-    connectedApps: [],
-    updatedAt: new Date().toISOString(),
-  };
+    const team: Workspace = {
+      id: `ws-team-${randomUUID().slice(0, 8)}`,
+      kind: 'team',
+      name,
+      ownerId: userId,
+      memberIds: [userId],
+      subscriptionId: personal.subscriptionId,
+      subscriptionSource: personal.subscriptionSource,
+      selectedAppIds: [...personal.selectedAppIds],
+      connectedApps: [],
+      updatedAt: new Date().toISOString(),
+    };
 
-  store.workspaces[team.id] = team;
-  user.teamWorkspaceIds = [...user.teamWorkspaceIds, team.id];
-  user.activeWorkspaceId = team.id;
-  store.users[userId] = user;
-  await writeStore(store);
+    store.workspaces[team.id] = team;
+    user.teamWorkspaceIds = [...user.teamWorkspaceIds, team.id];
+    user.activeWorkspaceId = team.id;
+    return true;
+  });
+
+  if (!applied) return null;
   return getHubSession(userId);
 }
 
@@ -230,32 +257,32 @@ export async function adminAssignSubscription(
   email: string,
   subscriptionId: SubscriptionTierId,
 ): Promise<Workspace | null> {
-  const store = await readStore();
-  const user = Object.values(store.users).find(
-    (u) => u.email.toLowerCase() === email.toLowerCase(),
-  );
-  if (!user) return null;
-
-  const plan = getPlanById(SUBSCRIPTION_PLANS, subscriptionId);
-  const workspaceIds = [user.personalWorkspaceId, ...user.teamWorkspaceIds];
-
-  for (const id of workspaceIds) {
-    const ws = store.workspaces[id];
-    if (!ws) continue;
-    store.workspaces[id] = trimWorkspaceToPlanLimits(
-      {
-        ...ws,
-        subscriptionId,
-        subscriptionSource: 'admin',
-        updatedAt: new Date().toISOString(),
-      },
-      plan.maxApps,
-      plan.maxConnections,
+  return storeFile.update((store) => {
+    const user = Object.values(store.users).find(
+      (u) => u.email.toLowerCase() === email.toLowerCase(),
     );
-  }
+    if (!user) return null;
 
-  await writeStore(store);
-  return store.workspaces[user.personalWorkspaceId] ?? null;
+    const plan = getPlanById(SUBSCRIPTION_PLANS, subscriptionId);
+    const workspaceIds = [user.personalWorkspaceId, ...user.teamWorkspaceIds];
+
+    for (const id of workspaceIds) {
+      const ws = store.workspaces[id];
+      if (!ws) continue;
+      store.workspaces[id] = trimWorkspaceToPlanLimits(
+        {
+          ...ws,
+          subscriptionId,
+          subscriptionSource: 'admin',
+          updatedAt: new Date().toISOString(),
+        },
+        plan.maxApps,
+        plan.maxConnections,
+      );
+    }
+
+    return store.workspaces[user.personalWorkspaceId] ?? null;
+  });
 }
 
 export async function listUsers(): Promise<

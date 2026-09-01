@@ -16,8 +16,10 @@ const envSchema = z
 
     AUTH_SECRET: z.string().min(16),
     AUTH_URL: z.string().url().optional(),
-    AUTH_GOOGLE_ID: z.string().min(1),
-    AUTH_GOOGLE_SECRET: z.string().min(1),
+    AUTH_GOOGLE_ID: z.string().min(1).optional(),
+    AUTH_GOOGLE_SECRET: z.string().min(1).optional(),
+    /** Local only. Must be the string "true". Ignored (and rejected) in production. */
+    AUTH_DEV_BYPASS: z.string().optional(),
 
     ADMIN_SECRET: z.string().min(8),
     ADMIN_EMAILS: z.string().default(''),
@@ -65,6 +67,36 @@ const envSchema = z
           'STORE_DRIVER=json is not allowed in production. Set STORE_DRIVER=postgres and provide DATABASE_URL.',
         path: ['STORE_DRIVER'],
       });
+    }
+
+    if (env.NODE_ENV === 'production' && env.AUTH_DEV_BYPASS === 'true') {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'AUTH_DEV_BYPASS is local-only and is not allowed when NODE_ENV=production.',
+        path: ['AUTH_DEV_BYPASS'],
+      });
+    }
+
+    const localBypass =
+      env.NODE_ENV === 'development' && env.AUTH_DEV_BYPASS === 'true';
+    if (!localBypass) {
+      if (!env.AUTH_GOOGLE_ID) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'AUTH_GOOGLE_ID is required unless AUTH_DEV_BYPASS=true in development.',
+          path: ['AUTH_GOOGLE_ID'],
+        });
+      }
+      if (!env.AUTH_GOOGLE_SECRET) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'AUTH_GOOGLE_SECRET is required unless AUTH_DEV_BYPASS=true in development.',
+          path: ['AUTH_GOOGLE_SECRET'],
+        });
+      }
     }
   });
 

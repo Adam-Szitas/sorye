@@ -1,4 +1,3 @@
-import { auth } from '@/auth';
 import { DevPlanForm } from '@/components/dev-plan-form';
 import { getAdminEmails, getEnv } from '@/lib/env';
 import { ensureHubUser } from '@/lib/ensure-user';
@@ -16,14 +15,14 @@ async function setMyPlan(formData: FormData) {
     throw new Error('Dev Console is only available in development.');
   }
 
-  const session = await auth();
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) {
+  const hub = await ensureHubUser();
+  if (!hub?.user.email) {
     redirect('/login?callbackUrl=/dev');
   }
 
+  const email = hub.user.email.toLowerCase();
   const admins = getAdminEmails();
-  if (!admins.has(email)) {
+  if (!admins.has(email) && !hub.user.isAdmin) {
     throw new Error('Forbidden: add your email to ADMIN_EMAILS to use /dev.');
   }
 
@@ -89,14 +88,14 @@ async function DevConsoleInner() {
     );
   }
 
-  const session = await auth();
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) {
+  const hubSession = await ensureHubUser();
+  const email = hubSession?.user.email?.toLowerCase();
+  if (!email || !hubSession) {
     redirect('/login?callbackUrl=/dev');
   }
 
   const admins = getAdminEmails();
-  if (!admins.has(email)) {
+  if (!admins.has(email) && !hubSession.user.isAdmin) {
     return (
       <div className="mx-auto max-w-xl px-6 py-10">
         <div className="glass rounded-2xl p-8">
@@ -121,9 +120,8 @@ async function DevConsoleInner() {
     );
   }
 
-  const hubSession = await ensureHubUser();
   const currentPlanId =
-    hubSession?.workspace.subscriptionId ?? ('free' as SubscriptionTierId);
+    hubSession.workspace.subscriptionId ?? ('free' as SubscriptionTierId);
 
   return (
     <DevPlanForm

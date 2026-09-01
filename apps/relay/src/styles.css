@@ -366,6 +366,11 @@
   color: #93c5fd;
 }
 
+.kind-messenger {
+  background: rgba(45, 212, 191, 0.15);
+  color: #5eead4;
+}
+
 .kind-whatsapp {
   background: rgba(52, 211, 153, 0.15);
   color: #6ee7b7;
@@ -406,6 +411,54 @@
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-top: 0.75rem;
+}
+
+.relay-banner {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  font-size: 0.875rem;
+}
+
+.relay-banner.warn {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+}
+
+.relay-banner a,
+.relay-callout a,
+.relay-empty a {
+  color: #93c5fd;
+}
+
+.relay-callout {
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+.relay-notice {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  color: #86efac;
+}
+
+.source-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.source-row strong {
+  font-weight: 600;
+}
+
+.source-row em {
+  font-style: normal;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 @media (max-width: 700px) {

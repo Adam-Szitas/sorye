@@ -1,6 +1,6 @@
 import type { SubscriptionTierId, SubscriptionSource } from './subscription';
 import type { WorkspaceStoragePublic } from './storage';
-import { DEFAULT_WORKSPACE_STORAGE } from './storage';
+import { APP_CATALOG, isAlwaysAvailableApp } from './apps';
 
 export type WorkspaceKind = 'personal' | 'team';
 
@@ -71,12 +71,13 @@ export function trimWorkspaceToPlanLimits(
   maxApps: number,
   maxConnections: number,
 ): Workspace {
+  const rest = workspace.selectedAppIds.filter(
+    (id) => !isAlwaysAvailableApp(APP_CATALOG, id),
+  );
   return {
     ...workspace,
     selectedAppIds:
-      workspace.selectedAppIds.length > maxApps
-        ? workspace.selectedAppIds.slice(0, maxApps)
-        : workspace.selectedAppIds,
+      rest.length > maxApps ? rest.slice(0, maxApps) : rest,
     connectedApps:
       workspace.connectedApps.length > maxConnections
         ? workspace.connectedApps.slice(0, maxConnections)

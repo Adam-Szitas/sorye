@@ -9,6 +9,9 @@ function activeStore() {
 export const getOrCreateUser = (...args: Parameters<typeof jsonStore.getOrCreateUser>) =>
   activeStore().getOrCreateUser(...args);
 
+export const getUserByEmail = (...args: Parameters<typeof jsonStore.getUserByEmail>) =>
+  activeStore().getUserByEmail(...args);
+
 export const getHubSession = (...args: Parameters<typeof jsonStore.getHubSession>) =>
   activeStore().getHubSession(...args);
 

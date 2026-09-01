@@ -4,6 +4,7 @@ import type {
   MessengerMessage,
   MessengerMessageKind,
 } from '@sorye/types';
+import { HUB_NOTIFY_EVENT } from '@sorye/types';
 
 export async function loadMessenger(): Promise<MessengerBootstrap> {
   const res = await fetch('/api/messenger', { credentials: 'include' });
@@ -73,4 +74,21 @@ export async function pollMessages(
   if (!res.ok) return [];
   const data = (await res.json()) as { messages: MessengerMessage[] };
   return data.messages ?? [];
+}
+
+export async function markMessengerRead(channelId?: string): Promise<void> {
+  await fetch('/api/messenger', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'mark-read',
+      ...(channelId ? { channelId } : {}),
+    }),
+  });
+  try {
+    window.dispatchEvent(new CustomEvent(HUB_NOTIFY_EVENT));
+  } catch {
+    // ignore
+  }
 }

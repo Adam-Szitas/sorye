@@ -1,0 +1,27 @@
+{
+  "name": "@sorye/studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3012 --strictPort",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --port 3012",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sorye/types": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@module-federation/vite": "^1.2.7",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-react": "^4.5.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

@@ -1,5 +1,3 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import { randomUUID } from 'crypto';
 import {
   DEFAULT_EVENT_SETTINGS,
@@ -7,47 +5,33 @@ import {
   SYSTEM_EVENTS_AUTHOR,
   formatEventMessageText,
   isMessengerEventsEligible,
+  relaySourceFromEventName,
   type HubSession,
   type WorkspaceEvent,
   type WorkspaceEventName,
   type WorkspaceEventPayload,
   type WorkspaceEventSettings,
+  type WorkspaceNotification,
 } from '@sorye/types';
+import { deliverEventViaRelay } from '@/lib/relay';
+import { recordWorkspaceNotification } from '@/lib/notifications';
+import { jsonDataFile } from '@/lib/store/json-file';
 import { ensureEventsChannel, postSystemMessage } from '@/lib/store/messenger';
 import { getHubSession, getHubSessionForWorkspace } from '@/lib/store';
-
-const DATA_DIR = path.join(process.cwd(), '.data');
-const SETTINGS_PATH = path.join(DATA_DIR, 'event-settings.json');
-const ACTIVATED_PATH = path.join(DATA_DIR, 'event-activated.json');
 
 type SettingsStore = Record<string, WorkspaceEventSettings>;
 type ActivatedStore = Record<string, boolean>;
 
-async function readSettings(): Promise<SettingsStore> {
-  try {
-    return JSON.parse(await readFile(SETTINGS_PATH, 'utf-8')) as SettingsStore;
-  } catch {
-    return {};
-  }
-}
+const settingsFile = jsonDataFile<SettingsStore>(
+  'event-settings.json',
+  () => ({}),
+);
+const activatedFile = jsonDataFile<ActivatedStore>(
+  'event-activated.json',
+  () => ({}),
+);
 
-async function writeSettings(data: SettingsStore) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(SETTINGS_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
-
-async function readActivated(): Promise<ActivatedStore> {
-  try {
-    return JSON.parse(await readFile(ACTIVATED_PATH, 'utf-8')) as ActivatedStore;
-  } catch {
-    return {};
-  }
-}
-
-async function writeActivated(data: ActivatedStore) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(ACTIVATED_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
+const readSettings = () => settingsFile.read();
 
 function normalizeSettings(
   raw: Partial<WorkspaceEventSettings> | undefined,
@@ -72,15 +56,15 @@ export async function setEventSettings(
   workspaceId: string,
   patch: Partial<WorkspaceEventSettings>,
 ): Promise<WorkspaceEventSettings> {
-  const store = await readSettings();
-  const next = normalizeSettings({
-    ...store[workspaceId],
-    ...patch,
-    updatedAt: new Date().toISOString(),
+  return settingsFile.update((store) => {
+    const next = normalizeSettings({
+      ...store[workspaceId],
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    });
+    store[workspaceId] = next;
+    return next;
   });
-  store[workspaceId] = next;
-  await writeSettings(store);
-  return next;
 }
 
 export interface PublishEventResult {
@@ -89,9 +73,31 @@ export interface PublishEventResult {
   alive: boolean;
   delivered: boolean;
   event: WorkspaceEvent;
+  notification?: WorkspaceNotification;
   messageId?: string;
   channelId?: string;
   reason?: string;
+}
+
+async function maybeRecordNotification(
+  event: WorkspaceEvent,
+  workspaceId: string,
+): Promise<WorkspaceNotification | undefined> {
+  if (event.name.startsWith('sorye.system.')) return undefined;
+  if (event.name === 'sorye.test.ping') return undefined;
+
+  const appId =
+    (typeof event.payload.appId === 'string' ? event.payload.appId : null) ??
+    relaySourceFromEventName(event.name);
+  if (!appId) return undefined;
+
+  return recordWorkspaceNotification({
+    workspaceId,
+    appId,
+    title: event.payload.title,
+    body: event.payload.summary?.trim() ?? '',
+    eventName: event.name,
+  });
 }
 
 async function resolveSession(
@@ -173,13 +179,22 @@ export async function publishWorkspaceEvent(input: {
   }
 
   if (!settings.deliverToMessengerEvents) {
+    // Still run non-messenger Relay routes (webhook / email queue).
+    const relay = await deliverEventViaRelay({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      event,
+      allowMessenger: false,
+    });
+    const notification = await maybeRecordNotification(event, input.workspaceId);
     return {
       eligible: true,
       enabled: true,
       alive: true,
-      delivered: false,
+      delivered: Boolean(relay.message),
       event,
-      reason: 'Messenger #events delivery is paused.',
+      notification,
+      reason: 'Messenger #events delivery is paused; other Relay routes still apply.',
     };
   }
 
@@ -188,29 +203,34 @@ export async function publishWorkspaceEvent(input: {
     session.user.id,
   );
 
-  const activated = await readActivated();
-  if (!activated[input.workspaceId]) {
+  const firstActivation = await activatedFile.update((activated) => {
+    if (activated[input.workspaceId]) return false;
     activated[input.workspaceId] = true;
-    await writeActivated(activated);
+    return true;
+  });
+  if (firstActivation) {
     await postActivationMessage(input.workspaceId, channel.id);
   }
 
-  const message = await postSystemMessage(
-    input.workspaceId,
-    channel.id,
-    formatEventMessageText(event),
-    { ...SYSTEM_EVENTS_AUTHOR },
-  );
+  const relay = await deliverEventViaRelay({
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    event,
+    allowMessenger: true,
+  });
+
+  const notification = await maybeRecordNotification(event, input.workspaceId);
 
   return {
     eligible: true,
     enabled: true,
     alive: true,
-    delivered: Boolean(message),
+    delivered: relay.deliveredMessenger || Boolean(relay.message),
     event,
-    messageId: message?.id,
+    notification,
+    messageId: relay.message?.id,
     channelId: channel.id,
-    reason: message ? undefined : 'Could not post to #events',
+    reason: relay.reason,
   };
 }
 
@@ -237,16 +257,16 @@ export async function setEventsFeatureEnabled(input: {
       input.workspaceId,
       session.user.id,
     );
-    const activated = await readActivated();
-    activated[input.workspaceId] = true;
-    await writeActivated(activated);
+    await activatedFile.update((activated) => {
+      activated[input.workspaceId] = true;
+    });
     await postActivationMessage(input.workspaceId, channel.id);
   }
 
   if (!input.enabled) {
-    const activated = await readActivated();
-    delete activated[input.workspaceId];
-    await writeActivated(activated);
+    await activatedFile.update((activated) => {
+      delete activated[input.workspaceId];
+    });
   }
 
   return {

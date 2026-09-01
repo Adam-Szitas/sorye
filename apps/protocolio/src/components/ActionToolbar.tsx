@@ -15,10 +15,11 @@ export default function ActionToolbar({ getTemplate, parseError, onResult }: Act
   const [loading, setLoading] = useState<string | null>(null);
   const [filename, setFilename] = useState('');
 
-  const hasClient = !!ClientService.getClient();
+  const hasClient = !!ClientService.getClient() || ClientService.hasToken();
   const hasToken = ClientService.hasToken();
   const disabled = !!loading || !!parseError;
-  const actionsDisabled = disabled || !hasClient || !hasToken;
+  // Hub developer bridge: hasToken() is true without a browser Bearer token.
+  const actionsDisabled = disabled || !hasToken;
 
   async function handleGenerate() {
     await commitFocusedInputs();
@@ -109,7 +110,9 @@ export default function ActionToolbar({ getTemplate, parseError, onResult }: Act
       </div>
       {parseError && <div className="error-banner">Cannot run actions: JSON is invalid</div>}
       {!hasToken && hasClient && (
-        <div className="error-banner">Add a Bearer token above to validate or generate PDFs.</div>
+        <div className="error-banner">
+          Waiting for Hub developer bridge or a Bearer token to generate PDFs.
+        </div>
       )}
     </div>
   );

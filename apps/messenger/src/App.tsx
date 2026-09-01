@@ -9,6 +9,7 @@ import { compressImageFile, formatBytes } from './image-compress';
 import {
   createChannel,
   loadMessenger,
+  markMessengerRead,
   openDm,
   pollMessages,
   sendMessage,
@@ -75,6 +76,8 @@ export default function App() {
   const [mobileShowChannels, setMobileShowChannels] = useState(true);
   const [eventsBusy, setEventsBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastMsgAtRef = useRef<string | undefined>(undefined);
 
@@ -97,6 +100,7 @@ export default function App() {
         if (cancelled) return;
         setData(next);
         setChannelId(pickDefaultChannel(next));
+        await markMessengerRead();
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load');
@@ -109,6 +113,11 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!channelId || loading) return;
+    void markMessengerRead(channelId);
+  }, [channelId, loading]);
 
   const messages = useMemo(() => {
     if (!data || !channelId) return [];
@@ -140,6 +149,11 @@ export default function App() {
   }, [data, dmChannels]);
 
   useEffect(() => {
+    stickToBottom.current = true;
+  }, [channelId]);
+
+  useEffect(() => {
+    if (!stickToBottom.current) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, channelId]);
 
@@ -150,22 +164,36 @@ export default function App() {
 
   useEffect(() => {
     if (!channelId) return;
+    let cancelled = false;
+    let inFlight = false;
     const timer = window.setInterval(async () => {
-      const after = lastMsgAtRef.current;
-      const newer = await pollMessages(channelId, after);
-      if (newer.length === 0) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const ids = new Set(prev.messages.map((m) => m.id));
-        const merged = [...prev.messages];
-        for (const m of newer) {
-          if (!ids.has(m.id)) merged.push(m);
-        }
-        return { ...prev, messages: merged };
-      });
-      lastMsgAtRef.current = newer.at(-1)?.createdAt ?? after;
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const after = lastMsgAtRef.current;
+        const newer = await pollMessages(channelId, after);
+        if (cancelled || newer.length === 0) return;
+        setData((prev) => {
+          if (!prev) return prev;
+          const ids = new Set(prev.messages.map((m) => m.id));
+          const merged = [...prev.messages];
+          for (const m of newer) {
+            if (!ids.has(m.id)) merged.push(m);
+          }
+          return { ...prev, messages: merged };
+        });
+        lastMsgAtRef.current = newer.at(-1)?.createdAt ?? after;
+        void markMessengerRead(channelId);
+      } catch {
+        // ignore transient poll errors
+      } finally {
+        inFlight = false;
+      }
     }, 2500);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [channelId]);
 
   async function sendText() {
@@ -501,7 +529,16 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="message-scroller">
+        <div
+          className="message-scroller"
+          ref={scrollerRef}
+          onScroll={() => {
+            const el = scrollerRef.current;
+            if (!el) return;
+            stickToBottom.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+          }}
+        >
           {!channelId || messages.length === 0 ? (
             <p className="empty-thread">
               {isEventsChannel
@@ -536,18 +573,12 @@ export default function App() {
                   </header>
                   {msg.kind === 'image' && msg.imageDataUrl ? (
                     <figure>
-                      <a
-                        href={msg.imageDataUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <img
-                          src={msg.imageDataUrl}
-                          alt={msg.text || 'Uploaded image'}
-                          width={msg.imageWidth}
-                          height={msg.imageHeight}
-                        />
-                      </a>
+                      <img
+                        src={msg.imageDataUrl}
+                        alt={msg.text || 'Uploaded image'}
+                        width={msg.imageWidth}
+                        height={msg.imageHeight}
+                      />
                       {msg.imageBytes != null ? (
                         <figcaption>{formatBytes(msg.imageBytes)}</figcaption>
                       ) : null}

@@ -1,4 +1,5 @@
 import { auth } from '@/auth';
+import { isAuthDevBypass } from '@/lib/auth-dev-bypass';
 import { NextResponse } from 'next/server';
 
 const publicPaths = [
@@ -13,12 +14,17 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
   const isAdminApi = pathname.startsWith('/api/admin');
+  // Read the flag here so Next.js inlines AUTH_DEV_BYPASS into the Edge bundle.
+  const localBypass =
+    process.env.NODE_ENV === 'development' &&
+    process.env.AUTH_DEV_BYPASS === 'true' &&
+    isAuthDevBypass();
 
   if (isAdminApi) {
     return NextResponse.next();
   }
 
-  if (!req.auth && !isPublic) {
+  if (!req.auth && !isPublic && !localBypass) {
     const login = new URL('/login', req.nextUrl.origin);
     login.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(login);

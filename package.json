@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "setup": "corepack enable && corepack prepare pnpm@10.12.1 --activate",
-    "dev": "turbo dev --filter=@sorye/hub --filter=@sorye/dashboard --filter=@sorye/calendar --filter=@sorye/notes --filter=@sorye/tasks --filter=@sorye/relay --filter=@sorye/protocolio --filter=@sorye/canvas --filter=@sorye/devkit --filter=@sorye/messenger --filter=@sorye/ocr",
+    "dev": "turbo dev --filter=@sorye/hub --filter=@sorye/dashboard --filter=@sorye/calendar --filter=@sorye/notes --filter=@sorye/tasks --filter=@sorye/relay --filter=@sorye/protocolio --filter=@sorye/canvas --filter=@sorye/devkit --filter=@sorye/messenger --filter=@sorye/ocr --filter=@sorye/studio",
     "build": "turbo build",
     "lint": "turbo lint",
     "dev:hub": "turbo dev --filter=@sorye/hub",
@@ -17,6 +17,7 @@
     "dev:devkit": "turbo dev --filter=@sorye/devkit",
     "dev:messenger": "turbo dev --filter=@sorye/messenger",
     "dev:ocr": "turbo dev --filter=@sorye/ocr",
+    "dev:studio": "turbo dev --filter=@sorye/studio",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:push": "pnpm --filter @sorye/db db:push",

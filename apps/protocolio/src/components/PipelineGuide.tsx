@@ -9,6 +9,11 @@ export default function PipelineGuide() {
       </p>
       <ol className="pipeline-steps">
         <li>
+          <strong>OCR handoff</strong> — OCR sends a layout as a{' '}
+          <code>PdfTemplate</code> via Hub handoffs + <code>sorye.ocr.ready</code>{' '}
+          events; Protocolio loads it automatically
+        </li>
+        <li>
           <strong>Edit JSON</strong> — define page settings, metadata, and a <code>blocks</code> array
           (text, tables, images, columns, etc.)
         </li>
@@ -25,16 +30,18 @@ export default function PipelineGuide() {
         </li>
       </ol>
       <div className="pipeline-diagram">
-        <span className="pipe-node">Browser JSON</span>
+        <span className="pipe-node">OCR</span>
         <span className="pipe-arrow">→</span>
-        <span className="pipe-node">@protocolio/sdk</span>
+        <span className="pipe-node">Hub bridge</span>
         <span className="pipe-arrow">→</span>
         <span className="pipe-node">Protocolio API</span>
         <span className="pipe-arrow">→</span>
-        <span className="pipe-node">PDF Engine</span>
-        <span className="pipe-arrow">→</span>
-        <span className="pipe-node">PDF Preview</span>
+        <span className="pipe-node">PDF</span>
       </div>
+      <p className="guide-intro" style={{ marginTop: '0.75rem' }}>
+        Locally, Hub&apos;s developer bridge holds <code>PROTOCOLIO_DEV_TOKEN</code> and
+        proxies generate — no browser Bearer token required.
+      </p>
     </div>
   );
 }

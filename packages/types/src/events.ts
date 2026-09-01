@@ -14,6 +14,12 @@ export type WorkspaceEventName =
   | 'sorye.task.moved'
   | 'sorye.calendar.saved'
   | 'sorye.notes.saved'
+  | 'sorye.ocr.analyzed'
+  | 'sorye.ocr.ready'
+  | 'sorye.protocolio.generated'
+  | 'sorye.studio.loaded'
+  | 'sorye.studio.too_much'
+  | 'sorye.messenger.posted'
   | 'sorye.test.ping';
 
 export interface WorkspaceEventPayload {

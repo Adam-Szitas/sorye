@@ -7,6 +7,10 @@ export * from './messenger';
 export * from './storage';
 export * from './events';
 export * from './ocr';
+export * from './handoff';
+export * from './relay';
+export * from './notifications';
+export * from './studio';
 
 import type { SubscriptionTierId } from './subscription';
 import type { UserWorkspace } from './workspace';

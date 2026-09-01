@@ -53,10 +53,10 @@ export default function ConnectionForm({ onConnect, onHealthResult }: Connection
     <div className="section">
       <h2>API Connection</h2>
       <p className="section-hint">
-        Use the Vite dev-server URL (e.g. <code>http://localhost:5173</code>) — not <code>:3000</code>.
-        Requests are proxied to the Protocolio API.
+        Use the Hub developer bridge by default (no browser Bearer token).
+        Optional: connect directly to the Protocolio API with a token below.
         {usingDevToken && (
-          <> Dev token is pre-filled.</>
+          <> Dev token is pre-filled for direct mode.</>
         )}
       </p>
       <form onSubmit={handleSubmit}>

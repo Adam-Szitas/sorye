@@ -1,31 +1,17 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import type { WorkspaceStorageRecord } from '@/lib/workspace-storage-util';
 import {
   decryptSecret,
   encryptSecret,
   hintsFromDatabaseUrl,
 } from '@/lib/storage-crypto';
+import { jsonDataFile } from '@/lib/store/json-file';
 import { testPostgresConnection, toPublicStorage } from '@/lib/workspace-storage-util';
-
-const DATA_DIR = path.join(process.cwd(), '.data');
-const STORE_PATH = path.join(DATA_DIR, 'workspace-storage.json');
 
 type StoreData = Record<string, WorkspaceStorageRecord>;
 
-async function readStore(): Promise<StoreData> {
-  try {
-    const raw = await readFile(STORE_PATH, 'utf-8');
-    return JSON.parse(raw) as StoreData;
-  } catch {
-    return {};
-  }
-}
+const storeFile = jsonDataFile<StoreData>('workspace-storage.json', () => ({}));
 
-async function writeStore(data: StoreData): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
+const readStore = () => storeFile.read();
 
 export async function getWorkspaceStorageRecord(
   workspaceId: string,
@@ -60,34 +46,34 @@ export async function setWorkspacePostgresUrl(
     databaseUrlEncrypted: encryptSecret(databaseUrl),
   };
 
-  const store = await readStore();
-  store[workspaceId] = record;
-  await writeStore(store);
+  await storeFile.update((store) => {
+    store[workspaceId] = record;
+  });
   return record;
 }
 
 export async function clearWorkspaceStorage(
   workspaceId: string,
 ): Promise<void> {
-  const store = await readStore();
-  delete store[workspaceId];
-  await writeStore(store);
+  await storeFile.update((store) => {
+    delete store[workspaceId];
+  });
 }
 
 export async function markWorkspaceStorageError(
   workspaceId: string,
   message: string,
 ): Promise<void> {
-  const store = await readStore();
-  const current = store[workspaceId];
-  if (!current || current.driver !== 'postgres') return;
-  store[workspaceId] = {
-    ...current,
-    status: 'error',
-    lastError: message,
-    updatedAt: new Date().toISOString(),
-  };
-  await writeStore(store);
+  await storeFile.update((store) => {
+    const current = store[workspaceId];
+    if (!current || current.driver !== 'postgres') return;
+    store[workspaceId] = {
+      ...current,
+      status: 'error',
+      lastError: message,
+      updatedAt: new Date().toISOString(),
+    };
+  });
 }
 
 export async function getWorkspaceDatabaseUrl(

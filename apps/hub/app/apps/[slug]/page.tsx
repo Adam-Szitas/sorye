@@ -2,6 +2,8 @@
 
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
+import { AppCatalogBrowser } from '@/components/app-catalog';
+import { AppUsageGuide } from '@/components/app-usage-guide';
 import {
   APP_CATALOG,
   getAppBySlug,
@@ -30,7 +32,8 @@ export default function MicroAppPage() {
       const isAllowed =
         catalogApp &&
         (catalogApp.status === 'available' || catalogApp.status === 'beta') &&
-        data.workspace.selectedAppIds.includes(catalogApp.id);
+        (catalogApp.alwaysAvailable === true ||
+          data.workspace.selectedAppIds.includes(catalogApp.id));
       setAllowed(Boolean(isAllowed));
     }
 
@@ -62,6 +65,22 @@ export default function MicroAppPage() {
   }
 
   if (!app.microFrontend && !app.external) {
+    if (app.id === 'catalog') {
+      return (
+        <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
+          <header className="glass flex shrink-0 items-center gap-4 px-4 py-3 sm:px-6">
+            <Link
+              href="/"
+              className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+            >
+              ← Hub
+            </Link>
+            <span className="text-sm font-medium">{app.name}</span>
+          </header>
+          <AppCatalogBrowser />
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
         <p className="text-[var(--color-text-muted)]">
@@ -95,6 +114,7 @@ export default function MicroAppPage() {
           </a>
         ) : null}
       </header>
+      <AppUsageGuide app={app} variant="pane" />
       <div className="flex min-h-0 flex-1 flex-col">
         {app.external ? (
           <ExternalAppFrame config={app.external} appName={app.name} />

@@ -1,30 +1,18 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import type { EmbedWidget, EmbedWidgetCreated } from '@sorye/types';
 import { normalizeOrigin } from '@sorye/types';
 import { hashEmbedKey } from '@/lib/embed-token';
+import { jsonDataFile } from './json-file';
 
 interface EmbedStoreData {
   widgets: Record<string, EmbedWidget & { keyHash: string }>;
 }
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-const STORE_PATH = path.join(DATA_DIR, 'embed.json');
+const storeFile = jsonDataFile<EmbedStoreData>('embed.json', () => ({
+  widgets: {},
+}));
 
-async function readStore(): Promise<EmbedStoreData> {
-  try {
-    const raw = await readFile(STORE_PATH, 'utf-8');
-    return JSON.parse(raw) as EmbedStoreData;
-  } catch {
-    return { widgets: {} };
-  }
-}
-
-async function writeStore(data: EmbedStoreData): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(data, null, 2));
-}
+const readStore = () => storeFile.read();
 
 function toPublic(row: EmbedWidget & { keyHash: string }): EmbedWidget {
   const { keyHash: _hash, ...rest } = row;
@@ -52,7 +40,6 @@ export async function createEmbedWidget(input: {
   allowedOrigins: string[];
   enabledAppIds: string[];
 }): Promise<EmbedWidgetCreated> {
-  const store = await readStore();
   const apiKey = mintApiKey();
   const id = `emb-${randomUUID().slice(0, 8)}`;
   const origins = input.allowedOrigins
@@ -71,8 +58,9 @@ export async function createEmbedWidget(input: {
     createdBy: input.createdBy,
   };
 
-  store.widgets[id] = row;
-  await writeStore(store);
+  await storeFile.update((store) => {
+    store.widgets[id] = row;
+  });
 
   return { ...toPublic(row), apiKey };
 }
@@ -84,36 +72,35 @@ export async function updateEmbedWidget(
     Pick<EmbedWidget, 'name' | 'allowedOrigins' | 'enabledAppIds'>
   >,
 ): Promise<EmbedWidget | null> {
-  const store = await readStore();
-  const row = store.widgets[widgetId];
-  if (!row || row.workspaceId !== workspaceId || row.revokedAt) return null;
+  return storeFile.update((store) => {
+    const row = store.widgets[widgetId];
+    if (!row || row.workspaceId !== workspaceId || row.revokedAt) return null;
 
-  if (patch.name !== undefined) row.name = patch.name.trim();
-  if (patch.allowedOrigins !== undefined) {
-    row.allowedOrigins = patch.allowedOrigins
-      .map((o) => normalizeOrigin(o))
-      .filter((o): o is string => Boolean(o));
-  }
-  if (patch.enabledAppIds !== undefined) {
-    row.enabledAppIds = [...new Set(patch.enabledAppIds)];
-  }
+    if (patch.name !== undefined) row.name = patch.name.trim();
+    if (patch.allowedOrigins !== undefined) {
+      row.allowedOrigins = patch.allowedOrigins
+        .map((o) => normalizeOrigin(o))
+        .filter((o): o is string => Boolean(o));
+    }
+    if (patch.enabledAppIds !== undefined) {
+      row.enabledAppIds = [...new Set(patch.enabledAppIds)];
+    }
 
-  store.widgets[widgetId] = row;
-  await writeStore(store);
-  return toPublic(row);
+    store.widgets[widgetId] = row;
+    return toPublic(row);
+  });
 }
 
 export async function revokeEmbedWidget(
   workspaceId: string,
   widgetId: string,
 ): Promise<boolean> {
-  const store = await readStore();
-  const row = store.widgets[widgetId];
-  if (!row || row.workspaceId !== workspaceId || row.revokedAt) return false;
-  row.revokedAt = new Date().toISOString();
-  store.widgets[widgetId] = row;
-  await writeStore(store);
-  return true;
+  return storeFile.update((store) => {
+    const row = store.widgets[widgetId];
+    if (!row || row.workspaceId !== workspaceId || row.revokedAt) return false;
+    row.revokedAt = new Date().toISOString();
+    return true;
+  });
 }
 
 export async function findEmbedWidgetByKey(apiKey: string): Promise<

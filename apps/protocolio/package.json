@@ -12,6 +12,7 @@
   "dependencies": {
     "@protocolio/sdk": "file:../../../protocolio-dashboard",
     "@sorye/sdk": "workspace:*",
+    "@sorye/types": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

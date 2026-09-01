@@ -32,3 +32,4 @@ primary_region = "ams"
 #   fly secrets set ADMIN_SECRET=...
 #   fly secrets set ADMIN_EMAILS=you@gmail.com
 #   fly secrets set DATABASE_URL=...   # from `fly postgres attach`
+# Do not set AUTH_DEV_BYPASS in production.

@@ -1,6 +1,7 @@
 'use client';
 
 import type { HubSession } from '@sorye/types';
+import { useCallback } from 'react';
 import useSWR from 'swr';
 import {
   fetchHubSession,
@@ -52,35 +53,44 @@ export function useHubSession(options: UseHubSessionOptions = {}) {
     },
   );
 
-  const patchWorkspace = async (patch: {
-    selectedAppIds?: string[];
-    connectedApps?: HubSession['workspace']['connectedApps'];
-    name?: string;
-  }) => {
-    const updated = await patchHubSession(patch);
-    await mutate(updated, { revalidate: false });
-    return updated;
-  };
+  const patchWorkspace = useCallback(
+    async (patch: {
+      selectedAppIds?: string[];
+      connectedApps?: HubSession['workspace']['connectedApps'];
+      name?: string;
+    }) => {
+      const updated = await patchHubSession(patch);
+      await mutate(updated, { revalidate: false });
+      return updated;
+    },
+    [mutate],
+  );
 
-  const switchWorkspace = async (workspaceId: string) => {
-    const updated = await postWorkspaceAction({
-      action: 'switch',
-      workspaceId,
-    });
-    await mutate(updated, { revalidate: false });
-    return updated;
-  };
+  const switchWorkspace = useCallback(
+    async (workspaceId: string) => {
+      const updated = await postWorkspaceAction({
+        action: 'switch',
+        workspaceId,
+      });
+      await mutate(updated, { revalidate: false });
+      return updated;
+    },
+    [mutate],
+  );
 
-  const createTeam = async (name: string) => {
-    const updated = await postWorkspaceAction({
-      action: 'create-team',
-      name,
-    });
-    await mutate(updated, { revalidate: false });
-    return updated;
-  };
+  const createTeam = useCallback(
+    async (name: string) => {
+      const updated = await postWorkspaceAction({
+        action: 'create-team',
+        name,
+      });
+      await mutate(updated, { revalidate: false });
+      return updated;
+    },
+    [mutate],
+  );
 
-  const refresh = () => mutate();
+  const refresh = useCallback(() => mutate(), [mutate]);
 
   return {
     session: data ?? null,

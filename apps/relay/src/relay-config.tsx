@@ -11,24 +11,41 @@ import {
 interface RelayConfigureProps {
   handler: RelayHandler;
   onChange: (handler: RelayHandler) => void;
+  eventsEnabled: boolean;
 }
 
-export function RelayConfigure({ handler, onChange }: RelayConfigureProps) {
+export function RelayConfigure({
+  handler,
+  onChange,
+  eventsEnabled,
+}: RelayConfigureProps) {
   const config = handler.getConfig();
   const channels = handler.getChannels();
   const routes = handler.getRoutes();
 
   return (
     <div className="relay-config">
+      {!eventsEnabled ? (
+        <section className="relay-panel relay-callout">
+          <h2>Turn on App events</h2>
+          <p className="relay-panel-hint">
+            Messenger delivery needs the workspace App events flag. Open{' '}
+            <a href="/apps/dashboard">Dashboard → App events</a>, enable it, then
+            keep routing rules here in Relay.
+          </p>
+        </section>
+      ) : null}
+
       <section className="relay-panel">
         <h2>App sources</h2>
         <p className="relay-panel-hint">
-          Choose which workspace apps may emit messages into Relay.
+          Choose which apps can send movements into Relay. Pair these with
+          routes below to reach Messenger, email, or webhooks.
         </p>
         <ul className="source-toggle-list">
           {WORKSPACE_SOURCES.map((source) => (
             <li key={source.id}>
-              <label className="toggle-row">
+              <label className="toggle-row source-row">
                 <input
                   type="checkbox"
                   checked={handler.isSourceEnabled(source.id)}
@@ -36,7 +53,10 @@ export function RelayConfigure({ handler, onChange }: RelayConfigureProps) {
                     onChange(handler.toggleSource(source.id, e.target.checked))
                   }
                 />
-                <span>{source.name}</span>
+                <span>
+                  <strong>{source.name}</strong>
+                  <em>{source.description}</em>
+                </span>
               </label>
             </li>
           ))}
@@ -46,8 +66,8 @@ export function RelayConfigure({ handler, onChange }: RelayConfigureProps) {
       <section className="relay-panel">
         <h2>Delivery channels</h2>
         <p className="relay-panel-hint">
-          Configure where messages go. Live connectors ship with the hub API
-          later — for now delivery is simulated locally.
+          Messenger posts are live when App events are on. Webhooks POST for
+          real; email and WhatsApp store destinations until Hub connectors land.
         </p>
         <div className="channel-cards">
           {channels.map((channel) => {
@@ -114,8 +134,8 @@ export function RelayConfigure({ handler, onChange }: RelayConfigureProps) {
       <section className="relay-panel">
         <h2>Routing rules</h2>
         <p className="relay-panel-hint">
-          Map each app to the channels it should notify. Disable a rule to stop
-          that path without removing the channel.
+          Map each app to the channels it should notify. Example: OCR →
+          Messenger #events, Calendar → email, Tasks → webhook.
         </p>
 
         <ul className="route-list">
@@ -153,8 +173,8 @@ export function RelayConfigure({ handler, onChange }: RelayConfigureProps) {
       <section className="relay-panel">
         <h2>Quiet hours</h2>
         <p className="relay-panel-hint">
-          During quiet hours, messages queue instead of sending immediately. A
-          simple guardrail so alerts do not overwhelm you.
+          During quiet hours, email / WhatsApp / webhook deliveries queue.
+          Messenger #events still posts so the workspace feed stays current.
         </p>
         <label className="toggle-row">
           <input
@@ -213,7 +233,7 @@ function AddRouteForm({
   onChange: (handler: RelayHandler) => void;
 }) {
   const channels = handler.getChannels();
-  const [sourceAppId, setSourceAppId] = useState(WORKSPACE_SOURCES[0].id);
+  const [sourceAppId, setSourceAppId] = useState(WORKSPACE_SOURCES[0]!.id);
   const [channelId, setChannelId] = useState(channels[0]?.id ?? '');
 
   const add = () => {

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import {
   APP_CATALOG,
   getPlanById,
+  selectableAppCount,
   SUBSCRIPTION_PLANS,
   type AppCatalogEntry,
   type EmbedWidget,
@@ -35,7 +36,10 @@ function buildMetrics(
   widgetCount: number,
 ): MetricCard[] {
   const plan = getPlanById(SUBSCRIPTION_PLANS, session.workspace.subscriptionId);
-  const appCount = session.workspace.selectedAppIds.length;
+  const appCount = selectableAppCount(
+    APP_CATALOG,
+    session.workspace.selectedAppIds,
+  );
   const connCount = session.workspace.connectedApps.length;
 
   return [

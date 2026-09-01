@@ -8,6 +8,7 @@ interface DockProps {
   activePanel: Panel;
   appCount: number;
   connectionCount: number;
+  notificationCount?: number;
   onNavigate: (panel: Panel) => void;
   workspaceOpen?: boolean;
   onOpenWorkspace?: () => void;
@@ -35,12 +36,13 @@ export function Dock({
   activePanel,
   appCount,
   connectionCount,
+  notificationCount = 0,
   onNavigate,
   workspaceOpen,
   onOpenWorkspace,
 }: DockProps) {
   const badges: Record<Panel, number | undefined> = {
-    launcher: undefined,
+    launcher: notificationCount > 0 ? notificationCount : undefined,
     picker: appCount,
     connections: connectionCount,
   };
@@ -91,8 +93,14 @@ export function Dock({
               </svg>
               <span className="text-[10px] font-medium">{item.label}</span>
               {badge !== undefined && badge > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-accent)] px-1 text-[9px] font-bold text-[var(--color-surface)]">
-                  {badge}
+                <span
+                  className={`absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold ${
+                    item.id === 'launcher'
+                      ? 'bg-red-500 text-white'
+                      : 'bg-[var(--color-accent)] text-[var(--color-surface)]'
+                  }`}
+                >
+                  {badge > 99 ? '99+' : badge}
                 </span>
               )}
             </button>

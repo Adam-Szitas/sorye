@@ -32,9 +32,20 @@ export function toPublicStorage(
   };
 }
 
+import { assertSafePostgresUrl } from '@/lib/security';
+
 export async function testPostgresConnection(
   databaseUrl: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    assertSafePostgresUrl(databaseUrl);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Postgres URL rejected',
+    };
+  }
+
   let sql: ReturnType<typeof postgres> | null = null;
   try {
     sql = postgres(databaseUrl, {

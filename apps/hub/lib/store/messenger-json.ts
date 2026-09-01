@@ -1,12 +1,11 @@
 import { randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import {
   dmChannelId,
   type MessengerChannel,
   type MessengerMessage,
   type MessengerMessageKind,
 } from '@sorye/types';
+import { jsonDataFile } from './json-file';
 import { getHubSession, getHubSessionForWorkspace, getWorkspaceMembers } from './json-store';
 
 interface MessengerStoreData {
@@ -14,22 +13,12 @@ interface MessengerStoreData {
   messages: Record<string, MessengerMessage>;
 }
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-const STORE_PATH = path.join(DATA_DIR, 'messenger.json');
+const storeFile = jsonDataFile<MessengerStoreData>('messenger.json', () => ({
+  channels: {},
+  messages: {},
+}));
 
-async function readStore(): Promise<MessengerStoreData> {
-  try {
-    const raw = await readFile(STORE_PATH, 'utf-8');
-    return JSON.parse(raw) as MessengerStoreData;
-  } catch {
-    return { channels: {}, messages: {} };
-  }
-}
-
-async function writeStore(data: MessengerStoreData): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
+const readStore = () => storeFile.read();
 
 async function assertMember(userId: string, workspaceId: string) {
   const active = await getHubSession(userId);
@@ -46,64 +35,80 @@ function canSeeChannel(channel: MessengerChannel, userId: string) {
   return channel.memberIds.includes(userId);
 }
 
-async function ensureDefaults(workspaceId: string, userId: string) {
-  const store = await readStore();
+function missingDefaultNames(
+  store: MessengerStoreData,
+  workspaceId: string,
+): string[] {
   const existing = Object.values(store.channels).filter(
     (c) => c.workspaceId === workspaceId && c.kind === 'channel',
   );
-  const now = new Date().toISOString();
   const names =
-    existing.length > 0
-      ? (['events'] as const)
-      : (['general', 'random', 'events'] as const);
-
-  let changed = false;
-  for (const name of names) {
+    existing.length > 0 ? ['events'] : ['general', 'random', 'events'];
+  return names.filter((name) => {
     const id = `ch-${workspaceId.slice(-6)}-${name}`;
-    if (store.channels[id]) continue;
-    const already = existing.some((c) => c.name === name);
-    if (already) continue;
-    store.channels[id] = {
-      id,
-      workspaceId,
-      kind: 'channel',
-      name,
-      memberIds: [],
-      createdAt: now,
-      createdBy: userId,
-    };
-    changed = true;
+    if (store.channels[id]) return false;
+    return !existing.some((c) => c.name === name);
+  });
+}
+
+async function ensureDefaults(workspaceId: string, userId: string) {
+  // Read-only fast path: defaults almost always already exist.
+  const snapshot = await readStore();
+  if (missingDefaultNames(snapshot, workspaceId).length === 0) {
+    return snapshot;
   }
-  if (changed) await writeStore(store);
-  return store;
+
+  return storeFile.update((store) => {
+    const now = new Date().toISOString();
+    for (const name of missingDefaultNames(store, workspaceId)) {
+      const id = `ch-${workspaceId.slice(-6)}-${name}`;
+      store.channels[id] = {
+        id,
+        workspaceId,
+        kind: 'channel',
+        name,
+        memberIds: [],
+        createdAt: now,
+        createdBy: userId,
+      };
+    }
+    return store;
+  });
 }
 
 export async function ensureEventsChannel(
   workspaceId: string,
   createdBy: string,
 ): Promise<MessengerChannel> {
-  const store = await readStore();
-  const existing = Object.values(store.channels).find(
-    (c) =>
-      c.workspaceId === workspaceId &&
-      c.kind === 'channel' &&
-      c.name === 'events',
-  );
+  const findEvents = (store: MessengerStoreData) =>
+    Object.values(store.channels).find(
+      (c) =>
+        c.workspaceId === workspaceId &&
+        c.kind === 'channel' &&
+        c.name === 'events',
+    );
+
+  const snapshot = await readStore();
+  const existing = findEvents(snapshot);
   if (existing) return existing;
 
-  const id = `ch-${workspaceId.slice(-6)}-events`;
-  const channel: MessengerChannel = {
-    id,
-    workspaceId,
-    kind: 'channel',
-    name: 'events',
-    memberIds: [],
-    createdAt: new Date().toISOString(),
-    createdBy,
-  };
-  store.channels[id] = channel;
-  await writeStore(store);
-  return channel;
+  return storeFile.update((store) => {
+    const raced = findEvents(store);
+    if (raced) return raced;
+
+    const id = `ch-${workspaceId.slice(-6)}-events`;
+    const channel: MessengerChannel = {
+      id,
+      workspaceId,
+      kind: 'channel',
+      name: 'events',
+      memberIds: [],
+      createdAt: new Date().toISOString(),
+      createdBy,
+    };
+    store.channels[id] = channel;
+    return channel;
+  });
 }
 
 export async function postSystemMessage(
@@ -112,31 +117,31 @@ export async function postSystemMessage(
   text: string,
   author: { id: string; name: string; image?: string },
 ): Promise<MessengerMessage | null> {
-  const store = await readStore();
-  const channel = store.channels[channelId];
-  if (!channel || channel.workspaceId !== workspaceId) return null;
   if (!text.trim()) return null;
 
-  const message: MessengerMessage = {
-    id: `msg-${randomUUID().slice(0, 10)}`,
-    channelId,
-    workspaceId,
-    kind: 'text',
-    text: text.trim(),
-    author,
-    createdAt: new Date().toISOString(),
-  };
-  store.messages[message.id] = message;
-  await writeStore(store);
-  return message;
+  return storeFile.update((store) => {
+    const channel = store.channels[channelId];
+    if (!channel || channel.workspaceId !== workspaceId) return null;
+
+    const message: MessengerMessage = {
+      id: `msg-${randomUUID().slice(0, 10)}`,
+      channelId,
+      workspaceId,
+      kind: 'text',
+      text: text.trim(),
+      author,
+      createdAt: new Date().toISOString(),
+    };
+    store.messages[message.id] = message;
+    return message;
+  });
 }
 
 export async function bootstrapMessenger(userId: string, workspaceId: string) {
   const session = await assertMember(userId, workspaceId);
   if (!session) return null;
 
-  await ensureDefaults(workspaceId, userId);
-  const store = await readStore();
+  const store = await ensureDefaults(workspaceId, userId);
   const members = await getWorkspaceMembers(workspaceId);
 
   const channels = Object.values(store.channels)
@@ -179,22 +184,26 @@ export async function openDirectMessage(
   if (!session.workspace.memberIds.includes(peerUserId)) return null;
 
   const id = dmChannelId(userId, peerUserId);
-  const store = await readStore();
-  const existing = store.channels[id];
+  const snapshot = await readStore();
+  const existing = snapshot.channels[id];
   if (existing) return existing;
 
-  const channel: MessengerChannel = {
-    id,
-    workspaceId,
-    kind: 'dm',
-    name: 'direct',
-    memberIds: [userId, peerUserId].sort(),
-    createdAt: new Date().toISOString(),
-    createdBy: userId,
-  };
-  store.channels[id] = channel;
-  await writeStore(store);
-  return channel;
+  return storeFile.update((store) => {
+    const raced = store.channels[id];
+    if (raced) return raced;
+
+    const channel: MessengerChannel = {
+      id,
+      workspaceId,
+      kind: 'dm',
+      name: 'direct',
+      memberIds: [userId, peerUserId].sort(),
+      createdAt: new Date().toISOString(),
+      createdBy: userId,
+    };
+    store.channels[id] = channel;
+    return channel;
+  });
 }
 
 export async function createPublicChannel(
@@ -218,10 +227,10 @@ export async function createPublicChannel(
     createdBy: userId,
   };
 
-  const store = await readStore();
-  store.channels[channel.id] = channel;
-  await writeStore(store);
-  return channel;
+  return storeFile.update((store) => {
+    store.channels[channel.id] = channel;
+    return channel;
+  });
 }
 
 export async function postMessage(
@@ -240,35 +249,35 @@ export async function postMessage(
   const session = await assertMember(userId, workspaceId);
   if (!session) return null;
 
-  const store = await readStore();
-  const channel = store.channels[input.channelId];
-  if (!channel || channel.workspaceId !== workspaceId) return null;
-  if (!canSeeChannel(channel, userId)) return null;
-
   if (input.kind === 'text' && !input.text?.trim()) return null;
   if (input.kind === 'image' && !input.imageDataUrl) return null;
 
-  const message: MessengerMessage = {
-    id: `msg-${randomUUID().slice(0, 10)}`,
-    channelId: input.channelId,
-    workspaceId,
-    kind: input.kind,
-    text: input.text?.trim() || undefined,
-    imageDataUrl: input.imageDataUrl,
-    imageBytes: input.imageBytes,
-    imageWidth: input.imageWidth,
-    imageHeight: input.imageHeight,
-    author: {
-      id: session.user.id,
-      name: session.user.displayName,
-      image: session.user.image,
-    },
-    createdAt: new Date().toISOString(),
-  };
+  return storeFile.update((store) => {
+    const channel = store.channels[input.channelId];
+    if (!channel || channel.workspaceId !== workspaceId) return null;
+    if (!canSeeChannel(channel, userId)) return null;
 
-  store.messages[message.id] = message;
-  await writeStore(store);
-  return message;
+    const message: MessengerMessage = {
+      id: `msg-${randomUUID().slice(0, 10)}`,
+      channelId: input.channelId,
+      workspaceId,
+      kind: input.kind,
+      text: input.text?.trim() || undefined,
+      imageDataUrl: input.imageDataUrl,
+      imageBytes: input.imageBytes,
+      imageWidth: input.imageWidth,
+      imageHeight: input.imageHeight,
+      author: {
+        id: session.user.id,
+        name: session.user.displayName,
+        image: session.user.image,
+      },
+      createdAt: new Date().toISOString(),
+    };
+
+    store.messages[message.id] = message;
+    return message;
+  });
 }
 
 export async function listMessages(

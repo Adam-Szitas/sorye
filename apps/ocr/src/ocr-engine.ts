@@ -1,10 +1,17 @@
 import {
   buildOcrObject,
+  sizeRankFromFont,
   type OcrCell,
   type OcrMatrix,
   type OcrWordBox,
 } from '@sorye/types';
-import { parseDocumentItems } from './parse-document';
+import { parseDocumentItems, itemsHaveContent, parseFallbackItemsFromText } from './parse-document';
+import {
+  annotateWordStyles,
+  buildPageLayout,
+  layoutFromPlainText,
+  layoutHasContent,
+} from './layout-matrix';
 import type { Worker } from 'tesseract.js';
 
 interface TessBbox {
@@ -42,16 +49,37 @@ interface TessPage {
   words?: TessWord[];
 }
 
-/** Reused across runs — loading eng.wasm + lang data once is the big win. */
+/** Max recall — filter only empty/garbage, not low-confidence tokens. */
+const MIN_WORD_CONFIDENCE = 0;
+
+/** PSM modes to try; best results merged (max-quality, slower). */
+const PSM_MODES = ['AUTO', 'SPARSE_TEXT', 'SINGLE_COLUMN', 'SPARSE_TEXT_OSD'] as const;
+
 let workerPromise: Promise<Worker> | null = null;
 let progressSink: ((pct: number) => void) | null = null;
+
+async function applyMaxQualityParams(
+  worker: Worker,
+  psm: (typeof PSM_MODES)[number],
+): Promise<void> {
+  const { PSM } = await import('tesseract.js');
+  await worker.setParameters({
+    tessedit_pageseg_mode: PSM[psm],
+    preserve_interword_spaces: '1',
+    user_defined_dpi: '300',
+    textord_heavy_nr: '1',
+    tessedit_enable_bigram_correction: '1',
+    load_system_dawg: '1',
+    load_freq_dawg: '1',
+  });
+}
 
 async function getSharedWorker(): Promise<Worker> {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const { createWorker, OEM, PSM } = await import('tesseract.js');
-      const worker = await createWorker('eng', OEM.LSTM_ONLY, {
-        // Keep logger tiny; avoid string work when no UI sink is attached.
+      const { createWorker, OEM } = await import('tesseract.js');
+      // PDF documents: English + German traineddata (eng+deu).
+      const worker = await createWorker(['eng', 'deu'], OEM.DEFAULT, {
         logger: (m) => {
           if (
             progressSink &&
@@ -62,11 +90,7 @@ async function getSharedWorker(): Promise<Worker> {
           }
         },
       });
-      // SINGLE_BLOCK is faster than AUTO for scans / phone table photos.
-      await worker.setParameters({
-        tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
-        preserve_interword_spaces: '1',
-      });
+      await applyMaxQualityParams(worker, 'AUTO');
       return worker;
     })().catch((err) => {
       workerPromise = null;
@@ -76,7 +100,6 @@ async function getSharedWorker(): Promise<Worker> {
   return workerPromise;
 }
 
-/** Prefetch WASM + language data during idle time. */
 export function warmOcrEngine(): void {
   const run = () => {
     void getSharedWorker();
@@ -139,23 +162,67 @@ function nearestIndex(value: number, centers: number[]): number {
   return best;
 }
 
-/** Flatten Tesseract v6 block → paragraph → line → word tree. */
+function boxOverlap(a: OcrWordBox, b: OcrWordBox): number {
+  const overlapX = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
+  const overlapY = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+  const overlapArea = overlapX * overlapY;
+  if (overlapArea <= 0) return 0;
+  const areaA = Math.max(1, (a.x1 - a.x0) * (a.y1 - a.y0));
+  const areaB = Math.max(1, (b.x1 - b.x0) * (b.y1 - b.y0));
+  return overlapArea / Math.min(areaA, areaB);
+}
+
+/** Merge words from multiple Tesseract passes — keep best coverage. */
+function mergeWordPasses(passes: OcrWordBox[][]): OcrWordBox[] {
+  const sorted = [...passes].sort((a, b) => b.length - a.length);
+  const merged: OcrWordBox[] = [];
+
+  for (const batch of sorted) {
+    for (const word of batch) {
+      if (!word.text.trim()) continue;
+      const matchIdx = merged.findIndex((m) => boxOverlap(m, word) > 0.4);
+      if (matchIdx < 0) {
+        merged.push({ ...word });
+      } else if (word.confidence > merged[matchIdx]!.confidence) {
+        merged[matchIdx] = { ...word };
+      }
+    }
+  }
+
+  return merged;
+}
+
 export function collectWordsFromPage(page: TessPage): OcrWordBox[] {
   const out: OcrWordBox[] = [];
+
+  const pushWord = (
+    text: string,
+    confidence: number,
+    bbox: TessBbox,
+  ) => {
+    const fontSize = Math.max(1, bbox.y1 - bbox.y0);
+    out.push({
+      text,
+      confidence,
+      x0: bbox.x0,
+      y0: bbox.y0,
+      x1: bbox.x1,
+      y1: bbox.y1,
+      style: {
+        fontSize,
+        bold: false,
+        italic: false,
+        sizeRank: 'md',
+      },
+    });
+  };
 
   if (page.words?.length) {
     for (const w of page.words) {
       if (!w?.text?.trim()) continue;
-      out.push({
-        text: w.text,
-        confidence: w.confidence ?? 0,
-        x0: w.bbox.x0,
-        y0: w.bbox.y0,
-        x1: w.bbox.x1,
-        y1: w.bbox.y1,
-      });
+      pushWord(w.text, w.confidence ?? 0, w.bbox);
     }
-    return out;
+    return annotateWordStyles(out);
   }
 
   for (const block of page.blocks ?? []) {
@@ -164,30 +231,20 @@ export function collectWordsFromPage(page: TessPage): OcrWordBox[] {
         if (line.words?.length) {
           for (const w of line.words) {
             if (!w?.text?.trim()) continue;
-            out.push({
-              text: w.text,
-              confidence: w.confidence ?? line.confidence ?? 0,
-              x0: w.bbox.x0,
-              y0: w.bbox.y0,
-              x1: w.bbox.x1,
-              y1: w.bbox.y1,
-            });
+            pushWord(
+              w.text,
+              w.confidence ?? line.confidence ?? 0,
+              w.bbox,
+            );
           }
         } else if (line.text?.trim() && line.bbox) {
-          out.push({
-            text: line.text.trim(),
-            confidence: line.confidence ?? 0,
-            x0: line.bbox.x0,
-            y0: line.bbox.y0,
-            x1: line.bbox.x1,
-            y1: line.bbox.y1,
-          });
+          pushWord(line.text.trim(), line.confidence ?? 0, line.bbox);
         }
       }
     }
   }
 
-  return out;
+  return annotateWordStyles(out);
 }
 
 export function textToMatrix(text: string): string[][] {
@@ -223,13 +280,12 @@ export function textToMatrix(text: string): string[][] {
   return lines.map((line) => [line]);
 }
 
-/** Group OCR word boxes into a rectangular matrix (rows × columns). */
 export function wordsToMatrix(words: OcrWordBox[]): {
   matrix: string[][];
   cells: OcrCell[];
 } {
   const usable = words.filter(
-    (w) => w.text.trim().length > 0 && w.confidence >= 20,
+    (w) => w.text.trim().length > 0 && w.confidence >= MIN_WORD_CONFIDENCE,
   );
   if (usable.length === 0) {
     return { matrix: [['']], cells: [] };
@@ -280,13 +336,25 @@ export function wordsToMatrix(words: OcrWordBox[]): {
         confidence = sum / cellWords.length;
       }
       rowTexts.push(text);
-      // Skip storing per-word arrays — cuts memory on large tables.
+      const fontSize =
+        cellWords.length > 0
+          ? cellWords.reduce(
+              (s, w) => s + Math.max(1, w.style?.fontSize ?? w.y1 - w.y0),
+              0,
+            ) / cellWords.length
+          : 12;
       cells.push({
         row: r,
         col: c,
         text,
         confidence,
-        words: [],
+        words: cellWords,
+        style: cellWords[0]?.style ?? {
+          fontSize,
+          bold: false,
+          italic: false,
+          sizeRank: sizeRankFromFont(fontSize, fontSize),
+        },
       });
     }
     matrix.push(rowTexts);
@@ -299,31 +367,120 @@ function matrixHasContent(matrix: string[][]): boolean {
   return matrix.some((row) => row.some((cell) => cell.trim().length > 0));
 }
 
+async function recognizeOnce(
+  worker: Worker,
+  canvas: HTMLCanvasElement,
+  psm: (typeof PSM_MODES)[number],
+): Promise<{ page: TessPage; words: OcrWordBox[] }> {
+  await applyMaxQualityParams(worker, psm);
+  const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
+  const page = result.data as unknown as TessPage;
+  return { page, words: collectWordsFromPage(page) };
+}
+
+/** Run every PSM mode on both grayscale + binary — merge for max recall. */
+async function recognizeMaxQuality(
+  worker: Worker,
+  canvas: HTMLCanvasElement,
+  binaryCanvas: HTMLCanvasElement,
+  onPass?: (done: number, total: number) => void,
+): Promise<{ page: TessPage; words: OcrWordBox[] }> {
+  const canvases = [
+    { label: 'enhanced', el: canvas },
+    { label: 'binary', el: binaryCanvas },
+  ];
+  const total = PSM_MODES.length * canvases.length;
+  let step = 0;
+
+  const wordPasses: OcrWordBox[][] = [];
+  let bestPage: TessPage = { text: '', blocks: [] };
+  let bestPageScore = -1;
+
+  for (const { el } of canvases) {
+    for (const psm of PSM_MODES) {
+      const { page, words } = await recognizeOnce(worker, el, psm);
+      wordPasses.push(words);
+
+      const score =
+        words.length * 10 +
+        (page.text ?? '').split(/\s+/).filter(Boolean).length;
+      if (score > bestPageScore) {
+        bestPageScore = score;
+        bestPage = page;
+      }
+
+      step += 1;
+      onPass?.(step, total);
+    }
+  }
+
+  await applyMaxQualityParams(worker, 'AUTO');
+
+  const words = mergeWordPasses(wordPasses);
+  return { page: bestPage, words };
+}
+
 export async function runOcr(input: {
   canvas: HTMLCanvasElement;
+  binaryCanvas: HTMLCanvasElement;
   file: File;
   processedWidth: number;
   processedHeight: number;
   originalBytes: number;
+  pdfPage?: number;
+  pdfPageCount?: number;
+  /** Prefer native PDF text when present — skips Tesseract. */
+  textLayerWords?: OcrWordBox[];
+  textLayerRaw?: string;
+  extractMode?: 'pdf-text' | 'ocr';
   onProgress?: (pct: number) => void;
 }): Promise<OcrMatrix> {
   progressSink = input.onProgress ?? null;
   input.onProgress?.(2);
 
   try {
-    const worker = await getSharedWorker();
-    input.onProgress?.(8);
+    let words: OcrWordBox[];
+    let rawText: string;
+    let meanConfidence: number;
 
-    // Only text + blocks — skip tsv/hocr/pdf (expensive serializations).
-    const result = await worker.recognize(
-      input.canvas,
-      {},
-      { text: true, blocks: true },
-    );
+    if (
+      input.extractMode === 'pdf-text' &&
+      input.textLayerWords &&
+      input.textLayerWords.length > 0
+    ) {
+      input.onProgress?.(40);
+      words = input.textLayerWords;
+      rawText = (input.textLayerRaw ?? words.map((w) => w.text).join(' ')).trim();
+      meanConfidence = 100;
+      input.onProgress?.(90);
+    } else {
+      const worker = await getSharedWorker();
+      input.onProgress?.(5);
 
-    const page = result.data as unknown as TessPage;
-    const rawText = page.text?.trim() ?? '';
-    const words = collectWordsFromPage(page);
+      const recognized = await recognizeMaxQuality(
+        worker,
+        input.canvas,
+        input.binaryCanvas,
+        (done, total) => {
+          input.onProgress?.(5 + Math.round((done / total) * 90));
+        },
+      );
+
+      words = recognized.words;
+      rawText = recognized.page.text?.trim() ?? '';
+      meanConfidence = recognized.page.confidence ?? 0;
+      if (words.length > 0) {
+        let sum = 0;
+        let n = 0;
+        for (const w of words) {
+          if (w.confidence > 0) {
+            sum += w.confidence;
+            n += 1;
+          }
+        }
+        if (n > 0) meanConfidence = sum / n;
+      }
+    }
 
     let { matrix, cells } = wordsToMatrix(words);
     if (!matrixHasContent(matrix) && rawText) {
@@ -331,20 +488,30 @@ export async function runOcr(input: {
       cells = [];
     }
 
-    const items = parseDocumentItems(words, matrix);
-
-    let meanConfidence = page.confidence ?? 0;
-    if (words.length > 0) {
-      let sum = 0;
-      let n = 0;
-      for (const w of words) {
-        if (w.confidence > 0) {
-          sum += w.confidence;
-          n += 1;
-        }
+    let layout = buildPageLayout(words, input.processedWidth);
+    if (!layoutHasContent(layout)) {
+      layout = layoutFromPlainText(rawText);
+      if (layoutHasContent(layout) && !matrixHasContent(matrix)) {
+        matrix = layout.matrix;
       }
-      if (n > 0) meanConfidence = sum / n;
+    } else {
+      matrix = layout.matrix.map((row) => row.map((cell) => cell));
+      cells = layout.rows.flatMap((row, r) =>
+        row.cells.map((cell, c) => ({
+          row: r,
+          col: c,
+          text: cell.text,
+          confidence: cell.confidence,
+          words: cell.words,
+          style: cell.style,
+        })),
+      );
     }
+
+    const items = parseDocumentItems(words, matrix, input.processedWidth);
+    const resolvedItems = itemsHaveContent(items)
+      ? items
+      : parseFallbackItemsFromText(rawText, matrix);
 
     input.onProgress?.(100);
 
@@ -352,17 +519,23 @@ export async function runOcr(input: {
       id: `ocr-${crypto.randomUUID().slice(0, 8)}`,
       createdAt: new Date().toISOString(),
       source: {
-        fileName: input.file.name || 'capture.jpg',
-        mimeType: input.file.type || 'image/jpeg',
+        fileName: input.file.name || 'document.pdf',
+        mimeType: input.file.type || 'application/pdf',
         originalBytes: input.originalBytes,
         processedWidth: input.processedWidth,
         processedHeight: input.processedHeight,
+        ...(input.pdfPage != null ? { pdfPage: input.pdfPage } : {}),
+        ...(input.pdfPageCount != null
+          ? { pdfPageCount: input.pdfPageCount }
+          : {}),
+        ...(input.extractMode ? { extractMode: input.extractMode } : {}),
       },
       matrix,
       rows: matrix.length,
       cols: matrix[0]?.length ?? 0,
       cells,
-      items,
+      layout,
+      items: resolvedItems,
       rawText,
       meanConfidence,
       object: buildOcrObject(matrix),

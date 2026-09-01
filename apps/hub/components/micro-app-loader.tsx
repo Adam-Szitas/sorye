@@ -3,12 +3,13 @@
 import { resolveRemoteEntry } from '@/lib/mf-remotes';
 import { init, loadRemote, registerRemotes } from '@module-federation/runtime';
 import type { MicroFrontendConfig } from '@sorye/types';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type RemoteMount = (container: HTMLElement) => () => void;
 
 let hubInitialized = false;
-const registeredRemotes = new Set<string>();
+/** remoteName → last registered entry URL */
+const registeredEntries = new Map<string, string>();
 
 function ensureHub() {
   if (hubInitialized) return;
@@ -22,16 +23,17 @@ function ensureHub() {
 
 function ensureRemote(config: MicroFrontendConfig) {
   ensureHub();
-  if (registeredRemotes.has(config.remoteName)) return;
+  const entry = resolveRemoteEntry(config);
+  if (registeredEntries.get(config.remoteName) === entry) return;
 
   registerRemotes([
     {
       name: config.remoteName,
-      entry: resolveRemoteEntry(config),
+      entry,
       type: 'module',
     },
   ]);
-  registeredRemotes.add(config.remoteName);
+  registeredEntries.set(config.remoteName, entry);
 }
 
 function resolveMount(mod: unknown): RemoteMount | null {
@@ -54,12 +56,12 @@ export function MicroAppLoader({ config }: MicroAppLoaderProps) {
   const [mountFn, setMountFn] = useState<RemoteMount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const configKey = useRef('');
+  const remoteName = config.remoteName;
+  const exposedModule = config.exposedModule;
+  const remoteEntry = resolveRemoteEntry(config);
 
   useEffect(() => {
     let cancelled = false;
-    const key = `${config.remoteName}:${config.exposedModule}:${resolveRemoteEntry(config)}`;
-    configKey.current = key;
 
     async function load() {
       setLoading(true);
@@ -68,21 +70,21 @@ export function MicroAppLoader({ config }: MicroAppLoaderProps) {
 
       try {
         ensureRemote(config);
-        const moduleId = `${config.remoteName}/${config.exposedModule.replace(/^\.\//, '')}`;
+        const moduleId = `${remoteName}/${exposedModule.replace(/^\.\//, '')}`;
         const mod = await loadRemote<unknown>(moduleId);
         const resolved = resolveMount(mod);
 
         if (!resolved) {
           throw new Error(
-            `Remote "${config.remoteName}" did not export a mount() function.`,
+            `Remote "${remoteName}" did not export a mount() function.`,
           );
         }
 
-        if (!cancelled && configKey.current === key) {
+        if (!cancelled) {
           setMountFn(() => resolved);
         }
       } catch (err) {
-        if (!cancelled && configKey.current === key) {
+        if (!cancelled) {
           setLoading(false);
           setError(
             err instanceof Error
@@ -97,7 +99,9 @@ export function MicroAppLoader({ config }: MicroAppLoaderProps) {
     return () => {
       cancelled = true;
     };
-  }, [config]);
+    // Primitive identity — a new `config` object with the same fields must
+    // not remount a live remote.
+  }, [remoteName, exposedModule, remoteEntry, config]);
 
   useEffect(() => {
     if (!mountFn || !mountTarget) return;

@@ -112,7 +112,10 @@ export async function POST(req: Request) {
 }
 
 export async function OPTIONS(req: Request) {
-  const origin = req.headers.get('Origin') ?? '*';
+  const origin = req.headers.get('Origin');
+  if (!origin) {
+    return new NextResponse(null, { status: 204 });
+  }
   return new NextResponse(null, {
     status: 204,
     headers: {

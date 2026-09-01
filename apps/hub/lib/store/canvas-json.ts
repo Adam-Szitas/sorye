@@ -1,35 +1,22 @@
 import { randomUUID } from 'crypto';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import {
   emptyCanvasDocument,
   type CanvasBoard,
   type CanvasBoardSummary,
   type CanvasDocument,
 } from '@sorye/types';
+import { jsonDataFile } from './json-file';
 import { getHubSession } from './json-store';
 
 interface CanvasStoreData {
   boards: Record<string, CanvasBoard>;
 }
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-const STORE_PATH = path.join(DATA_DIR, 'canvas.json');
-const DEFAULT_STORE: CanvasStoreData = { boards: {} };
+const storeFile = jsonDataFile<CanvasStoreData>('canvas.json', () => ({
+  boards: {},
+}));
 
-async function readStore(): Promise<CanvasStoreData> {
-  try {
-    const raw = await readFile(STORE_PATH, 'utf-8');
-    return JSON.parse(raw) as CanvasStoreData;
-  } catch {
-    return structuredClone(DEFAULT_STORE);
-  }
-}
-
-async function writeStore(data: CanvasStoreData): Promise<void> {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(data, null, 2), 'utf-8');
-}
+const readStore = () => storeFile.read();
 
 async function assertMember(userId: string, workspaceId: string) {
   const session = await getHubSession(userId);
@@ -96,9 +83,9 @@ export async function createCanvasBoard(
     document: emptyCanvasDocument(),
     itemCount: 0,
   };
-  const store = await readStore();
-  store.boards[board.id] = board;
-  await writeStore(store);
+  await storeFile.update((store) => {
+    store.boards[board.id] = board;
+  });
   return board;
 }
 
@@ -113,30 +100,30 @@ export async function updateCanvasBoard(
   },
 ): Promise<{ board: CanvasBoard } | { conflict: CanvasBoard } | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
-  const store = await readStore();
-  const board = store.boards[boardId];
-  if (!board || board.workspaceId !== workspaceId) return null;
+  return storeFile.update((store) => {
+    const board = store.boards[boardId];
+    if (!board || board.workspaceId !== workspaceId) return null;
 
-  if (
-    patch.expectedRevision !== undefined &&
-    patch.expectedRevision !== board.revision
-  ) {
-    return { conflict: board };
-  }
+    if (
+      patch.expectedRevision !== undefined &&
+      patch.expectedRevision !== board.revision
+    ) {
+      return { conflict: board };
+    }
 
-  const next: CanvasBoard = {
-    ...board,
-    title: patch.title?.trim() || board.title,
-    document: patch.document ?? board.document,
-    updatedBy: userId,
-    updatedAt: new Date().toISOString(),
-    revision: board.revision + 1,
-    itemCount: (patch.document ?? board.document).items.length,
-  };
+    const next: CanvasBoard = {
+      ...board,
+      title: patch.title?.trim() || board.title,
+      document: patch.document ?? board.document,
+      updatedBy: userId,
+      updatedAt: new Date().toISOString(),
+      revision: board.revision + 1,
+      itemCount: (patch.document ?? board.document).items.length,
+    };
 
-  store.boards[boardId] = next;
-  await writeStore(store);
-  return { board: next };
+    store.boards[boardId] = next;
+    return { board: next };
+  });
 }
 
 export async function deleteCanvasBoard(
@@ -145,10 +132,10 @@ export async function deleteCanvasBoard(
   boardId: string,
 ): Promise<boolean> {
   if (!(await assertMember(userId, workspaceId))) return false;
-  const store = await readStore();
-  const board = store.boards[boardId];
-  if (!board || board.workspaceId !== workspaceId) return false;
-  delete store.boards[boardId];
-  await writeStore(store);
-  return true;
+  return storeFile.update((store) => {
+    const board = store.boards[boardId];
+    if (!board || board.workspaceId !== workspaceId) return false;
+    delete store.boards[boardId];
+    return true;
+  });
 }

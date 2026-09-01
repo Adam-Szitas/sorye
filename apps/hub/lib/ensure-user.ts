@@ -2,8 +2,15 @@ import {
   getHubSession,
   getHubSessionForWorkspace,
   getOrCreateUser,
+  getUserByEmail,
 } from '@/lib/store';
 import { auth } from '@/auth';
+import {
+  DEV_BYPASS_USER_ID,
+  getDevBypassLookupEmails,
+  getDevBypassProfile,
+  isAuthDevBypass,
+} from '@/lib/auth-dev-bypass';
 import { getAdminEmails } from '@/lib/env';
 import { EMBED_COOKIE, verifyEmbedToken } from '@/lib/embed-token';
 import { cookies, headers } from 'next/headers';
@@ -21,9 +28,7 @@ export async function ensureHubUser() {
   const embedSession = await sessionFromEmbedCookie();
   const hdrs = await headers();
   const referer = hdrs.get('referer') ?? '';
-  const fromEmbed =
-    referer.includes('/embed/') ||
-    hdrs.get('sec-fetch-dest') === 'iframe';
+  const fromEmbed = referer.includes('/embed/');
 
   // Inside an embed iframe, prefer the embed workspace even if the browser
   // also has a hub Google session cookie.
@@ -32,7 +37,11 @@ export async function ensureHubUser() {
   }
 
   const session = await auth();
-  if (session?.user?.id && session.user.email) {
+  if (
+    session?.user?.id &&
+    session.user.email &&
+    session.user.id !== DEV_BYPASS_USER_ID
+  ) {
     const admins = getAdminEmails();
     const email = session.user.email.toLowerCase();
 
@@ -45,6 +54,24 @@ export async function ensureHubUser() {
     });
 
     return getHubSession(session.user.id);
+  }
+
+  if (isAuthDevBypass()) {
+    for (const email of getDevBypassLookupEmails()) {
+      const existing = await getUserByEmail(email);
+      if (existing) {
+        return getHubSession(existing.id);
+      }
+    }
+
+    const profile = getDevBypassProfile();
+    await getOrCreateUser({
+      id: profile.id,
+      email: profile.email,
+      displayName: profile.displayName,
+      isAdmin: true,
+    });
+    return getHubSession(profile.id);
   }
 
   return embedSession;

@@ -5,6 +5,7 @@ import {
   setEventSettings,
   setEventsFeatureEnabled,
 } from '@/lib/events';
+import { isWorkspaceEventName } from '@/lib/security';
 import type { WorkspaceEventName, WorkspaceEventPayload } from '@sorye/types';
 import { NextResponse } from 'next/server';
 
@@ -43,11 +44,25 @@ export async function POST(req: Request) {
     );
   }
 
+  if (!isWorkspaceEventName(body.name)) {
+    return NextResponse.json(
+      { error: 'Unknown or disallowed event name' },
+      { status: 400 },
+    );
+  }
+
+  const title = body.payload.title.trim().slice(0, 500);
+  const summary = body.payload.summary?.trim().slice(0, 2000);
+
   const result = await publishWorkspaceEvent({
     userId: session.user.id,
     workspaceId: session.workspace.id,
     name: body.name,
-    payload: body.payload,
+    payload: {
+      ...body.payload,
+      title,
+      summary,
+    },
   });
 
   if (!result) {

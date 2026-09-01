@@ -9,7 +9,10 @@ import {
 
 interface RelayActivityProps {
   handler: RelayHandler;
-  onChange: (handler: RelayHandler) => void;
+  onTest: (sourceAppId: string) => Promise<void>;
+  eventsEnabled: boolean;
+  busy?: boolean;
+  notice?: string | null;
 }
 
 function formatWhen(iso: string): string {
@@ -21,9 +24,15 @@ function formatWhen(iso: string): string {
   });
 }
 
-export function RelayActivity({ handler, onChange }: RelayActivityProps) {
+export function RelayActivity({
+  handler,
+  onTest,
+  eventsEnabled,
+  busy,
+  notice,
+}: RelayActivityProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [testSource, setTestSource] = useState(WORKSPACE_SOURCES[0].id);
+  const [testSource, setTestSource] = useState(WORKSPACE_SOURCES[0]!.id);
 
   const messages = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -32,17 +41,21 @@ export function RelayActivity({ handler, onChange }: RelayActivityProps) {
       return (
         message.title.toLowerCase().includes(q) ||
         message.body.toLowerCase().includes(q) ||
-        sourceLabel(message.sourceAppId).toLowerCase().includes(q)
+        sourceLabel(message.sourceAppId).toLowerCase().includes(q) ||
+        (message.eventName?.toLowerCase().includes(q) ?? false)
       );
     });
   }, [handler, searchQuery]);
 
-  const sendTest = () => {
-    onChange(handler.sendTestMessage(testSource));
-  };
-
   return (
     <div className="relay-activity">
+      {!eventsEnabled ? (
+        <p className="relay-banner">
+          App events are off — Messenger routes will not post until you enable
+          them in <a href="/apps/dashboard">Dashboard → App events</a>.
+        </p>
+      ) : null}
+
       <div className="relay-toolbar">
         <label className="field field-grow">
           Search activity
@@ -75,14 +88,22 @@ export function RelayActivity({ handler, onChange }: RelayActivityProps) {
           }))}
           onSoryeChange={(e) => setTestSource(e.detail.value)}
         />
-        <button type="button" className="btn-primary" onClick={sendTest}>
-          Send test
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={busy}
+          onClick={() => void onTest(testSource)}
+        >
+          {busy ? 'Sending…' : 'Send test'}
         </button>
       </div>
 
+      {notice ? <p className="relay-notice">{notice}</p> : null}
+
       {messages.length === 0 ? (
         <p className="relay-empty">
-          No messages yet. Configure routes, then send a test notification.
+          No messages yet. Enable sources and routes under Configure, turn on
+          App events, then run OCR / Tasks / Calendar — or send a test.
         </p>
       ) : (
         <ul className="message-feed">
@@ -92,7 +113,8 @@ export function RelayActivity({ handler, onChange }: RelayActivityProps) {
                 <div>
                   <strong>{message.title}</strong>
                   <span>
-                    {sourceLabel(message.sourceAppId)} ·{' '}
+                    {sourceLabel(message.sourceAppId)}
+                    {message.eventName ? ` · ${message.eventName}` : ''} ·{' '}
                     {formatWhen(message.createdAt)}
                   </span>
                 </div>

@@ -6,6 +6,8 @@ interface TopBarProps {
   user: HubUser;
   workspace: Workspace;
   plan: SubscriptionPlan;
+  notificationCount?: number;
+  onOpenNotifications: () => void;
   onOpenPicker: () => void;
   onOpenConnections: () => void;
   onSignOut: () => void;
@@ -15,6 +17,8 @@ export function TopBar({
   user,
   workspace,
   plan,
+  notificationCount = 0,
+  onOpenNotifications,
   onOpenPicker,
   onOpenConnections,
   onSignOut,
@@ -38,6 +42,33 @@ export function TopBar({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">
+        <button
+          type="button"
+          onClick={onOpenNotifications}
+          className="relative rounded-lg px-2.5 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+          aria-label={
+            notificationCount > 0
+              ? `Notifications, ${notificationCount} unread`
+              : 'Notifications'
+          }
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            aria-hidden
+          >
+            <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2c0 .53-.21 1.04-.59 1.4L4 17h5" />
+            <path d="M9.5 17a2.5 2.5 0 0 0 5 0" />
+          </svg>
+          {notificationCount > 0 ? (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+              {notificationCount > 99 ? '99+' : notificationCount}
+            </span>
+          ) : null}
+        </button>
         <button
           type="button"
           onClick={onOpenPicker}

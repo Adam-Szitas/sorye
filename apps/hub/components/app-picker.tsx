@@ -3,8 +3,14 @@ import type {
   SubscriptionPlan,
   SubscriptionSource,
 } from '@sorye/types';
-import { canSelectMoreApps } from '@sorye/types';
+import {
+  APP_CATALOG,
+  canSelectMoreApps,
+  isAlwaysAvailableApp,
+  selectableAppCount,
+} from '@sorye/types';
 import { AppIcon } from './app-icon';
+import { AppUsageGuide } from './app-usage-guide';
 
 interface AppPickerProps {
   catalog: AppCatalogEntry[];
@@ -24,7 +30,8 @@ export function AppPicker({
   onClose,
 }: AppPickerProps) {
   const selectedSet = new Set(selectedIds);
-  const atLimit = !canSelectMoreApps(plan, selectedIds.length);
+  const usedSlots = selectableAppCount(APP_CATALOG, selectedIds);
+  const atLimit = !canSelectMoreApps(plan, usedSlots);
 
   return (
     <section className="mx-auto w-full max-w-4xl">
@@ -33,7 +40,7 @@ export function AppPicker({
           <h2 className="text-2xl font-semibold">App Library</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Select up to {plan.maxApps === 999 ? 'unlimited' : plan.maxApps}{' '}
-            apps for your workspace
+            optional apps. Catalog is always included and free.
           </p>
         </div>
         <button
@@ -65,7 +72,7 @@ export function AppPicker({
 
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm text-[var(--color-text-muted)]">
-          {selectedIds.length} /{' '}
+          {usedSlots} /{' '}
           {plan.maxApps === 999 ? '∞' : plan.maxApps} selected
         </span>
         {atLimit && (
@@ -77,28 +84,39 @@ export function AppPicker({
 
       <ul className="grid gap-3 sm:grid-cols-2">
         {catalog.map((app) => {
-          const isSelected = selectedSet.has(app.id);
-          const disabled = !isSelected && atLimit;
+          const pinned = isAlwaysAvailableApp(APP_CATALOG, app.id);
+          const isSelected = pinned || selectedSet.has(app.id);
+          const disabled = pinned || (!isSelected && atLimit);
 
           return (
-            <li key={app.id}>
+            <li
+              key={app.id}
+              className={`rounded-xl p-4 transition ${
+                isSelected
+                  ? 'surface ring-1 ring-white/20'
+                  : 'bg-white/5 hover:bg-white/8'
+              } ${disabled && !pinned ? 'opacity-50' : ''}`}
+            >
               <button
                 type="button"
                 disabled={disabled}
                 onClick={() => onToggleApp(app.id)}
-                className={`flex w-full items-center gap-4 rounded-xl p-4 text-left transition ${
-                  isSelected
-                    ? 'surface ring-1 ring-white/20'
-                    : 'bg-white/5 hover:bg-white/8'
-                } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+                className={`flex w-full items-center gap-4 text-left ${
+                  disabled ? 'cursor-not-allowed' : ''
+                }`}
               >
                 <AppIcon app={app} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{app.name}</span>
                     <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase text-[var(--color-text-muted)]">
                       {app.category}
                     </span>
+                    {app.alwaysAvailable && (
+                      <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] uppercase text-indigo-300">
+                        Always on
+                      </span>
+                    )}
                     {app.status === 'available' && (
                       <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] uppercase text-emerald-400">
                         Live
@@ -115,7 +133,7 @@ export function AppPicker({
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-[var(--color-text-muted)]">
+                  <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                     {app.description}
                   </p>
                 </div>
@@ -143,6 +161,7 @@ export function AppPicker({
                   )}
                 </div>
               </button>
+              <AppUsageGuide app={app} variant="picker" />
             </li>
           );
         })}
