@@ -40,7 +40,7 @@ export function AppPicker({
           <h2 className="text-2xl font-semibold">App Library</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Select up to {plan.maxApps === 999 ? 'unlimited' : plan.maxApps}{' '}
-            optional apps. Catalog is always included and free.
+            optional apps. Catalog and Contact are always included and free.
           </p>
         </div>
         <button

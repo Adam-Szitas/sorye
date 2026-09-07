@@ -35,14 +35,17 @@ interface AppCatalogBrowserProps {
 }
 
 export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const res = await fetch('/api/workspace', { credentials: 'include' });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setSelectedIds([]);
+          return;
+        }
         const data = (await res.json()) as {
           workspace?: { selectedAppIds?: string[] };
         };
@@ -50,7 +53,7 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
           setSelectedIds(data.workspace?.selectedAppIds ?? []);
         }
       } catch {
-        // ignore
+        if (!cancelled) setSelectedIds([]);
       }
     })();
     return () => {
@@ -59,7 +62,7 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
   }, []);
 
   const installed = new Set(
-    getSelectedApps(APP_CATALOG, selectedIds).map((a) => a.id),
+    getSelectedApps(APP_CATALOG, selectedIds ?? []).map((a) => a.id),
   );
   const grouped = new Map<AppCatalogEntry['category'], AppCatalogEntry[]>();
   for (const app of APP_CATALOG) {
@@ -83,8 +86,8 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">App catalog</h1>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Every Sorye app, for every workspace. Catalog is always on and does
-          not use a plan slot.
+          Every Sorye app, for every workspace. Catalog and Contact are always
+          on and do not use a plan slot.
         </p>
         <button
           type="button"
@@ -150,6 +153,10 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
                     {isSelf ? (
                       <span className="text-[11px] text-[var(--color-text-muted)]">
                         You are here
+                      </span>
+                    ) : selectedIds === null ? (
+                      <span className="text-[11px] text-[var(--color-text-muted)]">
+                        Checking…
                       </span>
                     ) : canOpen ? (
                       <button

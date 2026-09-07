@@ -72,6 +72,28 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     alwaysAvailable: true,
   },
   {
+    id: 'contact',
+    name: 'Contact',
+    description:
+      'Who Sorye is for — try Protocolio and Canvas, or get in touch.',
+    usageIntro: {
+      summary:
+        'The product story for smaller–mid ops, plus live Protocolio and Canvas in this Hub.',
+      steps: [
+        'Read the offer — document templates and ops boards in one shell.',
+        'Try Protocolio or Try Canvas — those open the real remotes already in Hub.',
+        'Email from this page, or pick other apps from Catalog.',
+      ],
+    },
+    slug: 'contact',
+    category: 'communication',
+    status: 'available',
+    icon: 'contact',
+    color: '#7c9cff',
+    mountPath: '/apps/contact',
+    alwaysAvailable: true,
+  },
+  {
     id: 'dashboard',
     name: 'Dashboard',
     description:
@@ -432,6 +454,13 @@ export function isAlwaysAvailableApp(
   appId: string,
 ): boolean {
   return catalog.some((app) => app.id === appId && app.alwaysAvailable === true);
+}
+
+/** Hub-native pane (Catalog, Contact) — no MF remote or iframe. */
+export function isHubNativeApp(app: AppCatalogEntry): boolean {
+  return (
+    app.alwaysAvailable === true && !app.microFrontend && !app.external
+  );
 }
 
 /** Catalog ids that every workspace receives, in catalog order. */

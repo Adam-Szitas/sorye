@@ -356,7 +356,7 @@ export function HubShell({ initialSession }: HubShellProps) {
         const app = APP_CATALOG.find((a) => a.id === appId);
         if (!app) return;
         if (app.status !== 'available' && app.status !== 'beta') return;
-        if (app.microFrontend || app.external) {
+        if (app.microFrontend || app.external || app.alwaysAvailable) {
           setPanel('workspace');
           openApp(app, 'left');
         } else {
@@ -491,6 +491,18 @@ function HubShellLoaded({
   const leftApp = resolveApp(panes.leftId);
   const rightApp = resolveApp(panes.rightId);
   const workspaceOpen = Boolean(leftApp || rightApp);
+  const contactApp = APP_CATALOG.find((app) => app.id === 'contact');
+  const contactOpen =
+    panes.leftId === 'contact' || panes.rightId === 'contact';
+
+  const openContact = useCallback(() => {
+    if (!contactApp) return;
+    const side: PaneSide =
+      panes.leftId && panes.leftId !== 'contact' && !panes.rightId
+        ? 'right'
+        : 'left';
+    openApp(contactApp, side);
+  }, [contactApp, openApp, panes.leftId, panes.rightId]);
 
   return (
     <>
@@ -500,6 +512,7 @@ function HubShellLoaded({
         plan={plan}
         notificationCount={unreadTotal}
         onOpenNotifications={openCenter}
+        onOpenContact={openContact}
         onOpenPicker={() => {
           logState('panel.open', { panel: 'picker' });
           setPanel('picker');
@@ -652,6 +665,8 @@ function HubShellLoaded({
         onNavigate={navigatePanel}
         workspaceOpen={workspaceOpen}
         onOpenWorkspace={() => navigatePanel('workspace')}
+        contactActive={contactOpen && panel === 'workspace'}
+        onOpenContact={openContact}
       />
 
       <StatusBar

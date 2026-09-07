@@ -47,6 +47,7 @@ Every installable app is an `AppCatalogEntry`:
 - **`microFrontend`** — MF remote config (`remoteName`, `remoteEntry`, `./mount`)
 - **`external`** — iframe apps (SUSM, ESPM) instead of MF
 - **`usageIntro`** — first-run guidance shown in Hub picker
+- **`alwaysAvailable`** — pinned for every workspace (Catalog, Contact); does not count toward `plan.maxApps`
 
 Subscription plans cap how many apps and connections a workspace may use (`packages/types/src/subscriptions.ts`).
 
@@ -58,8 +59,8 @@ Responsibilities:
 
 1. **Session** — `useHubSession()` → `GET /api/workspace`
 2. **Launcher** — home grid with per-app notification badges
-3. **Split panes** — left/right MF apps (`AppWorkspace` + `MicroAppLoader`)
-4. **Dock** — Home, workspace switcher, notification bell
+3. **Split panes** — left/right MF apps (`AppWorkspace` + `MicroAppLoader`) plus Hub-native Catalog / Contact
+4. **Dock** — Home, Apps, Connect, Contact, workspace split
 5. **Connections** — REST keys, embed widgets
 6. **Notifications** — `NotificationProvider`, toasts, click-to-open app
 

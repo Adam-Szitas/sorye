@@ -3,10 +3,12 @@
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
 import { AppCatalogBrowser } from '@/components/app-catalog';
+import { AppContact } from '@/components/app-contact';
 import { AppUsageGuide } from '@/components/app-usage-guide';
 import {
   APP_CATALOG,
   getAppBySlug,
+  isHubNativeApp,
   type AppCatalogEntry,
 } from '@sorye/types';
 import Link from 'next/link';
@@ -65,7 +67,7 @@ export default function MicroAppPage() {
   }
 
   if (!app.microFrontend && !app.external) {
-    if (app.id === 'catalog') {
+    if (isHubNativeApp(app)) {
       return (
         <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
           <header className="glass flex shrink-0 items-center gap-4 px-4 py-3 sm:px-6">
@@ -77,7 +79,7 @@ export default function MicroAppPage() {
             </Link>
             <span className="text-sm font-medium">{app.name}</span>
           </header>
-          <AppCatalogBrowser />
+          {app.id === 'catalog' ? <AppCatalogBrowser /> : <AppContact />}
         </div>
       );
     }

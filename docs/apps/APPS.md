@@ -6,6 +6,7 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 |-----|------|------|-------------|
 | Hub | 3000 | Next.js host | [Hub](#hub) |
 | Catalog | — | Hub-native, always on | [Catalog](#catalog) |
+| Contact | — | Hub-native, always on | [Contact](#contact) |
 | Dashboard | 3001 | MF remote | [Dashboard](#dashboard) |
 | Calendar | 3003 | MF remote | [Calendar](#calendar) |
 | Notes | 3004 | MF remote | [Notes](#notes) |
@@ -64,6 +65,8 @@ Hub        →  record notification  →  Badges + toasts + bell
 | File | Purpose |
 |------|---------|
 | `components/hub-shell.tsx` | Main UI orchestration |
+| `components/app-catalog.tsx` | Hub-native Catalog |
+| `components/app-contact.tsx` | Hub-native Contact (try Protocolio / Canvas) |
 | `components/micro-app-loader.tsx` | MF remote load/unmount |
 | `components/app-launcher.tsx` | Home grid + badges |
 | `lib/ensure-user.ts` | Session resolution (Google + embed) |
@@ -108,6 +111,33 @@ Browse every entry in `APP_CATALOG` by category. Open installed apps or jump to 
 - Reads `GET /api/workspace` for installed ids
 - Asks Hub to open apps via `sorye:hub:open-app`
 - Asks Hub to open the picker via `sorye:hub:manage-apps`
+
+---
+
+# Contact
+
+**Path:** Hub-native (`apps/hub/components/app-contact.tsx`) — not a Vite remote  
+**Catalog id:** `contact`  
+**Always on:** `alwaysAvailable: true` — every workspace, no plan slot, cannot be removed  
+
+## Purpose
+
+Product page for Sorye (smaller–mid ops automation). **Try Protocolio** and **Try Canvas** open the real Hub remotes (`id: protocolio`, `id: canvas`) via `sorye:hub:open-app` — same as Catalog. Reachable from the launcher, top bar, and dock.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry (`alwaysAvailable`) |
+| `apps/hub/components/app-contact.tsx` | Contact UI |
+| `apps/hub/lib/contact-copy.ts` | Offer, intro, and email copy |
+| `apps/hub/components/top-bar.tsx`, `dock.tsx` | Contact shortcut |
+
+## Communications
+
+- Asks Hub to open Protocolio / Canvas via `sorye:hub:open-app`
+- No events, handoffs, or extra APIs
+- Visible when logged in (or `AUTH_DEV_BYPASS`) like the rest of Hub
 
 ---
 

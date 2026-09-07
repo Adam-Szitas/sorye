@@ -13,6 +13,7 @@ build
 # env
 .env
 .env*.local
+e2e/.env
 .data
 
 # debug
@@ -29,3 +30,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+e2e/.pw-user-data/

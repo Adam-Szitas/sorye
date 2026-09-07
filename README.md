@@ -15,7 +15,7 @@ A subscription-based app platform monorepo. The **Hub** is your workspace OS —
 ```
 sorye/
 ├── apps/
-│   ├── hub/           # Next.js shell — auth, launcher, MF host, all APIs
+│   ├── hub/           # Next.js shell — auth, launcher, Catalog, Contact, MF host, all APIs
 │   ├── dashboard/     # Workspace overview + App events toggle
 │   ├── calendar/      # Scheduling
 │   ├── notes/         # Note taking
@@ -189,6 +189,37 @@ Revoke a key anytime from Connections to cut off embeds.
 
 After schema changes (Postgres): `pnpm db:push`
 
+## Playwright E2E
+
+Chromium journeys for Hub (Catalog, Dashboard, Studio, OCR), plus **local** SUSM and ESPM. Defaults are localhost, not Vercel. Hub tests use `AUTH_DEV_BYPASS=true` — they never need Google secrets.
+
+Three terminals, then Playwright UI in **system Chrome** (from `D:\projects\sorye` — not `npx pnpm@10.12.1 …`):
+
+```
+# terminal 1 — Hub
+pnpm dev                    # http://localhost:3000
+
+# terminal 2 — ESPM (D:\MyESPM\ESPM)
+cd D:\MyESPM\ESPM
+npm start                   # http://localhost:4200
+
+# terminal 3 — SUSM on :4201 (no sibling repo found; set SUSM_URL if needed)
+```
+
+```
+pnpm test:e2e:ui
+```
+
+**Close any Cursor Simple Browser tab on 9323**, then open http://127.0.0.1:9323 in Chrome or Edge. If Run is greyed (Cursor already connected), close that tab, Ctrl+C UI, `pnpm test:e2e:ui` again.
+
+```bash
+pnpm test:e2e:headed          # visible Playwright Chromium, no UI server
+pnpm test:e2e                 # headless
+pnpm test:e2e -- --update-snapshots
+```
+
+Override targets with `HUB_URL`, `SUSM_URL`, `ESPM_URL` (must stay localhost unless `ALLOW_LIVE_E2E=true`). Authenticated SUSM/ESPM: `SUSM_EMAIL` / `SUSM_PASSWORD`, `ESPM_USERNAME` / `ESPM_PASSWORD` in `e2e/.env`. Details: [e2e/README.md](./e2e/README.md).
+
 ## Subscription tiers
 
 | Plan | Apps | Connections | Teams |
@@ -244,6 +275,8 @@ pnpm dev:dashboard    # dashboard remote only
 pnpm dev:calendar     # calendar remote only
 pnpm dev:notes        # notes remote only
 pnpm build            # build all
+pnpm test:e2e         # Playwright journeys + visual diffs (Hub :3000, SUSM, ESPM)
+pnpm test:e2e:ui      # Playwright UI mode — best for local visual debugging
 
 # Without Corepack, same commands via the wrapper:
 .\pn run setup

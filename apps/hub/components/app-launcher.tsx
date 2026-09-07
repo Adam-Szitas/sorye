@@ -46,7 +46,7 @@ export function AppLauncher({
         <p className="mt-2 text-[var(--color-text-muted)]">
           {optionalCount} of {plan.maxApps === 999 ? '∞' : plan.maxApps} optional
           apps on the <span style={{ color: plan.accent }}>{plan.name}</span>{' '}
-          plan · Catalog always on
+          plan · Catalog and Contact always on
         </p>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
           Tap an app to open it full screen, or use L / R for a side-by-side desk.

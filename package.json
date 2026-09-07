@@ -22,9 +22,14 @@
     "db:down": "docker compose down",
     "db:push": "pnpm --filter @sorye/db db:push",
     "db:studio": "pnpm --filter @sorye/db db:studio",
-    "dev:sdk": "pnpm --filter @sorye/sdk dev"
+    "dev:sdk": "pnpm --filter @sorye/sdk dev",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "node e2e/run-ui.mjs",
+    "test:e2e:ui:all": "node e2e/run-ui.mjs",
+    "test:e2e:headed": "playwright test --headed --slowMo=200"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3"
   },

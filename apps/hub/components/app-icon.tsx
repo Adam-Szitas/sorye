@@ -19,6 +19,7 @@ const ICON_PATHS: Record<string, string> = {
   ocr: 'M4 5h16v14H4zm3 4h10M7 12h7M7 15h5',
   studio: 'M12 3l8 5v8l-8 5-8-5V8l8-5zm0 5v10m-7.5-6.5L12 13l7.5-4.5',
   catalog: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',
+  contact: 'M4 6h16v12H4zm0 0 8 7 8-7',
 };
 
 interface AppIconProps {

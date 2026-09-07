@@ -8,6 +8,7 @@ interface TopBarProps {
   plan: SubscriptionPlan;
   notificationCount?: number;
   onOpenNotifications: () => void;
+  onOpenContact: () => void;
   onOpenPicker: () => void;
   onOpenConnections: () => void;
   onSignOut: () => void;
@@ -19,6 +20,7 @@ export function TopBar({
   plan,
   notificationCount = 0,
   onOpenNotifications,
+  onOpenContact,
   onOpenPicker,
   onOpenConnections,
   onSignOut,
@@ -68,6 +70,13 @@ export function TopBar({
               {notificationCount > 99 ? '99+' : notificationCount}
             </span>
           ) : null}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenContact}
+          className="rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition hover:bg-white/10"
+        >
+          Contact
         </button>
         <button
           type="button"
