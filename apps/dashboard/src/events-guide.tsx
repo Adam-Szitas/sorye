@@ -206,6 +206,18 @@ export function EventsGuide({
           <li>
             <code>sorye.studio.too_much</code> — Studio Too-much monitor shut the GPU path down
           </li>
+          <li>
+            <code>sorye.storefront.order_placed</code> — Storefront order request (no payment)
+          </li>
+          <li>
+            <code>sorye.site.published</code> — Site one-pager published
+          </li>
+          <li>
+            <code>sorye.mail.sent</code> — in-workspace Sorye Mail sent (not public SMTP)
+          </li>
+          <li>
+            <code>sorye.files.uploaded</code> — Drive file uploaded (name/size only, not the bytes)
+          </li>
         </ul>
         <p style={{ marginTop: '0.75rem', fontSize: '0.875rem' }}>
           Route which apps notify Messenger (and email/webhooks) in{' '}

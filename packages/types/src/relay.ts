@@ -45,6 +45,26 @@ export const RELAY_SOURCES: readonly RelaySource[] = [
     name: 'Studio',
     description: '3D model opened or shut down by the Too-much monitor.',
   },
+  {
+    id: 'storefront',
+    name: 'Storefront',
+    description: 'Order requests placed from the workspace shop.',
+  },
+  {
+    id: 'site',
+    name: 'Site',
+    description: 'Public one-pager published for this workspace.',
+  },
+  {
+    id: 'mail',
+    name: 'Mail',
+    description: 'In-workspace Sorye Mail messages.',
+  },
+  {
+    id: 'files',
+    name: 'Drive',
+    description: 'Workspace file uploads (metadata only in events).',
+  },
 ] as const;
 
 export interface RelayChannel {
@@ -132,6 +152,10 @@ export function relaySourceFromEventName(name: string): string | null {
   if (name.startsWith('sorye.task.')) return 'tasks';
   if (name.startsWith('sorye.notes.')) return 'notes';
   if (name.startsWith('sorye.studio.')) return 'studio';
+  if (name.startsWith('sorye.storefront.')) return 'storefront';
+  if (name.startsWith('sorye.site.')) return 'site';
+  if (name.startsWith('sorye.mail.')) return 'mail';
+  if (name.startsWith('sorye.files.')) return 'files';
   if (name === 'sorye.test.ping') return 'messenger';
   return null;
 }

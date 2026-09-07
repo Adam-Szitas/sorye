@@ -11,6 +11,11 @@ export * from './handoff';
 export * from './relay';
 export * from './notifications';
 export * from './studio';
+export * from './reports';
+export * from './storefront';
+export * from './site';
+export * from './mail';
+export * from './files';
 
 import type { SubscriptionTierId } from './subscription';
 import type { UserWorkspace } from './workspace';

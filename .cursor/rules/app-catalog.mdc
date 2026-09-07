@@ -11,7 +11,7 @@ Whenever you add, rename, remove, or change an app (new remote, port, status, de
 
 ## Required updates (same PR / same turn)
 
-1. **`packages/types/src/apps.ts`** — `APP_CATALOG` entry (`id`, `slug`, `usageIntro`, `microFrontend` / `external`, `status`). Set `alwaysAvailable: true` only for apps every workspace must have without a plan slot (Catalog, Contact).
+1. **`packages/types/src/apps.ts`** — `APP_CATALOG` entry (`id`, `slug`, `usageIntro`, `microFrontend` / `external`, `status`). Set `alwaysAvailable: true` only for apps every workspace must have without a plan slot (Catalog). Contact is `presentationOnly` — public page, not customer chrome.
 2. **`docs/apps/APPS.md`** — table row + section (port, files, communications).
 3. **`docs/AGENTS.md`** — if the “new MF app” path or common-tasks table changes.
 4. **Hub wiring if it is a new MF remote:** `apps/hub/lib/mf-remotes.ts`, root `package.json` `dev` filter, `.env.example` `NEXT_PUBLIC_*_REMOTE`.
@@ -22,4 +22,4 @@ Do not ship an `apps/<name>/` package without a matching `APP_CATALOG` row. Do n
 
 ## Always-on apps
 
-`alwaysAvailable` apps appear for every user, cannot be toggled off, and do not count toward `plan.maxApps`. Use `withAlwaysAvailableAppIds` / `getSelectedApps` / `selectableAppCount` — never treat raw `selectedAppIds.length` as the plan usage count.
+`alwaysAvailable` apps appear for every user, cannot be toggled off, and do not count toward `plan.maxApps`. Combine with `adminOnly` (Reports) to pin an app for platform admins only — still no plan slot, but hidden from member launcher/dock/picker. Use `withAlwaysAvailableAppIds` / `getSelectedApps` / `selectableAppCount` — never treat raw `selectedAppIds.length` as the plan usage count.

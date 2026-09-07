@@ -3,10 +3,10 @@
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
 import { AppIcon } from '@/components/app-icon';
-import { AppCatalogBrowser } from '@/components/app-catalog';
-import { AppContact } from '@/components/app-contact';
+import { HubNativeAppBody } from '@/components/hub-native-app';
 import { AppUsageGuide } from '@/components/app-usage-guide';
-import type { AppCatalogEntry } from '@sorye/types';
+import { shouldShowUsageGuide } from '@/lib/usage-guide';
+import { isHubNativeApp, type AppCatalogEntry } from '@sorye/types';
 import { useEffect, useRef, useState } from 'react';
 
 export type PaneSide = 'left' | 'right';
@@ -79,12 +79,12 @@ function AppPane({
           Close
         </button>
       </header>
-      <AppUsageGuide app={app} variant="pane" />
-      <div className="flex min-h-0 flex-1 flex-col">
-        {app.id === 'catalog' ? (
-          <AppCatalogBrowser paneSide={side} />
-        ) : app.id === 'contact' ? (
-          <AppContact paneSide={side} />
+      {shouldShowUsageGuide(app.id) ? (
+        <AppUsageGuide app={app} variant="pane" />
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {isHubNativeApp(app) ? (
+          <HubNativeAppBody app={app} paneSide={side} alone={alone} />
         ) : app.external ? (
           <ExternalAppFrame config={app.external} appName={app.name} />
         ) : app.microFrontend ? (

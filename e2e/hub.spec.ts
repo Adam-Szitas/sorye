@@ -44,7 +44,8 @@ test.describe('Sorye Hub', () => {
 
     await expect(loc(page, HubLauncher.welcome)).toBeVisible();
     await expect(openAppTile(page, 'Catalog')).toBeVisible();
-    await expect(openAppTile(page, 'Contact')).toBeVisible();
+    await expect(openAppTile(page, 'Contact')).toHaveCount(0);
+    await expect(loc(page, HubContact.email)).toHaveCount(0);
     await expect(openAppTile(page, 'Dashboard')).toBeVisible();
     await expect(loc(page, HubLauncher.manageApps)).toBeVisible();
     await expect(loc(page, HubLogin.continueWithGoogle)).toHaveCount(0);
@@ -96,16 +97,21 @@ test.describe('Sorye Hub', () => {
     });
   });
 
-  test('opens Contact from the top bar', async ({ page }, testInfo) => {
+  test('hides Contact from chrome and serves /contact', async ({ page }, testInfo) => {
     const issues = attachIssueCollector(page);
     await gotoHubHome(page);
 
-    await loc(page, HubContact.topBar).click();
-    await dismissUsageGuide(page, 'Contact');
-    await expect(loc(page, hubPane('Contact'))).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Contact', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Contact app' })).toHaveCount(0);
+
+    await page.goto('/contact');
     await expect(loc(page, HubContact.heading)).toBeVisible();
     await expect(loc(page, HubContact.tryProtocolio)).toBeVisible();
     await expect(loc(page, HubContact.tryCanvas)).toBeVisible();
+    await expect(page.getByRole('complementary', { name: /How to use/ })).toHaveCount(0);
+    await loc(page, HubContact.email).click();
+    await expect(loc(page, HubContact.emailDialog)).toBeVisible();
+    await expect(loc(page, HubContact.send)).toBeVisible();
     await expect(loc(page, HubRemote.loadFailed)).toHaveCount(0);
 
     await testInfo.attach('console-network', {

@@ -51,6 +51,7 @@ export const NOTIFIABLE_APP_IDS = [
   'relay',
   'dashboard',
   'studio',
+  'mail',
 ] as const;
 
 export function createDefaultNotificationSettings(

@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 const subscriptionTierSchema = z.enum(['free', 'starter', 'pro', 'enterprise']);
 
+/** `next build` sets NODE_ENV=production but still loads `.env.local`. */
+function isNextProductionBuild(): boolean {
+  return process.env.NEXT_PHASE === 'phase-production-build';
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -60,7 +65,10 @@ const envSchema = z
       });
     }
 
-    if (env.NODE_ENV === 'production' && env.STORE_DRIVER === 'json') {
+    const productionRuntime =
+      env.NODE_ENV === 'production' && !isNextProductionBuild();
+
+    if (productionRuntime && env.STORE_DRIVER === 'json') {
       ctx.addIssue({
         code: 'custom',
         message:
@@ -69,7 +77,7 @@ const envSchema = z
       });
     }
 
-    if (env.NODE_ENV === 'production' && env.AUTH_DEV_BYPASS === 'true') {
+    if (productionRuntime && env.AUTH_DEV_BYPASS === 'true') {
       ctx.addIssue({
         code: 'custom',
         message:
@@ -79,7 +87,8 @@ const envSchema = z
     }
 
     const localBypass =
-      env.NODE_ENV === 'development' && env.AUTH_DEV_BYPASS === 'true';
+      env.AUTH_DEV_BYPASS === 'true' &&
+      (env.NODE_ENV === 'development' || isNextProductionBuild());
     if (!localBypass) {
       if (!env.AUTH_GOOGLE_ID) {
         ctx.addIssue({

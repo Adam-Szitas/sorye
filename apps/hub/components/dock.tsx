@@ -12,8 +12,6 @@ interface DockProps {
   onNavigate: (panel: Panel) => void;
   workspaceOpen?: boolean;
   onOpenWorkspace?: () => void;
-  contactActive?: boolean;
-  onOpenContact?: () => void;
 }
 
 const items: { id: Panel; label: string; icon: string }[] = [
@@ -42,8 +40,6 @@ export function Dock({
   onNavigate,
   workspaceOpen,
   onOpenWorkspace,
-  contactActive,
-  onOpenContact,
 }: DockProps) {
   const badges: Record<Panel, number | undefined> = {
     launcher: notificationCount > 0 ? notificationCount : undefined,
@@ -110,34 +106,6 @@ export function Dock({
             </button>
           );
         })}
-
-        {onOpenContact ? (
-          <button
-            type="button"
-            onClick={onOpenContact}
-            className={`relative flex flex-col items-center gap-0.5 rounded-xl px-4 py-2 transition ${
-              contactActive
-                ? 'bg-white/15 text-[var(--color-text)]'
-                : 'text-[var(--color-text-muted)] hover:bg-white/8 hover:text-[var(--color-text)]'
-            }`}
-            aria-current={contactActive ? 'page' : undefined}
-            aria-label="Contact app"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M4 6h16v12H4zm0 0 8 7 8-7" />
-            </svg>
-            <span className="text-[10px] font-medium">Contact</span>
-          </button>
-        ) : null}
 
         {workspaceOpen && onOpenWorkspace ? (
           <button

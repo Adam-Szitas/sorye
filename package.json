@@ -2,6 +2,7 @@
   "name": "sorye",
   "private": true,
   "scripts": {
+    "preinstall": "node -e \"if (process.env.npm_execpath && !/pnpm/.test(process.env.npm_execpath)) { console.error('This repo uses pnpm. Run: pnpm install'); process.exit(1) }\"",
     "setup": "corepack enable && corepack prepare pnpm@10.12.1 --activate",
     "dev": "turbo dev --filter=@sorye/hub --filter=@sorye/dashboard --filter=@sorye/calendar --filter=@sorye/notes --filter=@sorye/tasks --filter=@sorye/relay --filter=@sorye/protocolio --filter=@sorye/canvas --filter=@sorye/devkit --filter=@sorye/messenger --filter=@sorye/ocr --filter=@sorye/studio",
     "build": "turbo build",

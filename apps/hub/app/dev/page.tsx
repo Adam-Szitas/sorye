@@ -7,6 +7,8 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { Suspense } from 'react';
 
+export const dynamic = 'force-dynamic';
+
 async function setMyPlan(formData: FormData) {
   'use server';
 

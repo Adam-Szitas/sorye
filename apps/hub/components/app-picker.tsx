@@ -6,9 +6,12 @@ import type {
 import {
   APP_CATALOG,
   canSelectMoreApps,
+  filterCatalogForViewer,
   isAlwaysAvailableApp,
   selectableAppCount,
+  workspaceCatalogEntries,
 } from '@sorye/types';
+import { shouldShowUsageGuide } from '@/lib/usage-guide';
 import { AppIcon } from './app-icon';
 import { AppUsageGuide } from './app-usage-guide';
 
@@ -17,6 +20,7 @@ interface AppPickerProps {
   selectedIds: string[];
   plan: SubscriptionPlan;
   subscriptionSource: SubscriptionSource;
+  isAdmin?: boolean;
   onToggleApp: (appId: string) => void;
   onClose: () => void;
 }
@@ -26,6 +30,7 @@ export function AppPicker({
   selectedIds,
   plan,
   subscriptionSource,
+  isAdmin = false,
   onToggleApp,
   onClose,
 }: AppPickerProps) {
@@ -40,7 +45,7 @@ export function AppPicker({
           <h2 className="text-2xl font-semibold">App Library</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Select up to {plan.maxApps === 999 ? 'unlimited' : plan.maxApps}{' '}
-            optional apps. Catalog and Contact are always included and free.
+            optional apps. Catalog is always included and free.
           </p>
         </div>
         <button
@@ -83,7 +88,8 @@ export function AppPicker({
       </div>
 
       <ul className="grid gap-3 sm:grid-cols-2">
-        {catalog.map((app) => {
+        {filterCatalogForViewer(workspaceCatalogEntries(catalog), isAdmin).map(
+          (app) => {
           const pinned = isAlwaysAvailableApp(APP_CATALOG, app.id);
           const isSelected = pinned || selectedSet.has(app.id);
           const disabled = pinned || (!isSelected && atLimit);
@@ -115,6 +121,11 @@ export function AppPicker({
                     {app.alwaysAvailable && (
                       <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] uppercase text-indigo-300">
                         Always on
+                      </span>
+                    )}
+                    {app.adminOnly && (
+                      <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
+                        Admins
                       </span>
                     )}
                     {app.status === 'available' && (
@@ -161,7 +172,9 @@ export function AppPicker({
                   )}
                 </div>
               </button>
-              <AppUsageGuide app={app} variant="picker" />
+              {shouldShowUsageGuide(app.id) ? (
+                <AppUsageGuide app={app} variant="picker" />
+              ) : null}
             </li>
           );
         })}

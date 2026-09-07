@@ -55,7 +55,48 @@ export const contactCopy = {
   ],
 } as const;
 
-export function contactMailtoHref(): string {
-  const subject = encodeURIComponent('Sorye — ops automation');
-  return `mailto:${contactCopy.email}?subject=${subject}`;
+export const contactSubjectDefault = 'Sorye — ops automation';
+
+export const contactProducts = [
+  'Protocolio & Canvas',
+  'Protocolio',
+  'Canvas',
+  'Hub / workspace OS',
+  'Something else',
+] as const;
+
+export const contactMessageTemplate = `Hi — I'm looking at Sorye for document templates and ops boards.
+
+What I need:
+`;
+
+export interface ContactInquiry {
+  name: string;
+  fromEmail: string;
+  company: string;
+  subject: string;
+  product: string;
+  message: string;
+}
+
+export function contactMailtoHref(inquiry?: Partial<ContactInquiry>): string {
+  const subject = encodeURIComponent(
+    (inquiry?.subject ?? contactSubjectDefault).trim() || contactSubjectDefault,
+  );
+  const lines = [
+    inquiry?.message?.trim() ?? '',
+    '',
+    '—',
+    inquiry?.name?.trim() && `Name: ${inquiry.name.trim()}`,
+    inquiry?.fromEmail?.trim() && `Email: ${inquiry.fromEmail.trim()}`,
+    inquiry?.company?.trim() && `Company: ${inquiry.company.trim()}`,
+    inquiry?.product?.trim() && `Product: ${inquiry.product.trim()}`,
+  ].filter((line): line is string => Boolean(line));
+
+  if (lines.length <= 1) {
+    return `mailto:${contactCopy.email}?subject=${subject}`;
+  }
+
+  const body = encodeURIComponent(lines.join('\n'));
+  return `mailto:${contactCopy.email}?subject=${subject}&body=${body}`;
 }

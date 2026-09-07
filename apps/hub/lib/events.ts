@@ -15,6 +15,7 @@ import {
 } from '@sorye/types';
 import { deliverEventViaRelay } from '@/lib/relay';
 import { recordWorkspaceNotification } from '@/lib/notifications';
+import { recordWorkspaceEventStat } from '@/lib/reports';
 import { jsonDataFile } from '@/lib/store/json-file';
 import { ensureEventsChannel, postSystemMessage } from '@/lib/store/messenger';
 import { getHubSession, getHubSessionForWorkspace } from '@/lib/store';
@@ -149,6 +150,18 @@ export async function publishWorkspaceEvent(input: {
     },
     createdAt: new Date().toISOString(),
   };
+
+  try {
+    await recordWorkspaceEventStat({
+      workspaceId: input.workspaceId,
+      name: event.name,
+      appId:
+        typeof event.payload.appId === 'string' ? event.payload.appId : undefined,
+      at: new Date(event.createdAt),
+    });
+  } catch {
+    // Reports index is best-effort — never block event publish.
+  }
 
   const eligible = isMessengerEventsEligible(session.workspace.selectedAppIds);
   const settings = await getEventSettings(input.workspaceId);

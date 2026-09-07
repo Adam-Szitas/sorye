@@ -47,6 +47,18 @@ export interface AppCatalogEntry {
    * toward the subscription app limit.
    */
   alwaysAvailable?: boolean;
+  /**
+   * Marketing / try-out page, not a customer workspace app.
+   * Hidden from dock, launcher, picker, and Catalog tiles.
+   * Does not use a plan slot and is not injected via `alwaysAvailable`.
+   */
+  presentationOnly?: boolean;
+  /**
+   * Visible only to platform admins (`HubUser.isAdmin` / `ADMIN_EMAILS`).
+   * Hidden from member launcher, dock, picker, and Catalog tiles.
+   * Combine with `alwaysAvailable` so admins get it without a plan slot.
+   */
+  adminOnly?: boolean;
 }
 
 export const APP_CATALOG: AppCatalogEntry[] = [
@@ -90,8 +102,8 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     status: 'available',
     icon: 'contact',
     color: '#7c9cff',
-    mountPath: '/apps/contact',
-    alwaysAvailable: true,
+    mountPath: '/contact',
+    presentationOnly: true,
   },
   {
     id: 'dashboard',
@@ -194,20 +206,43 @@ export const APP_CATALOG: AppCatalogEntry[] = [
   {
     id: 'storefront',
     name: 'Storefront',
-    description: 'Launch and manage your online shop.',
+    description:
+      'Browse workspace kits and send an order request — no card checkout yet.',
     usageIntro: {
-      summary: 'Commerce storefront — coming soon to this workspace.',
+      summary:
+        'Pick products, add them to a cart, and place an enquiry for this workspace.',
       steps: [
-        'Reserve a slot when it ships.',
-        'You will connect products and checkout from here.',
+        'Open a product for details, then add it to the cart.',
+        'Place order as a request (no Stripe) — it stays on this workspace.',
+        'Check My orders for requests you have sent.',
       ],
     },
     slug: 'storefront',
     category: 'commerce',
-    status: 'coming_soon',
+    status: 'available',
     icon: 'store',
     color: '#f472b6',
     mountPath: '/apps/storefront',
+  },
+  {
+    id: 'site',
+    name: 'Site',
+    description:
+      'Section builder for a public workspace page — hero, about, links, shop cards, and contact.',
+    usageIntro: {
+      summary: 'Add sections, publish, and share /s/… — visitors only see those blocks.',
+      steps: [
+        'Pick a starter (Company, Shop-front, or Hiring) or add sections yourself.',
+        'Edit hero, about, https links, this workspace’s shop cards, and a contact button.',
+        'Reorder or remove blocks, turn on Published, and copy the share URL.',
+      ],
+    },
+    slug: 'site',
+    category: 'communication',
+    status: 'available',
+    icon: 'site',
+    color: '#f97316',
+    mountPath: '/apps/site',
   },
   {
     id: 'devtools',
@@ -333,6 +368,48 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     },
   },
   {
+    id: 'mail',
+    name: 'Mail',
+    description:
+      'In-workspace mailbox — Sorye Mail addresses, compose, and Messenger forward.',
+    usageIntro: {
+      summary:
+        'Inbox and Sent are in-workspace mail only — not a public internet inbox.',
+      steps: [
+        'Open Inbox or Sent, then select a message to read it.',
+        'Compose to a teammate; paste a screenshot if you need one.',
+        'Settings holds your Sorye Mail address and optional personal email. Hub does not send internet email.',
+      ],
+    },
+    slug: 'mail',
+    category: 'communication',
+    status: 'available',
+    icon: 'mail',
+    color: '#38bdf8',
+    mountPath: '/apps/mail',
+  },
+  {
+    id: 'files',
+    name: 'Drive',
+    description:
+      'Workspace files — upload, search, preview, rename, download, and delete. Bytes stay on disk.',
+    usageIntro: {
+      summary:
+        'Keep images, PDFs, text, and Office files in this workspace. Rename never moves the stored file.',
+      steps: [
+        'Upload a file (about 25 MB max — images, PDF, text, Office).',
+        'Search by name, type:pdf / type:image, or /regex/. Open images, PDF, and text in a preview.',
+        'Rename, download, or delete. Other workspaces cannot see these files.',
+      ],
+    },
+    slug: 'files',
+    category: 'productivity',
+    status: 'available',
+    icon: 'files',
+    color: '#7dd3fc',
+    mountPath: '/apps/files',
+  },
+  {
     id: 'susm',
     name: 'SUSM',
     description: 'External SUSM workspace hosted on Vercel.',
@@ -432,20 +509,25 @@ export const APP_CATALOG: AppCatalogEntry[] = [
   {
     id: 'reports',
     name: 'Reports',
-    description: 'Scheduled exports and automated reporting.',
+    description:
+      'Operational graphs for this workspace — event volume, app mix, and delivery issues.',
     usageIntro: {
-      summary: 'Automated reports — coming soon.',
+      summary:
+        'Admins-only view of workspace event volume and ops funnels. Counts only — no message or file contents.',
       steps: [
-        'Schedule exports once this app ships.',
-        'Pair with Relay later to notify when a report is ready.',
+        'Open Reports from the launcher (admins only).',
+        'Pick a 7 / 14 / 30 / 90 day range.',
+        'Use volume, app mix, and funnel charts to spot OCR → Protocolio and Studio too-much trends.',
       ],
     },
     slug: 'reports',
     category: 'analytics',
-    status: 'coming_soon',
+    status: 'available',
     icon: 'reports',
     color: '#818cf8',
     mountPath: '/apps/reports',
+    alwaysAvailable: true,
+    adminOnly: true,
   },
 ];
 
@@ -456,11 +538,39 @@ export function isAlwaysAvailableApp(
   return catalog.some((app) => app.id === appId && app.alwaysAvailable === true);
 }
 
-/** Hub-native pane (Catalog, Contact) — no MF remote or iframe. */
+export function isPresentationApp(
+  catalog: AppCatalogEntry[],
+  appId: string,
+): boolean {
+  return catalog.some((app) => app.id === appId && app.presentationOnly === true);
+}
+
+export function isAdminOnlyApp(
+  catalog: AppCatalogEntry[],
+  appId: string,
+): boolean {
+  return catalog.some((app) => app.id === appId && app.adminOnly === true);
+}
+
+/** Hub-native page (Catalog, Contact, Reports, Storefront, Site, Mail, Drive) — no MF remote or iframe. */
 export function isHubNativeApp(app: AppCatalogEntry): boolean {
-  return (
-    app.alwaysAvailable === true && !app.microFrontend && !app.external
-  );
+  return !app.microFrontend && !app.external;
+}
+
+/** Apps shown in customer dock, launcher, picker, and Catalog tiles. */
+export function workspaceCatalogEntries(
+  catalog: AppCatalogEntry[],
+): AppCatalogEntry[] {
+  return catalog.filter((app) => app.presentationOnly !== true);
+}
+
+/** Hide admin-only apps from members; presentation apps stay out of chrome. */
+export function filterCatalogForViewer(
+  apps: AppCatalogEntry[],
+  isAdmin: boolean,
+): AppCatalogEntry[] {
+  if (isAdmin) return apps;
+  return apps.filter((app) => app.adminOnly !== true);
 }
 
 /** Catalog ids that every workspace receives, in catalog order. */
@@ -490,15 +600,23 @@ export function selectableAppCount(
   catalog: AppCatalogEntry[],
   selectedIds: string[],
 ): number {
-  return selectedIds.filter((id) => !isAlwaysAvailableApp(catalog, id)).length;
+  return selectedIds.filter(
+    (id) =>
+      !isAlwaysAvailableApp(catalog, id) && !isPresentationApp(catalog, id),
+  ).length;
 }
 
 export function getSelectedApps(
   catalog: AppCatalogEntry[],
   selectedIds: string[],
+  options?: { isAdmin?: boolean },
 ): AppCatalogEntry[] {
   const idSet = new Set(withAlwaysAvailableAppIds(catalog, selectedIds));
-  return catalog.filter((app) => idSet.has(app.id));
+  return catalog.filter((app) => {
+    if (!idSet.has(app.id) || app.presentationOnly === true) return false;
+    if (app.adminOnly === true && options?.isAdmin !== true) return false;
+    return true;
+  });
 }
 
 export function getAppBySlug(

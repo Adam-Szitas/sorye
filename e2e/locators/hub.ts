@@ -83,7 +83,7 @@ export const HubUsageGuide = {
 
 export const HubManageApps = {
   heading: { role: 'heading' as const, name: 'App Library' },
-  alwaysIncluded: { text: 'Catalog and Contact are always included and free.' },
+  alwaysIncluded: { text: 'Catalog is always included and free.' },
   done: { role: 'button' as const, name: 'Done' },
   row: { role: 'listitem' as const },
   rowToggle: { role: 'button' as const },
@@ -104,8 +104,10 @@ export const HubContact = {
   heading: { role: 'heading' as const, name: 'Sorye' },
   tryProtocolio: { role: 'button' as const, name: 'Try Protocolio' },
   tryCanvas: { role: 'button' as const, name: 'Try Canvas' },
-  topBar: { role: 'button' as const, name: 'Contact', exact: true },
-  dock: { role: 'button' as const, name: 'Contact app' },
+  email: { role: 'button' as const, name: 'Email', exact: true },
+  emailDialog: { role: 'heading' as const, name: 'Email Sorye' },
+  send: { role: 'button' as const, name: 'Send' },
+  loginLink: { role: 'link' as const, name: 'Contact' },
 } as const satisfies Record<string, LocatorSpec>;
 
 export const HubRemote = {

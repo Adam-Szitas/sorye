@@ -67,6 +67,18 @@
   ::selection {
     background: rgba(56, 189, 248, 0.35);
   }
+
+  :is(input, textarea, select):user-invalid {
+    border-color: #f87171;
+  }
+
+  .field-error {
+    display: none;
+  }
+
+  :is(input, textarea, select):user-invalid ~ .field-error {
+    display: block;
+  }
 }
 
 @layer utilities {

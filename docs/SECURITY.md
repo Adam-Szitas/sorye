@@ -9,7 +9,8 @@ Security helpers live in `apps/hub/lib/security.ts`. This document summarizes th
 | Hub UI + most APIs | Google session via Auth.js; `ensureHubUser()`. Local **only:** `AUTH_DEV_BYPASS=true` + `NODE_ENV=development` seeds a workspace user (see below). |
 | Embed iframe | HMAC embed cookie; origin allowlist on bootstrap |
 | Admin subscription API | `x-admin-secret` (timing-safe compare) — no session |
-| Public | Login, OAuth callbacks, embed bootstrap (key-gated) |
+| Reports API | Session + platform admin (`ADMIN_EMAILS`, timing-safe email compare) |
+| Public | Login, OAuth callbacks, embed bootstrap (key-gated), Contact (`/contact`, `/apps/contact`), Site (`/s/[slug]`, published blocks only) |
 
 All data APIs scope by **`session.workspace.id`** from the server session. Channel/board/handoff IDs are validated against that workspace.
 
@@ -52,7 +53,12 @@ Skips Google in **`next dev` only** so http://localhost:3000 opens the Hub launc
 | Endpoint | Validation |
 |----------|------------|
 | `POST /api/events` | Allowlisted event names; title/summary length caps |
+| `GET /api/reports` | Platform admin only; aggregates counts (event name / appId / day). No payloads. |
 | `POST /api/handoffs` | Max payload size (2 MB JSON) |
+| `POST /api/storefront/products` | Title/price required; payload size cap; workspace from session |
+| `POST /api/storefront/orders` | Known products only; qty/line caps; payload size cap; workspace from session |
+| `POST /api/mail` | Workspace members / generated addresses only; image data URL schema; subject/body caps; workspace from session |
+| Drive `/api/files` | Workspace from session; bytes on disk under `.data/files/{workspaceId}/{uuid}` (never JSON/Postgres blobs); lookup by id **and** workspaceId; rename changes `displayName` only; path resolve + prefix check; mime sniff + size cap; `Content-Disposition: inline` only for raster images, PDF, and text/csv/json/markdown (`?inline=1`) — never HTML/SVG/script |
 | `POST /api/messenger` | Image data URL schema; text length cap |
 | `PATCH /api/relay` | Webhook URL safety on channel save |
 

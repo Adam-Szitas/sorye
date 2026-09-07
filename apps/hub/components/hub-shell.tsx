@@ -25,6 +25,7 @@ import {
   type PaneSide,
 } from '@/components/app-workspace';
 import { Dock } from '@/components/dock';
+import { MailComposeHost } from '@/components/app-mail';
 import { NotificationCenter } from '@/components/notification-center';
 import { NotificationToasts } from '@/components/notification-toasts';
 import { PanelSkeleton } from '@/components/panel-skeleton';
@@ -75,9 +76,12 @@ function readPaneState(): PaneState {
     const raw = sessionStorage.getItem(PANES_STORAGE_KEY);
     if (!raw) return { leftId: null, rightId: null, focus: 'left' };
     const parsed = JSON.parse(raw) as PaneState;
+    const leftId = parsed.leftId === 'contact' ? null : (parsed.leftId ?? null);
+    const rightId =
+      parsed.rightId === 'contact' ? null : (parsed.rightId ?? null);
     return {
-      leftId: parsed.leftId ?? null,
-      rightId: parsed.rightId ?? null,
+      leftId,
+      rightId,
       focus: parsed.focus === 'right' ? 'right' : 'left',
     };
   } catch {
@@ -148,14 +152,20 @@ export function HubShell({ initialSession }: HubShellProps) {
     }
   }, [loading, session, router]);
 
-  const resolveApp = useCallback((id: string | null) => {
-    if (!id) return null;
-    return APP_CATALOG.find((a) => a.id === id) ?? null;
-  }, []);
+  const resolveApp = useCallback(
+    (id: string | null) => {
+      if (!id) return null;
+      const app = APP_CATALOG.find((a) => a.id === id) ?? null;
+      if (app?.adminOnly && !session?.user.isAdmin) return null;
+      return app;
+    },
+    [session],
+  );
 
   const openApp = useCallback(
     (app: AppCatalogEntry, side?: PaneSide) => {
       if (app.status !== 'available' && app.status !== 'beta') return;
+      if (app.adminOnly && !session?.user.isAdmin) return;
 
       // No explicit side → same as before: full-page route.
       if (!side) {
@@ -191,7 +201,7 @@ export function HubShell({ initialSession }: HubShellProps) {
       setPanel('workspace');
       logState('app.open.split', { appId: app.id, side });
     },
-    [router, logState],
+    [router, logState, session],
   );
 
   const closePane = useCallback((side: PaneSide) => {
@@ -355,6 +365,7 @@ export function HubShell({ initialSession }: HubShellProps) {
       onNavigateToApp={(appId) => {
         const app = APP_CATALOG.find((a) => a.id === appId);
         if (!app) return;
+        if (app.adminOnly && !session.user.isAdmin) return;
         if (app.status !== 'available' && app.status !== 'beta') return;
         if (app.microFrontend || app.external || app.alwaysAvailable) {
           setPanel('workspace');
@@ -487,23 +498,12 @@ function HubShellLoaded({
     };
   }, [openApp, navigatePanel]);
 
-  const selectedApps = getSelectedApps(APP_CATALOG, workspace.selectedAppIds);
+  const selectedApps = getSelectedApps(APP_CATALOG, workspace.selectedAppIds, {
+    isAdmin: user.isAdmin,
+  });
   const leftApp = resolveApp(panes.leftId);
   const rightApp = resolveApp(panes.rightId);
   const workspaceOpen = Boolean(leftApp || rightApp);
-  const contactApp = APP_CATALOG.find((app) => app.id === 'contact');
-  const contactOpen =
-    panes.leftId === 'contact' || panes.rightId === 'contact';
-
-  const openContact = useCallback(() => {
-    if (!contactApp) return;
-    const side: PaneSide =
-      panes.leftId && panes.leftId !== 'contact' && !panes.rightId
-        ? 'right'
-        : 'left';
-    openApp(contactApp, side);
-  }, [contactApp, openApp, panes.leftId, panes.rightId]);
-
   return (
     <>
       <TopBar
@@ -512,7 +512,6 @@ function HubShellLoaded({
         plan={plan}
         notificationCount={unreadTotal}
         onOpenNotifications={openCenter}
-        onOpenContact={openContact}
         onOpenPicker={() => {
           logState('panel.open', { panel: 'picker' });
           setPanel('picker');
@@ -541,10 +540,10 @@ function HubShellLoaded({
       </div>
 
       <main
-        className={`flex flex-1 flex-col px-4 pt-4 sm:px-8 ${
+        className={`flex min-h-0 flex-1 flex-col px-4 pt-4 sm:px-8 ${
           panel === 'workspace'
-            ? 'min-h-0 pb-24'
-            : 'pb-28'
+            ? 'overflow-hidden pb-24'
+            : 'overflow-y-auto pb-28'
         }`}
       >
         {panel === 'launcher' && (
@@ -634,6 +633,7 @@ function HubShellLoaded({
             selectedIds={workspace.selectedAppIds}
             plan={plan}
             subscriptionSource={workspace.subscriptionSource}
+            isAdmin={user.isAdmin}
             onToggleApp={toggleApp}
             onClose={() =>
               navigatePanel(workspaceOpen ? 'workspace' : 'launcher')
@@ -665,8 +665,6 @@ function HubShellLoaded({
         onNavigate={navigatePanel}
         workspaceOpen={workspaceOpen}
         onOpenWorkspace={() => navigatePanel('workspace')}
-        contactActive={contactOpen && panel === 'workspace'}
-        onOpenContact={openContact}
       />
 
       <StatusBar
@@ -678,6 +676,7 @@ function HubShellLoaded({
 
       <NotificationCenter />
       <NotificationToasts />
+      <MailComposeHost />
     </>
   );
 }

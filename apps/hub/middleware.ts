@@ -8,11 +8,16 @@ const publicPaths = [
   '/embed',
   '/api/embed',
   '/embed.js',
+  '/contact',
+  '/apps/contact',
+  '/s',
 ];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  const isPublic = publicPaths.some((p) => pathname.startsWith(p));
+  const isPublic = publicPaths.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
   const isAdminApi = pathname.startsWith('/api/admin');
   // Read the flag here so Next.js inlines AUTH_DEV_BYPASS into the Edge bundle.
   const localBypass =

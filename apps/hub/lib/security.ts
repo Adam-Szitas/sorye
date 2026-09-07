@@ -1,8 +1,12 @@
 import { timingSafeEqual } from 'crypto';
 import { getEnv } from '@/lib/env';
-import type { WorkspaceEventName } from '@sorye/types';
 
-const WORKSPACE_EVENT_NAME_SET = new Set<string>([
+/**
+ * Local copy of `WORKSPACE_EVENT_NAMES` from `packages/types/src/events.ts`.
+ * Do not import `@sorye/types` here: a stale/failed types barrel makes
+ * Turbopack treat this file as an empty module (no `MAX_*` exports).
+ */
+const WORKSPACE_EVENT_NAMES = [
   'sorye.system.events_activated',
   'sorye.task.created',
   'sorye.task.updated',
@@ -15,8 +19,29 @@ const WORKSPACE_EVENT_NAME_SET = new Set<string>([
   'sorye.studio.loaded',
   'sorye.studio.too_much',
   'sorye.messenger.posted',
+  'sorye.storefront.order_placed',
+  'sorye.site.published',
+  'sorye.mail.sent',
+  'sorye.files.uploaded',
   'sorye.test.ping',
-]);
+] as const;
+
+type WorkspaceEventName = (typeof WORKSPACE_EVENT_NAMES)[number];
+
+const WORKSPACE_EVENT_NAME_SET = new Set<string>(WORKSPACE_EVENT_NAMES);
+
+export {
+  assertJsonPayloadSize,
+  MAX_HANDOFF_PAYLOAD_BYTES,
+  MAX_IMAGE_DATA_URL_LENGTH,
+  MAX_FILE_BYTES,
+  MAX_MAIL_BYTES,
+  MAX_MESSAGE_TEXT_LENGTH,
+  MAX_SITE_BYTES,
+  MAX_STOREFRONT_ORDER_BYTES,
+  MAX_STOREFRONT_PRODUCT_BYTES,
+  validateImageDataUrl,
+} from '@/lib/security-limits';
 
 const BLOCKED_HOSTNAMES = new Set([
   'localhost',
@@ -24,15 +49,6 @@ const BLOCKED_HOSTNAMES = new Set([
   'metadata.google',
   '169.254.169.254',
 ]);
-
-const IMAGE_DATA_URL_RE =
-  /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+=*$/;
-
-/** Max decoded-ish payload for base64 image data URLs (~4 MB raw). */
-export const MAX_IMAGE_DATA_URL_LENGTH = 5_500_000;
-
-export const MAX_HANDOFF_PAYLOAD_BYTES = 2_000_000;
-export const MAX_MESSAGE_TEXT_LENGTH = 10_000;
 
 export function isWorkspaceEventName(name: string): name is WorkspaceEventName {
   return WORKSPACE_EVENT_NAME_SET.has(name);
@@ -88,6 +104,26 @@ export function timingSafeEqualString(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Timing-safe membership check against `ADMIN_EMAILS`.
+ * Always walks the full list so a miss does not short-circuit on the first
+ * comparison. Empty list → false (caller may fall back to `user.isAdmin`).
+ */
+export function emailInAdminList(
+  email: string,
+  adminEmails: Iterable<string>,
+): boolean {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return false;
+  let matched = false;
+  for (const admin of adminEmails) {
+    if (timingSafeEqualString(needle, admin)) {
+      matched = true;
+    }
+  }
+  return matched;
 }
 
 function isPrivateIpv4(host: string): boolean {
@@ -186,29 +222,32 @@ export function assertSafePostgresUrl(databaseUrl: string): void {
   }
 }
 
-export function validateImageDataUrl(
-  value: string,
-): { ok: true; dataUrl: string } | { ok: false; error: string } {
-  const trimmed = value.trim();
-  if (!IMAGE_DATA_URL_RE.test(trimmed)) {
-    return {
-      ok: false,
-      error: 'Image must be a base64 data URL (jpeg, png, webp, or gif)',
-    };
+/**
+ * Public one-pager / profile links — HTTPS only, no javascript: or credentials.
+ * Not used for server-side fetches (see assertSafeWebhookUrl for SSRF).
+ */
+export function assertSafePublicHttpsUrl(raw: string): string {
+  const urlText = raw.trim();
+  if (!urlText) throw new Error('URL is required');
+
+  let parsed: URL;
+  try {
+    parsed = new URL(urlText);
+  } catch {
+    throw new Error('URL is invalid');
   }
-  if (trimmed.length > MAX_IMAGE_DATA_URL_LENGTH) {
-    return { ok: false, error: 'Image is too large' };
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('URL must use HTTPS');
   }
-  return { ok: true, dataUrl: trimmed };
+  if (parsed.username || parsed.password) {
+    throw new Error('URL must not include credentials');
+  }
+  if (!parsed.hostname) {
+    throw new Error('URL is invalid');
+  }
+  return parsed.href;
 }
 
-export function assertJsonPayloadSize(
-  payload: unknown,
-  maxBytes: number,
-  label = 'Payload',
-): void {
-  const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
-  if (size > maxBytes) {
-    throw new Error(`${label} exceeds maximum size (${maxBytes} bytes)`);
-  }
-}
+
+

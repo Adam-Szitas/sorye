@@ -47,7 +47,9 @@ Every installable app is an `AppCatalogEntry`:
 - **`microFrontend`** — MF remote config (`remoteName`, `remoteEntry`, `./mount`)
 - **`external`** — iframe apps (SUSM, ESPM) instead of MF
 - **`usageIntro`** — first-run guidance shown in Hub picker
-- **`alwaysAvailable`** — pinned for every workspace (Catalog, Contact); does not count toward `plan.maxApps`
+- **`alwaysAvailable`** — pinned for every workspace (Catalog); does not count toward `plan.maxApps`
+- **`adminOnly`** — launcher/dock/picker/Catalog hide these from non-admins (`ADMIN_EMAILS` / `HubUser.isAdmin`). Reports is `alwaysAvailable` + `adminOnly`.
+- **`presentationOnly`** — public marketing page (Contact); hidden from customer OS chrome and not a plan slot
 
 Subscription plans cap how many apps and connections a workspace may use (`packages/types/src/subscriptions.ts`).
 
@@ -59,8 +61,8 @@ Responsibilities:
 
 1. **Session** — `useHubSession()` → `GET /api/workspace`
 2. **Launcher** — home grid with per-app notification badges
-3. **Split panes** — left/right MF apps (`AppWorkspace` + `MicroAppLoader`) plus Hub-native Catalog / Contact
-4. **Dock** — Home, Apps, Connect, Contact, workspace split
+3. **Split panes** — left/right MF apps (`AppWorkspace` + `MicroAppLoader`) plus Hub-native Catalog, Reports, Storefront, Site, Mail, and Drive
+4. **Dock** — Home, Apps, Connect, workspace split
 5. **Connections** — REST keys, embed widgets
 6. **Notifications** — `NotificationProvider`, toasts, click-to-open app
 
@@ -188,11 +190,17 @@ Chrome-less MF mount; embed session cookie scoped to widget workspace.
 |-------|---------|
 | `/api/workspace` | Hub session; PATCH selected apps |
 | `/api/events` | Publish + toggle App events |
+| `/api/reports` | Admin-only aggregate event charts (counts, no payloads) |
 | `/api/relay` | Relay config + test delivery |
 | `/api/notifications` | Feed, settings, mark read |
 | `/api/handoffs` | Cross-app payloads |
 | `/api/messenger` | Chat bootstrap + messages |
 | `/api/canvas/boards/*` | Boards + SSE realtime |
+| `/api/storefront/products` | Workspace product catalog (seeded kits) |
+| `/api/storefront/orders` | Enquiry/order requests for this workspace |
+| `/api/site` | Workspace public site editor (blocks); public view is `/s/[slug]` |
+| `/api/mail` | In-workspace mailbox + settings; draft/forward for Messenger |
+| `/api/files` | Drive list/upload; `/api/files/[id]` download (or inline preview for safe types), rename, delete |
 | `/api/protocolio/generate` | Hub bridge to external PDF API |
 | `/api/embed/*` | Widget keys + bootstrap |
 

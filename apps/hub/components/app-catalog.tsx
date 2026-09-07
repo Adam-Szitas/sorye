@@ -4,7 +4,9 @@ import {
   APP_CATALOG,
   HUB_MANAGE_APPS_EVENT,
   HUB_OPEN_APP_EVENT,
+  filterCatalogForViewer,
   getSelectedApps,
+  workspaceCatalogEntries,
   type AppCatalogEntry,
 } from '@sorye/types';
 import { AppIcon } from '@/components/app-icon';
@@ -36,6 +38,7 @@ interface AppCatalogBrowserProps {
 
 export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
   const [selectedIds, setSelectedIds] = useState<string[] | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,17 +46,25 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
       try {
         const res = await fetch('/api/workspace', { credentials: 'include' });
         if (!res.ok) {
-          if (!cancelled) setSelectedIds([]);
+          if (!cancelled) {
+            setSelectedIds([]);
+            setIsAdmin(false);
+          }
           return;
         }
         const data = (await res.json()) as {
           workspace?: { selectedAppIds?: string[] };
+          user?: { isAdmin?: boolean };
         };
         if (!cancelled) {
           setSelectedIds(data.workspace?.selectedAppIds ?? []);
+          setIsAdmin(data.user?.isAdmin === true);
         }
       } catch {
-        if (!cancelled) setSelectedIds([]);
+        if (!cancelled) {
+          setSelectedIds([]);
+          setIsAdmin(false);
+        }
       }
     })();
     return () => {
@@ -62,10 +73,13 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
   }, []);
 
   const installed = new Set(
-    getSelectedApps(APP_CATALOG, selectedIds ?? []).map((a) => a.id),
+    getSelectedApps(APP_CATALOG, selectedIds ?? [], { isAdmin }).map((a) => a.id),
   );
   const grouped = new Map<AppCatalogEntry['category'], AppCatalogEntry[]>();
-  for (const app of APP_CATALOG) {
+  for (const app of filterCatalogForViewer(
+    workspaceCatalogEntries(APP_CATALOG),
+    isAdmin,
+  )) {
     const list = grouped.get(app.category) ?? [];
     list.push(app);
     grouped.set(app.category, list);
@@ -86,8 +100,8 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">App catalog</h1>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Every Sorye app, for every workspace. Catalog and Contact are always
-          on and do not use a plan slot.
+          Every Sorye app, for every workspace. Catalog is always on and does
+          not use a plan slot.
         </p>
         <button
           type="button"
@@ -133,6 +147,11 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
                         {app.alwaysAvailable ? (
                           <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] uppercase text-indigo-300">
                             Always on
+                          </span>
+                        ) : null}
+                        {app.adminOnly ? (
+                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] uppercase text-amber-300">
+                            Admins
                           </span>
                         ) : null}
                         {app.status === 'coming_soon' ? (

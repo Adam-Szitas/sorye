@@ -4,6 +4,8 @@ import { ensureHubUser } from '@/lib/ensure-user';
 import { safeRedirectPath } from '@/lib/security';
 import { redirect } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   Configuration:
     'Sign-in is not configured. Check AUTH_SECRET and Google OAuth credentials in apps/hub/.env.local.',
@@ -145,6 +147,15 @@ export default async function LoginPage({
             </button>
           </form>
         )}
+        <p className="mt-6 text-xs text-[var(--color-text-muted)]">
+          Looking for the product page?{' '}
+          <a
+            href="/contact"
+            className="text-[var(--color-accent)] underline-offset-2 hover:underline"
+          >
+            Contact
+          </a>
+        </p>
       </div>
     </div>
   );

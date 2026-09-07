@@ -5,7 +5,7 @@ import {
   getHandoff,
   listHandoffs,
 } from '@/lib/handoffs';
-import { assertJsonPayloadSize, MAX_HANDOFF_PAYLOAD_BYTES } from '@/lib/security';
+import { assertJsonPayloadSize, MAX_HANDOFF_PAYLOAD_BYTES } from '@/lib/security-limits';
 import type { CreateHandoffInput, HandoffKind } from '@sorye/types';
 import { NextResponse } from 'next/server';
 

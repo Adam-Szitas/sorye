@@ -4,6 +4,8 @@ import { APP_CATALOG, getAppBySlug, originAllowed } from '@sorye/types';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 interface EmbedPageProps {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ t?: string }>;

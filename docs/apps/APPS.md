@@ -6,7 +6,7 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 |-----|------|------|-------------|
 | Hub | 3000 | Next.js host | [Hub](#hub) |
 | Catalog | — | Hub-native, always on | [Catalog](#catalog) |
-| Contact | — | Hub-native, always on | [Contact](#contact) |
+| Contact | — | Hub-native, public presentation | [Contact](#contact) |
 | Dashboard | 3001 | MF remote | [Dashboard](#dashboard) |
 | Calendar | 3003 | MF remote | [Calendar](#calendar) |
 | Notes | 3004 | MF remote | [Notes](#notes) |
@@ -20,8 +20,11 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 | Studio | 3012 | MF remote | [Studio](#studio) |
 | SUSM | — | External iframe | [SUSM](#susm) |
 | ESPM | — | External iframe | [ESPM](#espm) |
-| Storefront | — | Coming soon | [Storefront](#storefront) |
-| Reports | — | Coming soon | [Reports](#reports) |
+| Storefront | — | Hub-native | [Storefront](#storefront) |
+| Mail | — | Hub-native | [Mail](#mail) |
+| Drive | — | Hub-native | [Drive](#drive) |
+| Site | — | Hub-native, public section builder | [Site](#site) |
+| Reports | — | Hub-native, admins only | [Reports](#reports) |
 
 ## Communication principles
 
@@ -66,7 +69,12 @@ Hub        →  record notification  →  Badges + toasts + bell
 |------|---------|
 | `components/hub-shell.tsx` | Main UI orchestration |
 | `components/app-catalog.tsx` | Hub-native Catalog |
-| `components/app-contact.tsx` | Hub-native Contact (try Protocolio / Canvas) |
+| `components/app-reports.tsx` | Hub-native Reports (admins) |
+| `components/app-contact.tsx` | Public Contact page (try Protocolio / Canvas) |
+| `components/app-storefront.tsx` | Hub-native Storefront (enquiry cart) |
+| `components/app-mail.tsx` | Hub-native Mail mailbox + compose host |
+| `components/app-files.tsx` | Hub-native Drive (workspace files) |
+| `components/app-site.tsx` | Hub-native Site editor (section/block builder) |
 | `components/micro-app-loader.tsx` | MF remote load/unmount |
 | `components/app-launcher.tsx` | Home grid + badges |
 | `lib/ensure-user.ts` | Session resolution (Google + embed) |
@@ -118,26 +126,30 @@ Browse every entry in `APP_CATALOG` by category. Open installed apps or jump to 
 
 **Path:** Hub-native (`apps/hub/components/app-contact.tsx`) — not a Vite remote  
 **Catalog id:** `contact`  
-**Always on:** `alwaysAvailable: true` — every workspace, no plan slot, cannot be removed  
+**Public route:** `/contact` (also `/apps/contact` → `/contact`) — middleware allows these without Google  
+**Not a workspace app:** `presentationOnly: true` — hidden from customer dock, top bar, launcher, picker, and Catalog tiles. Catalog stays `alwaysAvailable`; Contact does not.
 
 ## Purpose
 
-Product page for Sorye (smaller–mid ops automation). **Try Protocolio** and **Try Canvas** open the real Hub remotes (`id: protocolio`, `id: canvas`) via `sorye:hub:open-app` — same as Catalog. Reachable from the launcher, top bar, and dock.
+Presentation page for Sorye (smaller–mid ops automation). Visitors (logged out) use `/contact`. Logged-in customers (including `AUTH_DEV_BYPASS`) do not see Contact in OS chrome — open `http://localhost:3000/contact` for the same UI. **Try Protocolio** and **Try Canvas** open the real remotes. **Email** opens a form dialog; Send composes `mailto:` to the public address in `contact-copy.ts` (no mailer yet).
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
-| `packages/types/src/apps.ts` | Catalog entry (`alwaysAvailable`) |
+| `packages/types/src/apps.ts` | Catalog entry (`presentationOnly`) |
+| `apps/hub/app/contact/page.tsx` | Public page |
 | `apps/hub/components/app-contact.tsx` | Contact UI |
+| `apps/hub/components/contact-email-dialog.tsx` | Email form dialog |
 | `apps/hub/lib/contact-copy.ts` | Offer, intro, and email copy |
-| `apps/hub/components/top-bar.tsx`, `dock.tsx` | Contact shortcut |
+| `apps/hub/middleware.ts` | `/contact` and `/apps/contact` are public |
 
 ## Communications
 
-- Asks Hub to open Protocolio / Canvas via `sorye:hub:open-app`
-- No events, handoffs, or extra APIs
-- Visible when logged in (or `AUTH_DEV_BYPASS`) like the rest of Hub
+- Asks Hub to open Protocolio / Canvas via `sorye:hub:open-app` when already in a pane; on `/contact` navigates to those app routes (login if needed)
+- Email: modal form → `mailto:` after Send (Relay email is queue-only; no Hub mailer)
+- No events or handoffs
+- No first-run `AppUsageGuide` (same as Protocolio and Canvas)
 
 ---
 
@@ -421,10 +433,87 @@ Workspace chat: public channels, DMs, image uploads (compressed client-side). **
 - **Outbound:** User messages stay in Messenger store
 - **Badges:** Unread chat + `#events` merged into Hub launcher badge via `messenger-unread.ts`
 - **Events feature flag:** Bootstrap response includes `events.eligible/enabled/alive`
+- **Forward to Mail:** One click on a message `POST /api/mail/forward` then dispatches `sorye:mail:compose` so Hub opens the compose modal (in-workspace send only)
 
 ## Security
 
 Image messages validated server-side (`data:image/*;base64` only). Rendered as `<img>` without clickable `href`.
+
+---
+
+# Mail
+
+**Path:** Hub-native (`apps/hub/components/app-mail.tsx`) — not a Vite remote  
+**Catalog id:** `mail`  
+**Status:** `available`  
+**Plan slot:** optional (not `alwaysAvailable`) — enable from App Library, then open from the launcher.
+
+## Purpose
+
+In-workspace mailbox. Each member gets a stable **Sorye Mail address** (`{user-slug}@{workspace-slug}.mail.sorye`) stored server-side. This is Hub delivery, not a public MX / SMTP inbox. Optional personal email stays on the owner’s profile only.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry |
+| `packages/types/src/mail.ts` | Message, profile, compose event |
+| `apps/hub/components/app-mail.tsx` | Inbox / Sent list + reading pane; settings in header |
+| `apps/hub/components/mail-compose-dialog.tsx` | Compose modal (paste + file image) |
+| `apps/hub/lib/mail.ts` | JSON store (`.data/mail.json`) |
+| `apps/hub/app/api/mail/route.ts` | `GET/POST/PATCH /api/mail` |
+| `apps/hub/app/api/mail/draft/route.ts` | `POST /api/mail/draft` |
+| `apps/hub/app/api/mail/forward/route.ts` | `POST /api/mail/forward` (Messenger) |
+
+## Communications
+
+- `GET /api/mail` — profile, members (generated addresses only), inbox, sent, draft
+- `POST /api/mail` — send in-workspace; emits `sorye.mail.sent`
+- `PATCH /api/mail` — personal email + “also notify Messenger”
+- `POST /api/mail/draft` / `POST /api/mail/forward` — prefill compose from Messenger
+- Relay source `mail`; Hub event `sorye:mail:compose` opens the compose modal
+- Images: `data:image/(jpeg|png|webp|gif);base64` + size cap (same as Messenger)
+
+---
+
+# Drive
+
+**Path:** Hub-native (`apps/hub/components/app-files.tsx`) — not a Vite remote  
+**Catalog id:** `files`  
+**Status:** `available`  
+**Plan slot:** optional (not `alwaysAvailable`) — enable from App Library, then open from the launcher.
+
+## Purpose
+
+Workspace file locker. Members upload, search, preview, list, rename, download, and delete files for **this workspace only**. Bytes live on Hub disk; the JSON store holds metadata (id, workspaceId, displayName, relative path, mime, size, timestamps). Rename updates `displayName` only — the on-disk uuid never changes. Search is a client-side filter of the fetched list (plain, `/regex/`, `type:pdf` / `type:image`). Open/preview is limited to raster images, PDF, and text — Office stays download-only.
+
+## Storage
+
+- Disk: `apps/hub/.data/files/{workspaceId}/{uuid}` (uuid is the storage filename)
+- Metadata: `apps/hub/.data/files-meta.json` — no file bytes
+- `workspaceId` from `ensureHubUser()` only. Paths are `workspaceId + uuid`; user-supplied path segments, `..`, and absolute paths are rejected. Download/delete resolve the path and require it stay under that workspace directory.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry |
+| `packages/types/src/files.ts` | Metadata contract + size caps + inline-preview allowlist |
+| `apps/hub/components/app-files.tsx` | List, search, preview, upload, rename, download, delete |
+| `apps/hub/lib/file-search.ts` | Client-side name / regex / type-token filter |
+| `apps/hub/lib/file-preview.ts` | Inline-preview mime allowlist |
+| `apps/hub/lib/files.ts` | Disk + metadata store + disposition helper |
+| `apps/hub/app/api/files/route.ts` | `GET/POST /api/files` |
+| `apps/hub/app/api/files/[id]/route.ts` | `GET/PATCH/DELETE /api/files/[id]` |
+
+## Communications
+
+- `GET /api/files` — list this workspace’s files
+- `POST /api/files` — multipart upload; emits `sorye.files.uploaded`
+- `PATCH /api/files/[id]` — rename (`displayName` only)
+- `GET /api/files/[id]` — download (`Content-Disposition: attachment`). `?inline=1` uses `inline` only for raster images, PDF, and text/csv/markdown/json — never HTML/SVG/script. Office binaries stay attachment.
+- `DELETE /api/files/[id]` — delete disk file + metadata row
+- Relay source `files`; Reports can count `sorye.files.uploaded`
 
 ---
 
@@ -537,19 +626,100 @@ Same pattern as SUSM — external beta product in iframe shell.
 
 # Storefront
 
-**Status:** `coming_soon`  
-**Catalog only** — no `apps/storefront/` yet.
+**Path:** Hub-native (`apps/hub/components/app-storefront.tsx`) — not a Vite remote  
+**Catalog id:** `storefront`  
+**Status:** `available`  
+**Plan slot:** optional (not `alwaysAvailable`) — enable from App Library, then open from the launcher.
 
-Planned: commerce storefront. Would likely emit order/inventory events via Relay when built.
+## Purpose
+
+Workspace members browse a small seed catalog of SMB/ops kits, add them to a cart, and place an **enquiry / order request**. No Stripe. Orders persist per workspace in Hub JSON (`.data/storefront-*.json`). `workspaceId` comes from `ensureHubUser()` only.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry |
+| `packages/types/src/storefront.ts` | Product/order types + seed copy |
+| `apps/hub/components/app-storefront.tsx` | Shop, cart, my orders |
+| `apps/hub/lib/storefront.ts` | JSON store |
+| `apps/hub/app/api/storefront/products/route.ts` | `GET/POST /api/storefront/products` |
+| `apps/hub/app/api/storefront/orders/route.ts` | `GET/POST /api/storefront/orders` |
+
+## Communications
+
+- `GET /api/storefront/products` — seeds six kits on first visit
+- `POST /api/storefront/products` — upsert a product for this workspace (size-capped)
+- `GET /api/storefront/orders?mine=1` — current user’s order requests
+- `POST /api/storefront/orders` — place enquiry; emits `sorye.storefront.order_placed`
+- Relay source `storefront`; Reports funnel includes order_placed
+
+---
+
+# Site
+
+**Path:** Hub-native (`apps/hub/components/app-site.tsx`) — not a Vite remote  
+**Catalog id:** `site`  
+**Editor:** `/apps/site` (enable Site from the App Library, then open from the launcher)  
+**Public route:** `/s/[slug]` — middleware allows this without Google. Unpublished or unknown slug → 404.
+
+## Purpose
+
+A shareable **section/block** page for **this workspace**. Logged-in members add, reorder, or remove blocks and toggle **Published**. Visitors with the URL see only those published blocks — never Reports, Mail, members, events, or storefront orders.
+
+**Block types:** Hero (heading, offer, CTA), About (length-capped text), Links (https), Storefront (this workspace’s product names/prices), Contact (button to `/contact` or mailto). Optional hero image URLs are https-only (`assertSafePublicHttpsUrl`); unsafe URLs are skipped.
+
+Starters: Company landing, Shop-front, Hiring. Slug is derived from the workspace name plus a stable id suffix (not user-controlled). `workspaceId` on write comes from `ensureHubUser()` only. The public page loads storefront products on the Hub server from the slug → workspace map — never from a client `workspaceId`.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry |
+| `packages/types/src/site.ts` | Block types, templates, length caps |
+| `apps/hub/components/app-site.tsx` | Section builder + copy URL |
+| `apps/hub/components/site-public-view.tsx` | Public block renderer |
+| `apps/hub/lib/site.ts` | JSON store (`.data/site-pages.json`) |
+| `apps/hub/app/api/site/route.ts` | `GET/PUT /api/site` |
+| `apps/hub/app/s/[slug]/page.tsx` | Public page |
+| `apps/hub/middleware.ts` | `/s/[slug]` is public |
+
+## Communications
+
+- `GET /api/site` — draft or saved page for the session workspace
+- `PUT /api/site` — save `displayName` + `blocks`; first publish emits `sorye.site.published`
+- Public `GET /s/[slug]` — published blocks only; lookup by slug; storefront products attached server-side
+- Relay source `site`; Reports funnel includes `sorye.site.published`
+- No first-run `AppUsageGuide`
 
 ---
 
 # Reports
 
-**Status:** `coming_soon`  
-**Catalog only**.
+**Path:** Hub-native (`apps/hub/components/app-reports.tsx`) — not a Vite remote  
+**Catalog id:** `reports`  
+**Always on for admins:** `alwaysAvailable: true` + `adminOnly: true` — no plan slot; hidden from member launcher, dock, picker, and Catalog tiles.
 
-Planned: scheduled exports. Natural pairing with Relay webhooks when implemented.
+## Purpose
+
+Workspace-scoped operational graphs for platform admins (`ADMIN_EMAILS` / `HubUser.isAdmin`). Counts come from Hub `POST /api/events` (day buckets + allowlisted names + app ids) and failed Relay deliveries for **this workspace only**. No raw event payloads, summaries, or message bodies.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry (`adminOnly`) |
+| `packages/types/src/reports.ts` | Snapshot contract |
+| `apps/hub/components/app-reports.tsx` | Charts UI |
+| `apps/hub/app/api/reports/route.ts` | `GET /api/reports` |
+| `apps/hub/lib/reports.ts` | Count-only index (`report-stats.json`) |
+| `apps/hub/lib/platform-admin.ts` | Admin gate |
+
+## Communications
+
+- `GET /api/reports?days=7|14|30|90` — session cookie; `workspaceId` from `ensureHubUser()`
+- Reads event stats recorded on `POST /api/events`
+- Failed-delivery counts from existing Relay activity (no extra payload log)
 
 ---
 
@@ -584,6 +754,10 @@ Drizzle schema for Postgres. Used by Hub store driver, not directly by MF remote
 | `sorye.studio.loaded` | Studio |
 | `sorye.studio.too_much` | Studio |
 | `sorye.messenger.posted` | Messenger (optional) |
+| `sorye.storefront.order_placed` | Storefront |
+| `sorye.site.published` | Site |
+| `sorye.mail.sent` | Mail |
+| `sorye.files.uploaded` | Drive |
 | `sorye.system.events_activated` | Hub (first enable) |
 | `sorye.test.ping` | Relay test |
 

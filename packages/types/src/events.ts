@@ -7,20 +7,28 @@ export const SYSTEM_EVENTS_AUTHOR = {
   name: 'Sorye Events',
 } as const;
 
-export type WorkspaceEventName =
-  | 'sorye.system.events_activated'
-  | 'sorye.task.created'
-  | 'sorye.task.updated'
-  | 'sorye.task.moved'
-  | 'sorye.calendar.saved'
-  | 'sorye.notes.saved'
-  | 'sorye.ocr.analyzed'
-  | 'sorye.ocr.ready'
-  | 'sorye.protocolio.generated'
-  | 'sorye.studio.loaded'
-  | 'sorye.studio.too_much'
-  | 'sorye.messenger.posted'
-  | 'sorye.test.ping';
+/** Canonical allowlist — keep in sync with `apps/hub/lib/security.ts`. */
+export const WORKSPACE_EVENT_NAMES = [
+  'sorye.system.events_activated',
+  'sorye.task.created',
+  'sorye.task.updated',
+  'sorye.task.moved',
+  'sorye.calendar.saved',
+  'sorye.notes.saved',
+  'sorye.ocr.analyzed',
+  'sorye.ocr.ready',
+  'sorye.protocolio.generated',
+  'sorye.studio.loaded',
+  'sorye.studio.too_much',
+  'sorye.messenger.posted',
+  'sorye.storefront.order_placed',
+  'sorye.site.published',
+  'sorye.mail.sent',
+  'sorye.files.uploaded',
+  'sorye.test.ping',
+] as const;
+
+export type WorkspaceEventName = (typeof WORKSPACE_EVENT_NAMES)[number];
 
 export interface WorkspaceEventPayload {
   title: string;

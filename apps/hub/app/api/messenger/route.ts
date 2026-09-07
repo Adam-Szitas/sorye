@@ -3,7 +3,7 @@ import { markMessengerRead } from '@/lib/messenger-unread';
 import {
   MAX_MESSAGE_TEXT_LENGTH,
   validateImageDataUrl,
-} from '@/lib/security';
+} from '@/lib/security-limits';
 import {
   bootstrapMessenger,
   createPublicChannel,

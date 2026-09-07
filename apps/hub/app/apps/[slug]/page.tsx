@@ -2,9 +2,12 @@
 
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
-import { AppCatalogBrowser } from '@/components/app-catalog';
-import { AppContact } from '@/components/app-contact';
+import { HubNativeAppBody } from '@/components/hub-native-app';
 import { AppUsageGuide } from '@/components/app-usage-guide';
+import {
+  isPresentationalTryoutApp,
+  shouldShowUsageGuide,
+} from '@/lib/usage-guide';
 import {
   APP_CATALOG,
   getAppBySlug,
@@ -25,16 +28,19 @@ export default function MicroAppPage() {
     setApp(catalogApp ?? null);
 
     async function checkAccess() {
-      const res = await fetch('/api/workspace');
+      const res = await fetch('/api/workspace', { credentials: 'include' });
       if (!res.ok) {
         setAllowed(false);
         return;
       }
       const data = await res.json();
+      const isAdmin = data.user?.isAdmin === true;
       const isAllowed =
         catalogApp &&
         (catalogApp.status === 'available' || catalogApp.status === 'beta') &&
+        (catalogApp.adminOnly !== true || isAdmin) &&
         (catalogApp.alwaysAvailable === true ||
+          isPresentationalTryoutApp(catalogApp.id) ||
           data.workspace.selectedAppIds.includes(catalogApp.id));
       setAllowed(Boolean(isAllowed));
     }
@@ -79,7 +85,12 @@ export default function MicroAppPage() {
             </Link>
             <span className="text-sm font-medium">{app.name}</span>
           </header>
-          {app.id === 'catalog' ? <AppCatalogBrowser /> : <AppContact />}
+          {shouldShowUsageGuide(app.id) ? (
+            <AppUsageGuide app={app} variant="pane" />
+          ) : null}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <HubNativeAppBody app={app} />
+          </div>
         </div>
       );
     }
@@ -116,8 +127,10 @@ export default function MicroAppPage() {
           </a>
         ) : null}
       </header>
-      <AppUsageGuide app={app} variant="pane" />
-      <div className="flex min-h-0 flex-1 flex-col">
+      {shouldShowUsageGuide(app.id) ? (
+        <AppUsageGuide app={app} variant="pane" />
+      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {app.external ? (
           <ExternalAppFrame config={app.external} appName={app.name} />
         ) : app.microFrontend ? (

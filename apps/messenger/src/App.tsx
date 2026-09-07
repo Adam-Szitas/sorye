@@ -5,6 +5,7 @@ import type {
   MessengerMember,
   MessengerMessage,
 } from '@sorye/types';
+import { HUB_MAIL_COMPOSE_EVENT } from '@sorye/types';
 import { compressImageFile, formatBytes } from './image-compress';
 import {
   createChannel,
@@ -195,6 +196,51 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [channelId]);
+
+  async function forwardToMail(msg: MessengerMessage) {
+    const subject = msg.text?.trim()
+      ? `Fwd: ${msg.text.trim().split('\n')[0]!.slice(0, 80)}`
+      : msg.kind === 'image'
+        ? 'Fwd: photo from Messenger'
+        : 'Fwd: Messenger message';
+    const stamp = new Date(msg.createdAt).toLocaleString();
+    const body = [
+      `Forwarded from Messenger`,
+      `${msg.author.name} · ${stamp}`,
+      msg.text?.trim() ? `\n${msg.text.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+    setError(null);
+    try {
+      const res = await fetch('/api/mail/forward', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject,
+          body,
+          imageDataUrl: msg.imageDataUrl,
+          authorName: msg.author.name,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || 'Could not open Mail');
+      }
+      window.dispatchEvent(
+        new CustomEvent(HUB_MAIL_COMPOSE_EVENT, {
+          detail: {
+            subject,
+            body,
+            imageDataUrl: msg.imageDataUrl,
+          },
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not forward to Mail');
+    }
+  }
 
   async function sendText() {
     if (!channelId || !draft.trim()) return;
@@ -589,6 +635,15 @@ export default function App() {
                       {system ? renderMessageText(msg.text) : msg.text}
                     </p>
                   ) : null}
+                  <footer className="bubble-actions">
+                    <button
+                      type="button"
+                      className="fwd-mail"
+                      onClick={() => void forwardToMail(msg)}
+                    >
+                      Forward to Mail
+                    </button>
+                  </footer>
                 </article>
               );
             })

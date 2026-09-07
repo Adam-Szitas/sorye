@@ -1,5 +1,6 @@
 'use client';
 
+import { shouldShowUsageGuide } from '@/lib/usage-guide';
 import type { AppCatalogEntry } from '@sorye/types';
 import { useEffect, useState } from 'react';
 
@@ -29,6 +30,8 @@ export function AppUsageGuide({ app, variant = 'pane' }: AppUsageGuideProps) {
     }
     setOpen(true);
   }, [app.id, variant]);
+
+  if (!shouldShowUsageGuide(app.id)) return null;
 
   if (variant === 'picker') {
     return (

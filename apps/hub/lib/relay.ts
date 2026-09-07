@@ -10,6 +10,7 @@ import {
   type RelayDeliveryRecord,
   type RelayDeliveryStatus,
   type RelayMessage,
+  type RelayRoute,
   type WorkspaceEvent,
 } from '@sorye/types';
 import { assertSafeWebhookUrl } from '@/lib/security';
@@ -53,7 +54,7 @@ function normalizeConfig(raw: Partial<RelayConfig> | undefined): RelayConfig {
 
   const routes =
     Array.isArray(raw.routes) && raw.routes.length > 0
-      ? raw.routes
+      ? mergeMissingDefaultRoutes(defaults.routes, raw.routes)
       : defaults.routes;
 
   return {
@@ -93,6 +94,19 @@ function mergeChannels(
   return merged;
 }
 
+function mergeMissingDefaultRoutes(
+  defaults: RelayRoute[],
+  saved: RelayRoute[],
+): RelayRoute[] {
+  const keys = new Set(
+    saved.map((route) => `${route.sourceAppId}::${route.channelId}`),
+  );
+  const extra = defaults.filter(
+    (route) => !keys.has(`${route.sourceAppId}::${route.channelId}`),
+  );
+  return extra.length === 0 ? saved : [...saved, ...extra];
+}
+
 export async function getRelayConfig(workspaceId: string): Promise<RelayConfig> {
   const snapshot = await readStore();
   if (snapshot[workspaceId]) {
@@ -103,6 +117,27 @@ export async function getRelayConfig(workspaceId: string): Promise<RelayConfig> 
     store[workspaceId] = normalized;
     return normalized;
   });
+}
+
+/** Read-only failed-delivery counts for one workspace. Does not create config. */
+export async function countFailedRelayDeliveries(
+  workspaceId: string,
+  fromDay: string,
+  toDay: string,
+): Promise<number> {
+  const snapshot = await readStore();
+  const raw = snapshot[workspaceId];
+  if (!raw) return 0;
+  const config = normalizeConfig(raw);
+  let failed = 0;
+  for (const message of config.messages.slice(0, 100)) {
+    const day = message.createdAt.slice(0, 10);
+    if (day < fromDay || day > toDay) continue;
+    for (const delivery of message.deliveries) {
+      if (delivery.status === 'failed') failed += 1;
+    }
+  }
+  return failed;
 }
 
 function sanitizeChannels(channels: RelayChannel[]): RelayChannel[] {
