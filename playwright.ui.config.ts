@@ -21,7 +21,7 @@ export default defineConfig({
   projects: [
     {
       name: 'hub · susm · espm',
-      testMatch: /(?:hub|susm|espm)\.spec\.ts/,
+      testMatch: /(?:hub(?:-advanced)?|susm|espm)\.spec\.ts/,
     },
   ],
 });

@@ -1,14 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { espmURL, hubLooksUp, hubURL, susmURL } from './e2e/load-env';
 
 const startHub =
   process.env.E2E_START_HUB === '1' && !hubLooksUp(hubURL);
-
-/** Dedicated Chromium profile — never the daily Chrome profile, never Cursor MCP debug Chrome. */
-const pwUserDataDir = path.join(__dirname, 'e2e', '.pw-user-data', `pid-${process.pid}`);
-fs.mkdirSync(pwUserDataDir, { recursive: true });
 
 /**
  * Playwright E2E + visual diffs for Hub (localhost) and local SUSM / ESPM.
@@ -48,13 +42,13 @@ export default defineConfig({
     video: 'off',
     actionTimeout: 15_000,
     launchOptions: {
-      args: ['--enable-unsafe-webgpu', `--user-data-dir=${pwUserDataDir}`],
+      args: ['--enable-unsafe-webgpu'],
     },
   },
   projects: [
     {
       name: 'hub',
-      testMatch: /hub\.spec\.ts/,
+      testMatch: /hub(?:-advanced)?\.spec\.ts/,
       use: { baseURL: hubURL },
     },
     {

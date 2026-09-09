@@ -203,7 +203,12 @@ pnpm dev                    # http://localhost:3000
 cd D:\MyESPM\ESPM
 npm start                   # http://localhost:4200
 
-# terminal 3 — SUSM on :4201 (no sibling repo found; set SUSM_URL if needed)
+# terminal 3 — SUSM (D:\Martina\app\susm)
+cd D:\Martina\app\susm
+ng serve                    # http://localhost:4200
+# If ESPM already owns :4200:
+#   ng serve --port 4201
+#   $env:SUSM_URL="http://localhost:4201"
 ```
 
 ```

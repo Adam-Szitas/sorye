@@ -27,15 +27,22 @@ npm start
 
 http://localhost:4200 (`ng serve`)
 
-**Terminal 3 — SUSM**
-
-No SUSM repo was found under `D:\projects`, `D:\MyESPM`, or `D:\git`. Start your SUSM app on **port 4201** so it does not collide with ESPM:
+**Terminal 3 — SUSM** (Angular in `D:\Martina\app\susm`)
 
 ```bash
-ng serve --port 4201
+cd D:\Martina\app\susm
+ng serve
 ```
 
-http://localhost:4201 — or set `SUSM_URL` if you use another local port.
+http://localhost:4200 (`ng serve` default). Use **localhost**, not `127.0.0.1` — on Windows the dev server often binds `[::1]` only.
+
+If ESPM is already on :4200, pick another port and point tests at it:
+
+```powershell
+cd D:\Martina\app\susm
+ng serve --port 4201
+$env:SUSM_URL="http://localhost:4201"
+```
 
 **Then watch tests** (still from `D:\projects\sorye`):
 
@@ -54,7 +61,9 @@ Playwright UI at **http://127.0.0.1:9323** is a **single client**. If Cursor Sim
 
 **If Run is greyed / tests already ran in Cursor:** close the Cursor tab on 9323 → Ctrl+C the UI command → `pnpm test:e2e:ui` again → open the URL in Chrome.
 
-`pnpm test:e2e:ui` does **not** pass `--project=hub`. It opens `playwright.ui.config.ts`, which is a single **hub · susm · espm** project so the left tree lists `hub.spec.ts`, `susm.spec.ts`, and `espm.spec.ts`. Those specs navigate the **top-level** page to Hub (`localhost:3000`), SUSM (`localhost:4201`), and ESPM (`localhost:4200`) — not only a Hub iframe.
+`pnpm test:e2e:ui` does **not** pass `--project=hub`. It opens `playwright.ui.config.ts`, which is a single **hub · susm · espm** project so the left tree lists `hub.spec.ts`, `susm.spec.ts`, and `espm.spec.ts`. Those specs navigate the **top-level** page to Hub (`localhost:3000`), SUSM (`localhost:4200` unless `SUSM_URL` is set), and ESPM (`localhost:4200`) — not only a Hub iframe.
+
+If port **9323** is already in use: `$env:PLAYWRIGHT_UI_PORT="9324"` then `pnpm test:e2e:ui`, or skip UI Mode with `pnpm test:e2e:headed`.
 
 ### If the sidebar only shows Sorye Hub
 
@@ -101,7 +110,7 @@ pnpm test:e2e -- --update-snapshots
 1. `AUTH_DEV_BYPASS=true` in `apps/hub/.env.local` (never invent Google secrets).
 2. If `STORE_DRIVER=postgres`, run `pnpm db:up` first.
 3. Hub + remotes on :3000–:3012 via `pnpm dev` in this repo.
-4. Local ESPM on :4200 (`D:\MyESPM\ESPM`, `npm start`) and local SUSM on :4201 (or `SUSM_URL`).
+4. Local ESPM on :4200 (`D:\MyESPM\ESPM`, `npm start`) and local SUSM on :4200 (`D:\Martina\app\susm`, `ng serve`) — or `SUSM_URL` if you used `--port`.
 
 Authenticated SUSM/ESPM tests do **not** need Hub.
 
@@ -130,8 +139,9 @@ Do not commit `e2e/.env`.
 | Env | Default |
 |-----|---------|
 | `HUB_URL` | `http://localhost:3000` |
-| `SUSM_URL` | `http://localhost:4201` |
+| `SUSM_URL` | `http://localhost:4200` (`D:\Martina\app\susm` `ng serve`). Auto-detects :4201 if that process looks like SUSM. If ESPM owns :4200, set this explicitly. |
 | `ESPM_URL` | `http://localhost:4200` |
+| `PLAYWRIGHT_UI_PORT` | `9323` — if in use: `$env:PLAYWRIGHT_UI_PORT="9324"` or `pnpm test:e2e:headed` |
 | `E2E_START_HUB` | unset — Playwright will not auto-start `pnpm dev` |
 | `ALLOW_LIVE_E2E` | unset — non-localhost URLs are rejected. Set `true` only to hit Vercel / myespm.eu |
 
@@ -143,15 +153,16 @@ Selectors live in `e2e/locators/` — one file per app. Specs and `e2e/helpers.t
 
 | App | File | Login constants |
 |-----|------|-----------------|
-| Hub | `e2e/locators/hub.ts` | `HubLogin` |
+| Hub | `e2e/locators/hub.ts` | `HubLogin` (plus Mail / Messenger / Drive / Contact modal constants) |
 | SUSM | `e2e/locators/susm.ts` | `SusmLogin` |
 | ESPM | `e2e/locators/espm.ts` | `EspmLogin` |
 
-To retarget a login field, edit that object (`role` / `name` / `label` / `text` / `css`). `loc()` uses the first strategy that is set: **role → label → text → css**. Keep `role` for accessible queries; delete `role` (and `name`) to fall back to `css`.
+To retarget a login field, edit that object (`role` / `name` / `label` / `text` / `css`). `loc()` uses the first strategy that is set: **role → label → placeholder → text → css**. Keep `role` for accessible queries; delete `role` (and `name`) to fall back to `css`.
 
 ## Scenarios
 
 - **Hub:** launcher without Google, Catalog + Manage apps, Dashboard, Studio (sample part if WebGPU), OCR upload chrome. Screenshots mask the status-bar clock.
+- **Hub advanced** (`e2e/hub-advanced.spec.ts`, `@advanced`): dock + split panes, Mail compose, Messenger → Mail, Contact email / Try remotes, Drive preview, Storefront enquiry, Site editor, Reports, notifications. See [HUB-SCENARIOS.md](./HUB-SCENARIOS.md).
 - **SUSM:** login-wall smoke (always opens the local app); if credentials are set — sign in, Projects list, open a project (or open create and dismiss). Snapshots mask emails / user chips.
 - **ESPM:** login-wall smoke (always opens the local app); if credentials are set — sign in, a core list (Works / Orders / …), view or open create and dismiss. Snapshots mask emails / user chips.
 - **Hub iframe:** skipped unless `ALLOW_LIVE_E2E=true` (Catalog still points at Vercel). Full-page SUSM/ESPM journeys live in `susm.spec.ts` / `espm.spec.ts`.

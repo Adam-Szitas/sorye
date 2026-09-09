@@ -25,7 +25,7 @@ Quick orientation for AI coding agents. Read these in order:
 | Notification badge | `apps/hub/lib/notifications.ts`, `use-notifications.tsx` |
 | Register new app | `packages/types/src/apps.ts`, `apps/hub/lib/mf-remotes.ts`, `docs/apps/APPS.md` |
 | Hub-native page (Catalog / Contact / Reports / Storefront / Site / Mail / Drive) | `packages/types/src/apps.ts`, `apps/hub/components/`, `hub-native-app.tsx` |
-| Visual / E2E | `pnpm test:e2e` / `pnpm test:e2e:ui` (open http://127.0.0.1:9323 in **system Chrome**, not Cursor) / `pnpm test:e2e:headed` — Hub `:3000`, ESPM `:4200`, SUSM `:4201`. Do not open 9323 in Simple Browser. |
+| Visual / E2E | `pnpm test:e2e` / `pnpm test:e2e -- --project=hub` (includes `hub-advanced.spec.ts`) / `pnpm test:e2e:ui` (open http://127.0.0.1:9323 in **system Chrome**, not Cursor) / `pnpm test:e2e:headed` — Hub `:3000`, ESPM `:4200`, SUSM `:4200` (`D:\Martina\app\susm`, or `SUSM_URL` if `--port 4201`). Scenarios: `e2e/HUB-SCENARIOS.md`. Do not open 9323 in Simple Browser. |
 
 ## Dev command
 
