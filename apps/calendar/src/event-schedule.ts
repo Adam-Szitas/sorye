@@ -1,13 +1,11 @@
-export type EventKind = 'timed' | 'allDay' | 'multiDate';
+import {
+  normalizeLegacyCalendarEvent,
+  type CalendarEvent,
+  type CalendarEventKind,
+} from '@sorye/types';
 
-export interface CalendarEvent {
-  id: string;
-  title: string;
-  kind: EventKind;
-  dates: string[];
-  startTime?: string;
-  endTime?: string;
-}
+export type EventKind = CalendarEventKind;
+export type { CalendarEvent };
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -33,46 +31,7 @@ export function defaultEndTime(startTime: string): string {
 }
 
 export function normalizeLegacyEvent(raw: unknown): CalendarEvent | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const record = raw as Record<string, unknown>;
-
-  if (
-    typeof record.id === 'string' &&
-    typeof record.title === 'string' &&
-    Array.isArray(record.dates) &&
-    typeof record.kind === 'string'
-  ) {
-    const dates = record.dates.filter((d): d is string => typeof d === 'string');
-    if (dates.length === 0) return null;
-    return {
-      id: record.id,
-      title: record.title,
-      kind: record.kind as EventKind,
-      dates: [...new Set(dates)].sort(),
-      startTime:
-        typeof record.startTime === 'string' ? record.startTime : undefined,
-      endTime: typeof record.endTime === 'string' ? record.endTime : undefined,
-    };
-  }
-
-  if (typeof record.id === 'string' && typeof record.title === 'string') {
-    const date = typeof record.date === 'string' ? record.date : null;
-    if (!date) return null;
-    const startTime =
-      typeof record.time === 'string' && isValidTime(record.time)
-        ? record.time
-        : '09:00';
-    return {
-      id: record.id,
-      title: record.title,
-      kind: 'timed',
-      dates: [date],
-      startTime,
-      endTime: defaultEndTime(startTime),
-    };
-  }
-
-  return null;
+  return normalizeLegacyCalendarEvent(raw);
 }
 
 export function eventOccursOnDate(event: CalendarEvent, dateKey: string): boolean {

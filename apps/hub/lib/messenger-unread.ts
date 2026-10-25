@@ -27,7 +27,7 @@ export async function countMessengerUnread(
   workspaceId: string,
 ): Promise<number> {
   const [bootstrap, store] = await Promise.all([
-    bootstrapMessenger(userId, workspaceId),
+    bootstrapMessenger(userId, workspaceId, { includeMessages: true }),
     readStore(),
   ]);
   if (!bootstrap) return 0;
@@ -51,7 +51,9 @@ export async function markMessengerRead(input: {
   channelId?: string;
   through?: string;
 }): Promise<void> {
-  const bootstrap = await bootstrapMessenger(input.userId, input.workspaceId);
+  const bootstrap = await bootstrapMessenger(input.userId, input.workspaceId, {
+    includeMessages: true,
+  });
   if (!bootstrap) return;
 
   const stamp = input.through ?? new Date().toISOString();

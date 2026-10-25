@@ -29,6 +29,8 @@ export interface MailComposeDialogProps {
   members: MailMember[];
   currentUserId: string;
   initial?: MailComposeDetail | null;
+  accountId?: string;
+  fromAddress?: string;
   onClose: () => void;
   onSent?: () => void;
 }
@@ -45,6 +47,8 @@ export function MailComposeDialog({
   members,
   currentUserId,
   initial,
+  accountId,
+  fromAddress,
   onClose,
   onSent,
 }: MailComposeDialogProps) {
@@ -53,6 +57,7 @@ export function MailComposeDialog({
   const uid = useId();
   const [mounted, setMounted] = useState(false);
   const [toUserId, setToUserId] = useState('');
+  const [toAddress, setToAddress] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [imageDataUrl, setImageDataUrl] = useState<string | undefined>();
@@ -82,6 +87,7 @@ export function MailComposeDialog({
     if (!dialog || !mounted) return;
     if (open) {
       setToUserId((current) => current || defaultTo);
+      setToAddress('');
       setSubject(initial?.subject ?? '');
       setBody(initial?.body ?? '');
       setImageDataUrl(initial?.imageDataUrl);
@@ -139,17 +145,20 @@ export function MailComposeDialog({
     setSending(true);
     setError(null);
     try {
-      const res = await fetch('/api/mail', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          toUserId,
-          subject,
-          body,
-          imageDataUrl,
-        }),
-      });
+      const external = Boolean(accountId);
+      const res = await fetch(
+        external ? `/api/mail/accounts/${accountId}/send` : '/api/mail',
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            external
+              ? { toAddress, subject, body, imageDataUrl }
+              : { toUserId, subject, body, imageDataUrl },
+          ),
+        },
+      );
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? 'Could not send mail');
@@ -177,10 +186,12 @@ export function MailComposeDialog({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id={`${uid}-title`} className="text-base font-semibold">
-              Compose Sorye Mail
+              {accountId ? 'Compose' : 'Compose Sorye Mail'}
             </h2>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Delivers in this workspace only — not a public mailbox.
+              {accountId
+                ? `Sending as ${fromAddress ?? 'this account'} through your provider.`
+                : 'Delivers in this workspace only — not a public mailbox.'}
             </p>
           </div>
           <button
@@ -192,27 +203,46 @@ export function MailComposeDialog({
           </button>
         </div>
 
+        {fromAddress ? (
+          <p className="text-xs text-[var(--color-text-muted)]">
+            From <span className="font-mono text-[var(--color-text)]">{fromAddress}</span>
+          </p>
+        ) : null}
+
         <div>
           <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-to`}>
             To
           </label>
-          <select
-            id={`${uid}-to`}
-            className={FIELD_CLASS}
-            value={toUserId}
-            onChange={(event) => setToUserId(event.target.value)}
-            required
-          >
-            {recipients.length === 0 ? (
-              <option value="">No other members in this workspace</option>
-            ) : (
-              recipients.map((member) => (
-                <option key={member.userId} value={member.userId}>
-                  {member.displayName} · {member.generatedAddress}
-                </option>
-              ))
-            )}
-          </select>
+          {accountId ? (
+            <input
+              id={`${uid}-to`}
+              className={FIELD_CLASS}
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              required
+              value={toAddress}
+              onChange={(event) => setToAddress(event.target.value)}
+            />
+          ) : (
+            <select
+              id={`${uid}-to`}
+              className={FIELD_CLASS}
+              value={toUserId}
+              onChange={(event) => setToUserId(event.target.value)}
+              required
+            >
+              {recipients.length === 0 ? (
+                <option value="">No other members in this workspace</option>
+              ) : (
+                recipients.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {member.displayName} · {member.generatedAddress}
+                  </option>
+                ))
+              )}
+            </select>
+          )}
         </div>
 
         <div>
@@ -298,7 +328,7 @@ export function MailComposeDialog({
             <button
               type="submit"
               className="rounded-lg bg-[var(--color-accent)] px-3.5 py-2 text-xs font-medium text-[var(--color-surface)] transition hover:brightness-110 disabled:opacity-50"
-              disabled={sending || !toUserId}
+              disabled={sending || (!accountId && !toUserId)}
             >
               {sending ? 'Sending…' : 'Send'}
             </button>

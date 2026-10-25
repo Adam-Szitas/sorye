@@ -1,11 +1,13 @@
 'use client';
 
+import { KernelSyncBoundary, useHubKernelHost } from '@/components/hub-kernel';
 import { resolveRemoteEntry } from '@/lib/mf-remotes';
 import { init, loadRemote, registerRemotes } from '@module-federation/runtime';
+import type { AppFramework, KernelMountContext } from '@sorye/platform';
 import type { MicroFrontendConfig } from '@sorye/types';
 import { useEffect, useState } from 'react';
 
-type RemoteMount = (container: HTMLElement) => () => void;
+type RemoteMount = (container: HTMLElement, context?: KernelMountContext) => () => void;
 
 let hubInitialized = false;
 /** remoteName → last registered entry URL */
@@ -49,9 +51,25 @@ function resolveMount(mod: unknown): RemoteMount | null {
 
 interface MicroAppLoaderProps {
   config: MicroFrontendConfig;
+  appId: string;
+  /** Existing remotes are React. The kernel records this on the mount. */
+  framework?: AppFramework;
 }
 
-export function MicroAppLoader({ config }: MicroAppLoaderProps) {
+export function MicroAppLoader(props: MicroAppLoaderProps) {
+  const host = useHubKernelHost();
+  if (!host) {
+    return (
+      <KernelSyncBoundary appId={props.appId}>
+        <MicroAppMount {...props} />
+      </KernelSyncBoundary>
+    );
+  }
+  return <MicroAppMount {...props} />;
+}
+
+function MicroAppMount({ config, appId, framework = 'react' }: MicroAppLoaderProps) {
+  const host = useHubKernelHost();
   const [mountTarget, setMountTarget] = useState<HTMLDivElement | null>(null);
   const [mountFn, setMountFn] = useState<RemoteMount | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,10 +122,21 @@ export function MicroAppLoader({ config }: MicroAppLoaderProps) {
   }, [remoteName, exposedModule, remoteEntry, config]);
 
   useEffect(() => {
-    if (!mountFn || !mountTarget) return;
+    if (!mountFn || !mountTarget || !host) return;
 
     let unmounted = false;
-    const cleanup = mountFn(mountTarget);
+    const kernel = host.clientFor({ appId, framework });
+    let cleanup = () => {};
+    try {
+      cleanup = mountFn(mountTarget, { kernel });
+    } catch (err) {
+      kernel.dispose();
+      if (!unmounted) {
+        setLoading(false);
+        setError(err instanceof Error ? err.message : 'Failed to mount app');
+      }
+      return;
+    }
 
     if (!unmounted) {
       setLoading(false);
@@ -116,8 +145,9 @@ export function MicroAppLoader({ config }: MicroAppLoaderProps) {
     return () => {
       unmounted = true;
       cleanup();
+      kernel.dispose();
     };
-  }, [mountFn, mountTarget]);
+  }, [mountFn, mountTarget, host, appId, framework]);
 
   if (error) {
     return (

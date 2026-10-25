@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildOcrObject,
+  type OcrAnalysis,
   type OcrMatrix,
   type OcrPageLayout,
 } from '@sorye/types';
@@ -22,8 +23,62 @@ import { clearPdfCache, getPdfPageCount } from './prepare-pdf';
 import { runOcr, warmOcrEngine } from './ocr-engine';
 import { sendLayoutToProtocolio } from './send-to-protocolio';
 import { emitWorkspaceEvent } from './emit-event';
+import { hubApiPath } from './hub-origin';
+import { ReadingView } from './reading-view';
+import { LibraryPanel } from './library-panel';
 import { downloadCsv, layoutsToCsv } from './export-csv';
 import './styles.css';
+
+async function followAnalysis(
+  start: OcrAnalysis,
+  onProgress: (analysis: OcrAnalysis) => void,
+): Promise<OcrAnalysis> {
+  let current = start;
+  onProgress(current);
+  try {
+    sessionStorage.setItem('sorye.ocr.reading', current.id);
+  } catch {
+    // The hub frame can block storage. The reading still continues in this tab.
+  }
+  let guard = 0;
+  while (current.status === 'extracting' && guard < 10_000) {
+    guard += 1;
+    const before = current.vector?.cursor?.next ?? 0;
+    await delay(1_200);
+    current = await continueAnalysis(current.id);
+    onProgress(current);
+    const after = current.vector.cursor?.next ?? before;
+    if (current.status === 'extracting' && after === before) {
+      throw new Error('Qwen made no progress on this document.');
+    }
+  }
+  return current;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function continueAnalysis(id: string, tries = 0): Promise<OcrAnalysis> {
+  const res = await fetch(hubApiPath(`/api/ocr/analyses/${id}/continue`), {
+    method: 'POST',
+    credentials: 'include',
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    analysis?: OcrAnalysis;
+  };
+  if (res.status === 429) {
+    if (tries > 8) throw new Error(data.error || 'OCR is busy. The saved rows can be continued later.');
+    const wait = Number(res.headers.get('Retry-After') || '2');
+    await delay((Number.isFinite(wait) ? wait : 2) * 1000);
+    return continueAnalysis(id, tries + 1);
+  }
+  if (!res.ok || !data.analysis) {
+    throw new Error(data.error || `Analysis failed (${res.status})`);
+  }
+  return data.analysis;
+}
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -96,10 +151,42 @@ export default function App() {
   const copyTimerRef = useRef<number | null>(null);
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<OcrAnalysis | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   useEffect(() => {
     pageScansRef.current = pageScans;
   }, [pageScans]);
+
+  useEffect(() => {
+    const savedId = sessionStorage.getItem('sorye.ocr.reading');
+    if (!savedId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(hubApiPath(`/api/ocr/analyses/${savedId}`), {
+          credentials: 'include',
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { analysis?: OcrAnalysis };
+        if (cancelled || !data.analysis || data.analysis.status !== 'extracting') return;
+        setAnalyzing(true);
+        await followAnalysis(data.analysis, (next) => {
+          if (!cancelled) setAnalysis(next);
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+        }
+      } finally {
+        if (!cancelled) setAnalyzing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     warmOcrEngine();
@@ -205,6 +292,8 @@ export default function App() {
     setReady(false);
     setCopied(false);
     setSendStatus(null);
+    setAnalysis(null);
+    setAnalysisError(null);
     setPreviewUrl(null);
     setViewPage(1);
     setScanPage(1);
@@ -405,6 +494,50 @@ export default function App() {
     }
   }
 
+  async function analyzeWithQwen() {
+    const file = uploadedFileRef.current;
+    if (!file || analyzing) return;
+    setAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysis(null);
+    try {
+      const body = new FormData();
+      body.append('file', file, file.name);
+      const res = await fetch(hubApiPath('/api/ocr/analyze'), {
+        method: 'POST',
+        credentials: 'include',
+        body,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        analysis?: OcrAnalysis;
+      };
+      if (!res.ok || !data.analysis) {
+        throw new Error(data.error || `Analysis failed (${res.status})`);
+      }
+      const current = await followAnalysis(data.analysis, setAnalysis);
+      const summary =
+        current.pattern?.summary ||
+        current.error ||
+        'Rows stored';
+      void emitWorkspaceEvent('sorye.ocr.analyzed', {
+        title: `Qwen read ${file.name}`,
+        summary,
+        appId: 'ocr',
+        entityId: data.analysis.id,
+        meta: {
+          model: current.model,
+          status: current.status,
+          pages: current.pages.length,
+        },
+      });
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   function downloadJson() {
     if (!consumable) return;
     const blob = new Blob([JSON.stringify(consumable, null, 2)], {
@@ -442,10 +575,11 @@ export default function App() {
         <div>
           <h1>OCR</h1>
           <p>
-            Upload a PDF document (English &amp; German). Text-based PDFs are
-            read from the file itself; scanned PDFs use high-DPI OCR. Lines are
-            differentiated by size and weight, then shown as an evaluated layout
-            matrix.
+            Upload a PDF (English and German). The layout matrix stays in the
+            browser. Analyze with Qwen sends the file to Hub, which reads each
+            page as the visible lines and asks a local Qwen3 8B model for pattern
+            JSON. Stored lines keep the page text, including spaces. A figure
+            with no text is marked [IMAGE].
           </p>
         </div>
         <span className="ocr-badge">PDF only · EN + DE</span>
@@ -544,6 +678,14 @@ export default function App() {
               </button>
               <button
                 type="button"
+                className="btn-primary"
+                disabled={analyzing}
+                onClick={() => void analyzeWithQwen()}
+              >
+                {analyzing ? 'Asking Qwen…' : 'Analyze with Qwen'}
+              </button>
+              <button
+                type="button"
                 className="btn-ghost"
                 disabled={sending}
                 onClick={() => void sendToProtocolio()}
@@ -559,6 +701,14 @@ export default function App() {
               </button>
             </div>
           </div>
+        ) : null}
+
+        {analyzing ? (
+          <p className="ocr-send-status" role="status">
+            {analysis?.status === 'extracting' && analysis.vector?.cursor
+              ? `Qwen is reading section ${Math.min(analysis.vector.cursor.next + 1, analysis.vector.cursor.total)} of ${analysis.vector.cursor.total}.`
+              : 'Qwen is reading this document. A few pages usually take a minute.'}
+          </p>
         ) : null}
 
         {sendStatus ? <p className="ocr-send-status">{sendStatus}</p> : null}
@@ -640,6 +790,19 @@ export default function App() {
         </section>
       </div>
 
+      {analysis && analysis.status !== 'extracting' ? (
+        <ReadingView analysis={analysis} />
+      ) : null}
+      {analysis?.status === 'extracting' ? (
+        <p className="ocr-send-status" role="status">
+          {analysis.vector?.cursor
+            ? `Saved. Qwen is on section ${Math.min(analysis.vector.cursor.next + 1, analysis.vector.cursor.total)} of ${analysis.vector.cursor.total}.`
+            : 'Saved. Qwen is still reading this document.'}
+        </p>
+      ) : null}
+
+      {analysisError ? <p className="ocr-error">{analysisError}</p> : null}
+
       {consumable ? (
         <section className="ocr-json-panel" aria-label="Consumable object">
           <div className="ocr-table-head">
@@ -659,6 +822,8 @@ export default function App() {
           </pre>
         </section>
       ) : null}
+
+      <LibraryPanel />
 
       <dialog
         ref={modalRef}

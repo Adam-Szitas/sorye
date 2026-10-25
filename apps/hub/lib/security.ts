@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'crypto';
+import { promises as dns } from 'dns';
 import { getEnv } from '@/lib/env';
 
 /**
@@ -32,14 +33,21 @@ const WORKSPACE_EVENT_NAME_SET = new Set<string>(WORKSPACE_EVENT_NAMES);
 
 export {
   assertJsonPayloadSize,
+  MAX_CALENDAR_BYTES,
+  MAX_FILE_BYTES,
   MAX_HANDOFF_PAYLOAD_BYTES,
   MAX_IMAGE_DATA_URL_LENGTH,
-  MAX_FILE_BYTES,
+  MAX_MAIL_ACCOUNT_BYTES,
+  MAX_MAIL_ACCOUNTS,
   MAX_MAIL_BYTES,
+  MAX_MAIL_EXTERNAL_BODY,
+  MAX_MAIL_SYNC_MESSAGES,
   MAX_MESSAGE_TEXT_LENGTH,
+  MAX_NOTES_BYTES,
   MAX_SITE_BYTES,
   MAX_STOREFRONT_ORDER_BYTES,
   MAX_STOREFRONT_PRODUCT_BYTES,
+  MAX_TASKS_BOARD_BYTES,
   validateImageDataUrl,
 } from '@/lib/security-limits';
 
@@ -220,6 +228,113 @@ export function assertSafePostgresUrl(databaseUrl: string): void {
       'Postgres host is not allowed (private, link-local, or metadata addresses are blocked)',
     );
   }
+}
+
+const MAIL_HOST_RE =
+  /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+$/;
+
+/**
+ * Validates a user-supplied IMAP/SMTP hostname and rejects private /
+ * metadata targets after DNS lookup (SSRF).
+ */
+export async function assertSafeMailHost(raw: string): Promise<string> {
+  const host = raw.trim().toLowerCase().replace(/\.$/, '');
+  if (!host) throw new Error('Mail host is required');
+  if (host.length > 253) throw new Error('Mail host is too long');
+  if (host.includes(':') || host.includes('/') || host.includes('\\')) {
+    throw new Error('Mail host is invalid');
+  }
+  if (host.includes('..') || host.startsWith('.') || host.endsWith('.')) {
+    throw new Error('Mail host is invalid');
+  }
+
+  const isDev = getEnv().NODE_ENV === 'development';
+  const local =
+    host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (local && !isDev) {
+    throw new Error('Mail host is not allowed');
+  }
+  if (!local && !MAIL_HOST_RE.test(host)) {
+    throw new Error('Mail host is invalid');
+  }
+  if (isBlockedHost(host, false) && !(isDev && local)) {
+    throw new Error(
+      'Mail host must not target private or metadata addresses',
+    );
+  }
+
+  try {
+    const records = await dns.lookup(host, { all: true, verbatim: true });
+    if (records.length === 0) {
+      throw new Error('Could not resolve mail host');
+    }
+    for (const record of records) {
+      const resolvedLocal =
+        record.address === '127.0.0.1' || record.address === '::1';
+      if (isBlockedHost(record.address, false) && !(isDev && resolvedLocal)) {
+        throw new Error(
+          'Mail host must not target private or metadata addresses',
+        );
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Mail host')) throw err;
+    throw new Error('Could not resolve mail host');
+  }
+
+  return host;
+}
+
+const LLM_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+  'qwen3',
+  'host.docker.internal',
+]);
+
+/**
+ * Server-side Qwen3-8B origin. Not taken from the request.
+ * Only localhost and the Compose service name are allowed,
+ * so a mis-set env var cannot be pointed at a metadata address.
+ */
+export function assertSafeLlmBaseUrl(raw: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    throw new Error('OCR_LLM_BASE_URL is invalid');
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('OCR_LLM_BASE_URL must not include credentials');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('OCR_LLM_BASE_URL must be http or https');
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!LLM_HOSTS.has(host)) {
+    throw new Error(
+      'OCR_LLM_BASE_URL must be localhost, qwen3, or host.docker.internal',
+    );
+  }
+  if (parsed.pathname !== '/' && parsed.pathname !== '') {
+    throw new Error('OCR_LLM_BASE_URL must not include a path');
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error('OCR_LLM_BASE_URL must not include a query');
+  }
+  const port = parsed.port ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('OCR_LLM_BASE_URL port is invalid');
+  }
+  return parsed;
+}
+
+export function assertMailPort(port: number): number {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Mail port is invalid');
+  }
+  return port;
 }
 
 /**

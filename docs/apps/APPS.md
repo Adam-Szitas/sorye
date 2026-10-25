@@ -1,6 +1,6 @@
 # Sorye Apps — Index
 
-Detailed reference for every app in the catalog. For platform-wide design, see [../ARCHITECTURE.md](../ARCHITECTURE.md).
+Detailed reference for every app in the catalog. For platform-wide design, see [../ARCHITECTURE.md](../ARCHITECTURE.md). The same flows are drawn at `/architecture`.
 
 | App | Port | Type | Doc section |
 |-----|------|------|-------------|
@@ -73,6 +73,7 @@ Hub        →  record notification  →  Badges + toasts + bell
 | `components/app-contact.tsx` | Public Contact page (try Protocolio / Canvas) |
 | `components/app-storefront.tsx` | Hub-native Storefront (enquiry cart) |
 | `components/app-mail.tsx` | Hub-native Mail mailbox + compose host |
+| `components/mail-account-dialog.tsx` | Add Gmail / Outlook / IMAP account |
 | `components/app-files.tsx` | Hub-native Drive (workspace files) |
 | `components/app-site.tsx` | Hub-native Site editor (section/block builder) |
 | `components/micro-app-loader.tsx` | MF remote load/unmount |
@@ -170,19 +171,19 @@ First app users typically enable. Shows workspace metrics, embed/database integr
 |------|---------|
 | `src/App.tsx` | Main dashboard views |
 | `src/events-guide.tsx` | Explains + toggles App events via `PATCH /api/events` |
-| `src/dashboard-data.ts` | Static/demo metrics |
+| `src/dashboard-data.ts` | Workspace metrics from Hub APIs |
 | `src/embed-guide.tsx`, `database-guide.tsx` | Integration docs |
 | `src/mount.tsx` | MF entry |
 
 ## Communications
 
 - **Outbound:** `PATCH /api/events` to enable/disable workspace events
-- **Inbound:** None (read-only metrics except events toggle)
+- **Inbound:** `GET /api/tasks`, `/api/notes`, `/api/calendar` for overview counts (migrates leftover browser localStorage once if the server doc is empty)
 - **Relay:** Indirect — turning events on unlocks Relay + Messenger `#events`
 
 ## Dependencies
 
-Hub session only. No local server state.
+Hub session. Task / note / calendar counts come from Hub, not browser storage.
 
 ---
 
@@ -194,13 +195,14 @@ Hub session only. No local server state.
 
 ## Purpose
 
-Month-view scheduling. Users add events with title and time; saves persist in client state (demo-level persistence).
+Month-view scheduling. Events are workspace-scoped on Hub (`GET`/`PUT /api/calendar`). A one-time migrate copies leftover `sorye:calendar:events` localStorage when the server doc is empty.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Calendar UI |
+| `src/calendar-storage.ts` | Hub API client + month grid helpers |
 | `src/emit-event.ts` | `sorye.calendar.saved` → `/api/events` |
 | `src/mount.tsx` | MF entry |
 
@@ -208,7 +210,7 @@ Month-view scheduling. Users add events with title and time; saves persist in cl
 
 - **Emits:** `sorye.calendar.saved` when user saves an event (if App events on → Relay → Messenger `#events`)
 - **Handoffs:** None
-- **Hub APIs:** `POST /api/events` only
+- **Hub APIs:** `GET`/`PUT /api/calendar`, `POST /api/events`
 
 ---
 
@@ -220,13 +222,14 @@ Month-view scheduling. Users add events with title and time; saves persist in cl
 
 ## Purpose
 
-Lightweight note editor. Create notes, auto-save content.
+Lightweight note editor. Notes are workspace-scoped on Hub (`GET`/`PUT /api/notes`). A one-time migrate copies leftover `sorye:notes:items` localStorage when the server doc is empty. Selected note stays in memory.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Notes list + editor |
+| `src/notes-storage.ts` | Hub API client + localStorage migrate |
 | `src/emit-event.ts` | `sorye.notes.saved` |
 | `src/mount.tsx` | MF entry |
 
@@ -234,6 +237,7 @@ Lightweight note editor. Create notes, auto-save content.
 
 - **Emits:** `sorye.notes.saved` on save
 - Same event/Relay pipeline as Calendar
+- **Hub APIs:** `GET`/`PUT /api/notes`, `POST /api/events`
 
 ---
 
@@ -245,21 +249,26 @@ Lightweight note editor. Create notes, auto-save content.
 
 ## Purpose
 
-Kanban board with configurable workflow columns. Drag-and-drop cards; status editor for column names/order.
+Kanban board with configurable workflow columns. Drag-and-drop cards; status editor for column names/order. The board is workspace-scoped on Hub (`GET`/`PUT /api/tasks`). A one-time migrate copies leftover `sorye:tasks:board` localStorage when the server doc is empty. Search, the new-task field, and the board/statuses tab are private signals (`@sorye/platform` `createAppStore`). The header reads workspace name and user display name from the kernel. Events go through `kernel.emit` → `POST /api/events`.
+
+Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on port 3005 (Vite `index.html`), the same entry uses a standalone kernel. Set `VITE_HUB_ORIGIN=http://localhost:3000` so that tab can send the Hub session cookie. `?standalone=1` forces the standalone client even when Hub passed a kernel.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Board + card UI |
-| `src/emit-event.ts` | `sorye.task.created`, `updated`, `moved` |
-| `src/mount.tsx` | MF entry |
+| `src/tasks-ui.ts` | Private signal store (search, tab, new-task field) |
+| `src/tasks-storage.ts` | Hub API client + localStorage migrate |
+| `src/emit-event.ts` | `kernel.emit` for `sorye.task.created`, `updated`, `moved` |
+| `src/mount.tsx` | MF entry. Accepts the Hub kernel or connects standalone |
+| `src/hub-origin.ts` | Reads `VITE_HUB_ORIGIN` |
 
 ## Communications
 
 - **Emits:** Task lifecycle events (high-signal for Relay)
 - **Typical Relay route:** Tasks → Messenger `#events`
-- State: primarily client-side in current implementation
+- **Hub APIs:** `GET`/`PUT /api/tasks`, `POST /api/events` (via `kernel.emit`). On port 3005 those URLs are prefixed with `VITE_HUB_ORIGIN` when it differs from the page origin.
 
 ---
 
@@ -421,7 +430,8 @@ Workspace chat: public channels, DMs, image uploads (compressed client-side). **
 
 | Action | Purpose |
 |--------|---------|
-| `GET` | Bootstrap channels, members, messages |
+| `GET` | Bootstrap channels and members (no message history) |
+| `GET /api/messenger/messages` | Page of messages for a channel (`limit` default 30, max 50; `before`/`cursor` message id for older; `after` ISO for newer poll). Returns `{ messages, hasMore }` |
 | `POST action=message` | Send text/image |
 | `POST action=dm` | Open DM |
 | `POST action=channel` | Create public channel |
@@ -437,7 +447,7 @@ Workspace chat: public channels, DMs, image uploads (compressed client-side). **
 
 ## Security
 
-Image messages validated server-side (`data:image/*;base64` only). Rendered as `<img>` without clickable `href`.
+Image messages validated server-side (`data:image/*;base64` only). Rendered as `<img>` without clickable `href`. Message pages cap `limit` at 50 (default 30); `before`/`cursor`/`after` are validated.
 
 ---
 
@@ -450,29 +460,39 @@ Image messages validated server-side (`data:image/*;base64` only). Rendered as `
 
 ## Purpose
 
-In-workspace mailbox. Each member gets a stable **Sorye Mail address** (`{user-slug}@{workspace-slug}.mail.sorye`) stored server-side. This is Hub delivery, not a public MX / SMTP inbox. Optional personal email stays on the owner’s profile only.
+Default **Sorye Mail** address (`{user-slug}@{workspace-slug}.mail.sorye`) is an in-workspace mailbox — Hub delivery, not a public MX. Members can also **Add account** to connect Gmail, Outlook/Hotmail, or custom IMAP/SMTP (app password). Hub fetches and sends by talking to the user’s provider. Optional personal email stays on the owner’s profile only.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
 | `packages/types/src/apps.ts` | Catalog entry |
-| `packages/types/src/mail.ts` | Message, profile, compose event |
-| `apps/hub/components/app-mail.tsx` | Inbox / Sent list + reading pane; settings in header |
-| `apps/hub/components/mail-compose-dialog.tsx` | Compose modal (paste + file image) |
-| `apps/hub/lib/mail.ts` | JSON store (`.data/mail.json`) |
+| `packages/types/src/mail.ts` | Message, profile, connected accounts, compose event |
+| `apps/hub/components/app-mail.tsx` | 3-pane mailbox (accounts/folders \| list \| reading) |
+| `apps/hub/components/mail-compose-dialog.tsx` | Compose modal (paste + file image; From = selected account) |
+| `apps/hub/components/mail-account-dialog.tsx` | Add Gmail / Outlook / IMAP account |
+| `apps/hub/lib/mail.ts` | JSON store (`.data/mail.json`) — workspace isolation |
+| `apps/hub/lib/mail-imap.ts` | IMAP fetch + SMTP send (server-side) |
 | `apps/hub/app/api/mail/route.ts` | `GET/POST/PATCH /api/mail` |
+| `apps/hub/app/api/mail/accounts/` | List/add/remove/sync/read/send connected accounts |
 | `apps/hub/app/api/mail/draft/route.ts` | `POST /api/mail/draft` |
 | `apps/hub/app/api/mail/forward/route.ts` | `POST /api/mail/forward` (Messenger) |
 
 ## Communications
 
-- `GET /api/mail` — profile, members (generated addresses only), inbox, sent, draft
+- `GET /api/mail` — profile, members (generated addresses only), inbox, sent, draft, connected accounts (no secrets)
 - `POST /api/mail` — send in-workspace; emits `sorye.mail.sent`
 - `PATCH /api/mail` — personal email + “also notify Messenger”
-- `POST /api/mail/draft` / `POST /api/mail/forward` — prefill compose from Messenger
+- `GET/POST /api/mail/accounts` — list / add (tests IMAP+SMTP, then encrypts the app password)
+- `DELETE /api/mail/accounts/:id` — disconnect
+- `POST /api/mail/accounts/:id/sync` — IMAP Inbox / Sent / Drafts
+- `GET /api/mail/accounts/:id/messages` — cached headers
+- `GET /api/mail/accounts/:id/messages/:messageId` — fetch body via IMAP
+- `POST /api/mail/accounts/:id/send` — SMTP as that account; emits `sorye.mail.sent`
+- `POST /api/mail/draft` / `POST /api/mail/forward` — prefill compose from Messenger (Sorye mailbox)
 - Relay source `mail`; Hub event `sorye:mail:compose` opens the compose modal
 - Images: `data:image/(jpeg|png|webp|gif);base64` + size cap (same as Messenger)
+- Gmail/Outlook v1 uses IMAP + app password. OAuth is not wired (no Google/Microsoft mail client IDs).
 
 ---
 
@@ -525,14 +545,16 @@ Workspace file locker. Members upload, search, preview, list, rename, download, 
 
 ## Purpose
 
-Upload PDF → per-page layout matrix (columns/rows from word positions) → CSV export or handoff to Protocolio for PDF generation.
+Upload PDF → browser layout matrix (columns/rows) for review, CSV, or Protocolio.
+
+**Analyze with Qwen** uploads the same PDF to Hub. Node reads each page as **one list of visible lines** (no column matrix) and flattens those lines into one document-wide line vector with page offsets. Each stored line is the text on the page, including spaces, digits, and units; a figure with no text is `[IMAGE]`. Hub stores that listing first (`status: extracting`), then asks Qwen3 8B for pattern JSON and updates the same row without rewriting the lines. When that row is finished, OCR shows a reading and links to `/apps/ocr/reading/{id}`. The PDF bytes are not stored. **Stored tables** searches the latest 50 extractions (`POST /api/ocr/analyses/query`) by UTC date, file name, JSON field name, code, and amount, without returning the page transcript. A table can be renamed with `PATCH /api/ocr/analyses/{id}`.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | Upload UI, matrix preview, actions |
-| `src/ocr-engine.ts` | Tesseract + pdf.js pipeline |
+| `src/App.tsx` | Upload UI, matrix preview, Analyze with Qwen |
+| `src/ocr-engine.ts` | Tesseract + pdf.js pipeline (browser matrix) |
 | `src/layout-matrix.ts` | Column detection (occupancy valleys, gutters) |
 | `src/parse-document.ts` | Word extraction from PDF |
 | `src/prepare-pdf.ts`, `prepare-image.ts`, `prepare-file.ts` | File prep |
@@ -540,15 +562,64 @@ Upload PDF → per-page layout matrix (columns/rows from word positions) → CSV
 | `src/send-to-protocolio.ts` | `POST /api/handoffs` |
 | `src/emit-event.ts` | `sorye.ocr.analyzed`, `sorye.ocr.ready` |
 | `src/mount.tsx` | MF entry |
+| `apps/hub/lib/ocr/read-pdf.ts` | Node pdf.js reader → rows |
+| `apps/hub/lib/ocr/rows.ts` | Visible lines and `[IMAGE]` |
+| `apps/hub/lib/ocr/vector.ts` | Document-wide line vector and per-page completeness |
+| `apps/hub/lib/ocr/analyze.ts` | Qwen prompt + pattern JSON |
+| `apps/hub/app/api/ocr/analyze/route.ts` | Upload, read, store |
+| `apps/hub/app/apps/ocr/reading/[id]/page.tsx` | Printable HTML reading of one stored analysis |
+| `packages/types/src/ocr-ai.ts` | Row transcript + pattern contract |
+| `packages/db` `ocr_analyses` | Postgres table |
 
 ## Processing model
 
-**100% client-side** — no PDF uploaded to Hub server. Privacy-friendly; large files can stress browser.
+The **layout matrix stays in the browser**. Analyze with Qwen sends the PDF to Hub (`POST /api/ocr/analyze`, 64 MB, 500 pages). Hub calls the `Qwen/Qwen3-8B` container in small slices. A slice that hits the output limit is split and read again. Long documents stay on `extracting` and continue through `POST /api/ocr/analyses/{id}/continue`. Hub writes `ocr_analyses`. With `STORE_DRIVER=json` the same record lands in `apps/hub/.data/ocr-analyses.json` until Postgres is on.
+
+If Qwen is down, the lines are still stored (`status: "rows_only"`) and image markers are copied into the pattern JSON.
+
+## Qwen/Qwen3-8B in Docker
+
+The checkpoint is `Qwen/Qwen3-8B` on Hugging Face. The container is vLLM's OpenAI server, which is the Docker path in the Qwen3 deployment docs. It listens on port 8000. An NVIDIA GPU must be visible to Docker. `pnpm db:up` does not start this service.
+
+From the repo root, in PowerShell:
+
+```powershell
+docker compose --profile qwen pull qwen3
+docker compose --profile qwen run --rm --entrypoint python qwen3 -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-8B')"
+docker compose --profile qwen up -d qwen3
+docker logs -f sorye-qwen3-8b
+```
+
+The second command downloads the Qwen3-8B weights into the `sorye_qwen3` volume. The third command loads those weights. First load takes a few minutes. Then:
+
+```powershell
+curl http://127.0.0.1:8000/v1/models
+```
+
+The model id in that response is `Qwen/Qwen3-8B`.
+
+In `apps/hub/.env.local`:
+
+```
+STORE_DRIVER=postgres
+DATABASE_URL=postgresql://sorye:sorye@localhost:5432/sorye
+OCR_LLM_BASE_URL=http://127.0.0.1:8000
+OCR_LLM_MODEL=Qwen/Qwen3-8B
+```
+
+Create the table (includes `ocr_analyses`):
+
+```powershell
+pnpm db:push
+```
+
+Hub on the host uses `127.0.0.1`. Hub inside Compose uses `http://qwen3:8000`. `OCR_LLM_BASE_URL` is allowlisted to `localhost`, `127.0.0.1`, `::1`, `qwen3`, and `host.docker.internal`. Set `HF_TOKEN` in the shell before the download if Hugging Face rate-limits you.
 
 ## Communications
 
-- **Emits:** When scan completes (`analyzed`) and when ready for Protocolio (`ready`)
+- **Emits:** When the browser scan completes (`analyzed`) and when ready for Protocolio (`ready`). Analyze with Qwen emits `analyzed` again with the stored id.
 - **Handoffs OUT:** `POST /api/handoffs` with `kind: 'pdf-template'` to Protocolio
+- **Hub:** `POST /api/ocr/analyze`, `GET /api/ocr/analyses`, `GET /api/ocr/analyses/:id`
 - **Typical Relay route:** OCR → Messenger `#events` + optional webhook
 
 ---
@@ -727,11 +798,15 @@ Workspace-scoped operational graphs for platform admins (`ADMIN_EMAILS` / `HubUs
 
 ## `@sorye/types`
 
-Domain models: apps, workspaces, events, relay, notifications, handoffs, messenger, canvas, embed, OCR, Studio types. **Always import contracts from here** — do not duplicate in remotes.
+Domain models: apps, workspaces, events, relay, notifications, handoffs, messenger, canvas, tasks, notes, calendar, embed, OCR, Studio types. **Always import contracts from here** — do not duplicate in remotes.
 
 ## `@sorye/sdk`
 
-Lit web components (`sorye-button`, `sorye-card`, …) + React wrappers. Design tokens for consistent UI across remotes.
+Lit web components (`sorye-button`, `sorye-card`, …) + React wrappers. Design tokens for consistent UI across remotes. This is not the kernel client.
+
+## `@sorye/platform`
+
+Kernel client and signals (`packages/platform`). Global state is owned by Hub. Private app state stays in the app. Cross-app calls go through `kernel.emit` to existing Hub event and handoff routes. React, Vue, Angular, and Lit adapters are subpath exports. Tasks is the reference React remote. See `docs/ARCHITECTURE.md`.
 
 ## `@sorye/db`
 

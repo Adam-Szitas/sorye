@@ -72,7 +72,7 @@ export default async function EmbedAppPage({
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-[var(--color-surface)]">
       <div className="flex min-h-0 flex-1 flex-col">
-        <MicroAppLoader config={catalogApp.microFrontend} />
+        <MicroAppLoader config={catalogApp.microFrontend} appId={catalogApp.id} framework="react" />
       </div>
     </div>
   );

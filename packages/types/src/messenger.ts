@@ -41,11 +41,26 @@ export interface MessengerChannel {
   createdBy: string;
 }
 
+/** Default window for a thread (most recent first, then older on scroll-up). */
+export const MESSENGER_PAGE_SIZE = 30;
+/** Server-side cap for `GET /api/messenger/messages?limit=`. */
+export const MESSENGER_PAGE_SIZE_MAX = 50;
+
+export interface MessengerMessagesPage {
+  messages: MessengerMessage[];
+  /**
+   * Without `after`: more older messages exist.
+   * With `after`: more newer messages exist beyond this page.
+   */
+  hasMore: boolean;
+}
+
 export interface MessengerBootstrap {
   workspace: { id: string; kind: string; name: string };
   user: MessengerAuthor;
   members: MessengerMember[];
   channels: MessengerChannel[];
+  /** Hub bootstrap omits history (`[]`); load pages from `/api/messenger/messages`. */
   messages: MessengerMessage[];
   events?: {
     /** Messenger + ≥1 other app installed. */

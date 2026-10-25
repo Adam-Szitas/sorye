@@ -32,6 +32,6 @@ export default defineConfig({
     cssCodeSplit: false,
   },
   optimizeDeps: {
-    include: ['@sorye/sdk', 'lit', '@lit/react'],
+    include: ['@sorye/sdk', '@sorye/platform', 'lit', '@lit/react'],
   },
 });

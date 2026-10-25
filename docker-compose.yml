@@ -17,5 +17,83 @@ services:
       timeout: 5s
       retries: 5
 
+  # Qwen/Qwen3-8B weights, served by vLLM (Qwen's documented Docker path).
+  # Profile keeps `docker compose up -d` / `pnpm db:up` on Postgres only.
+  # Start with: docker compose --profile qwen up -d qwen3
+  # Requires an NVIDIA GPU visible to Docker.
+  qwen3:
+    profiles: ["qwen"]
+    image: vllm/vllm-openai:latest
+    container_name: sorye-qwen3-8b
+    restart: unless-stopped
+    ipc: host
+    gpus: all
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - sorye_qwen3:/root/.cache/huggingface
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    command:
+      - --model
+      - Qwen/Qwen3-8B
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reasoning-parser
+      - qwen3
+      - --max-model-len
+      - "8192"
+      - --max-num-seqs
+      - "1"
+      - --gpu-memory-utilization
+      - "0.70"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  # Quantized Qwen3 8B for the local 12 GB GPU. Do not run alongside qwen3.
+  # docker compose --profile qwen-local up -d qwen-local
+  qwen-local:
+    profiles: ["qwen-local"]
+    image: ollama/ollama@sha256:dea72d1e22270fe095b68fdf756d2b489d615643c5a2eaebbc5f569181e322d8
+    container_name: sorye-qwen-local
+    restart: unless-stopped
+    gpus: all
+    ports:
+      - "127.0.0.1:8000:11434"
+    volumes:
+      - sorye_ollama:/root/.ollama
+    # Cap the Linux VM high-water mark. Windows does not return freed WSL RAM on its own.
+    mem_limit: 10g
+    memswap_limit: 10g
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_MAX_QUEUE: "1"
+      OLLAMA_CONTEXT_LENGTH: "8192"
+      OLLAMA_KEEP_ALIVE: "30s"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: "q8_0"
+      OLLAMA_GPU_OVERHEAD: "1610612736"
+      OLLAMA_NO_CLOUD: "1"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
 volumes:
   sorye_pg_data:
+  sorye_qwen3:
+  sorye_ollama:

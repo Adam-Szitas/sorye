@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as schema from '@sorye/db/schema';
 import {
   dmChannelId,
@@ -8,6 +8,11 @@ import {
   type MessengerMessageKind,
 } from '@sorye/types';
 import type { WorkspaceDb } from '@/lib/workspace-db';
+import {
+  queryChannelMessagesPage,
+  type ListMessagesQuery,
+  type ListMessagesOutcome,
+} from './messenger-list';
 import {
   getHubSession,
   getHubSessionForWorkspace,
@@ -188,6 +193,7 @@ export async function bootstrapMessenger(
   db: WorkspaceDb,
   userId: string,
   workspaceId: string,
+  options?: { includeMessages?: boolean },
 ) {
   const session = await assertMember(userId, workspaceId);
   if (!session) return null;
@@ -208,16 +214,19 @@ export async function bootstrapMessenger(
       return a.name.localeCompare(b.name);
     });
 
+  const includeMessages = options?.includeMessages === true;
   const visibleIds = new Set(channels.map((c) => c.id));
-  const messageRows = await db
-    .select()
-    .from(schema.messengerMessages)
-    .where(eq(schema.messengerMessages.workspaceId, workspaceId));
-
-  const messages = messageRows
-    .map(rowToMessage)
-    .filter((m) => visibleIds.has(m.channelId))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const messages = includeMessages
+    ? (
+        await db
+          .select()
+          .from(schema.messengerMessages)
+          .where(eq(schema.messengerMessages.workspaceId, workspaceId))
+      )
+        .map(rowToMessage)
+        .filter((m) => visibleIds.has(m.channelId))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    : [];
 
   return {
     workspace: {
@@ -355,10 +364,10 @@ export async function listMessages(
   userId: string,
   workspaceId: string,
   channelId: string,
-  after?: string,
-): Promise<MessengerMessage[] | null> {
+  query: ListMessagesQuery,
+): Promise<ListMessagesOutcome> {
   const session = await assertMember(userId, workspaceId);
-  if (!session) return null;
+  if (!session) return { status: 'forbidden' };
 
   const [channelRow] = await db
     .select()
@@ -366,25 +375,12 @@ export async function listMessages(
     .where(eq(schema.messengerChannels.id, channelId))
     .limit(1);
 
-  if (!channelRow || channelRow.workspaceId !== workspaceId) return null;
-  if (!canSeeChannel(rowToChannel(channelRow), userId)) return null;
+  if (!channelRow || channelRow.workspaceId !== workspaceId) {
+    return { status: 'forbidden' };
+  }
+  if (!canSeeChannel(rowToChannel(channelRow), userId)) {
+    return { status: 'forbidden' };
+  }
 
-  const rows = after
-    ? await db
-        .select()
-        .from(schema.messengerMessages)
-        .where(
-          and(
-            eq(schema.messengerMessages.channelId, channelId),
-            gt(schema.messengerMessages.createdAt, new Date(after)),
-          ),
-        )
-    : await db
-        .select()
-        .from(schema.messengerMessages)
-        .where(eq(schema.messengerMessages.channelId, channelId));
-
-  return rows
-    .map(rowToMessage)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return queryChannelMessagesPage(db, channelId, query);
 }

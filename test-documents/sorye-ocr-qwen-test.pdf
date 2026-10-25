@@ -1,0 +1,113 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [5 0 R 7 0 R 9 0 R] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 1417 >>
+stream
+0.08 0.18 0.30 rg 0 740 612 52 re f
+1 1 1 rg BT /F1 19 Tf 40 759 Td (Sorye | Document reading test) Tj ET
+0.12 0.16 0.20 rg
+BT /F2 10 Tf 40 708 Td (DOCUMENT ID: SORYE-OCR-2026-001) Tj ET
+BT /F2 10 Tf 40 689 Td (This is synthetic test data. No customer information is included.) Tj ET
+BT /F2 10 Tf 40 670 Td (Purpose: check extraction, math retention, storage and summary.) Tj ET
+BT /F2 10 Tf 40 651 Td () Tj ET
+BT /F2 10 Tf 40 632 Td (INVOICE: INV-TEST-1042       DATE: 2026-10-25) Tj ET
+BT /F2 10 Tf 40 613 Td (Supplier: Example Research Lab) Tj ET
+BT /F2 10 Tf 40 594 Td (Customer: Sorye Demo Workspace) Tj ET
+BT /F2 10 Tf 40 575 Td () Tj ET
+BT /F2 10 Tf 40 556 Td (Item                    Quantity    Unit EUR    Total EUR) Tj ET
+BT /F2 10 Tf 40 537 Td (Optical sensor                 3       40.00       120.00) Tj ET
+BT /F2 10 Tf 40 518 Td (Calibration service            2       30.00        60.00) Tj ET
+BT /F2 10 Tf 40 499 Td (Subtotal                                          180.00) Tj ET
+BT /F2 10 Tf 40 480 Td (Tax at 20 percent                                  36.00) Tj ET
+BT /F2 10 Tf 40 461 Td (Grand total                                       216.00) Tj ET
+BT /F2 10 Tf 40 442 Td () Tj ET
+BT /F2 10 Tf 40 423 Td (Payment due: 2026-11-08) Tj ET
+BT /F2 10 Tf 40 404 Td (PAGE-ONE-END-ALPHA) Tj ET
+0.65 0.72 0.80 RG 40 55 m 572 55 l S
+BT /F1 9 Tf 40 36 Td (Sorye OCR / Qwen3 8B test - page 1 of 3) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 1009 >>
+stream
+0.08 0.18 0.30 rg 0 740 612 52 re f
+1 1 1 rg BT /F1 19 Tf 40 759 Td (Mathematical expressions) Tj ET
+0.12 0.16 0.20 rg
+BT /F2 10 Tf 40 708 Td (Keep these expressions as source text. Do not silently rewrite.) Tj ET
+BT /F2 10 Tf 40 689 Td (ASCII notation is intentional for this extraction baseline.) Tj ET
+BT /F2 10 Tf 40 670 Td () Tj ET
+BT /F2 10 Tf 40 651 Td (3*40+2*30=180) Tj ET
+BT /F2 10 Tf 40 632 Td (180*0.20=36) Tj ET
+BT /F2 10 Tf 40 613 Td (180+36=216) Tj ET
+BT /F2 10 Tf 40 594 Td (x^2+2*x+1=\(x+1\)^2) Tj ET
+BT /F2 10 Tf 40 575 Td (E=m*c^2) Tj ET
+BT /F2 10 Tf 40 556 Td (v=120/2=60) Tj ET
+BT /F2 10 Tf 40 537 Td (p=3.14159*r^2) Tj ET
+BT /F2 10 Tf 40 518 Td () Tj ET
+BT /F2 10 Tf 40 499 Td (Units: distance in km, time in hours, speed in km/h.) Tj ET
+BT /F2 10 Tf 40 480 Td (The quadratic expression is an identity, not a measured result.) Tj ET
+BT /F2 10 Tf 40 461 Td (PAGE-TWO-END-BETA) Tj ET
+0.65 0.72 0.80 RG 40 55 m 572 55 l S
+BT /F1 9 Tf 40 36 Td (Sorye OCR / Qwen3 8B test - page 2 of 3) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 10 0 R >>
+endobj
+10 0 obj
+<< /Length 1155 >>
+stream
+0.08 0.18 0.30 rg 0 740 612 52 re f
+1 1 1 rg BT /F1 19 Tf 40 759 Td (Summary and verification) Tj ET
+0.12 0.16 0.20 rg
+BT /F2 10 Tf 40 708 Td (The lab supplied three optical sensors and two calibrations.) Tj ET
+BT /F2 10 Tf 40 689 Td (The invoice subtotal is EUR 180 and the tax is EUR 36.) Tj ET
+BT /F2 10 Tf 40 670 Td (The payable total is EUR 216, due on 2026-11-08.) Tj ET
+BT /F2 10 Tf 40 651 Td (The equations demonstrate arithmetic, powers and division.) Tj ET
+BT /F2 10 Tf 40 632 Td () Tj ET
+BT /F2 10 Tf 40 613 Td (Verify that stored rows contain all three page-end markers.) Tj ET
+BT /F2 10 Tf 40 594 Td (Verify that equations have MATH markers in the saved data.) Tj ET
+BT /F2 10 Tf 40 575 Td (Verify that the summary mentions the invoice and its total.) Tj ET
+BT /F2 10 Tf 40 556 Td (This PDF has selectable text. It does not test scanned images.) Tj ET
+BT /F2 10 Tf 40 537 Td (A summary may omit details; the saved rows should preserve them.) Tj ET
+BT /F2 10 Tf 40 518 Td () Tj ET
+BT /F2 10 Tf 40 499 Td (FINAL-SENTINEL-OMEGA-7391) Tj ET
+0.65 0.72 0.80 RG 40 55 m 572 55 l S
+BT /F1 9 Tf 40 36 Td (Sorye OCR / Qwen3 8B test - page 3 of 3) Tj ET
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000265 00000 n 
+0000000401 00000 n 
+0000001870 00000 n 
+0000002006 00000 n 
+0000003067 00000 n 
+0000003204 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+4412
+%%EOF

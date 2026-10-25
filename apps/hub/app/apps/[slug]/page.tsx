@@ -134,7 +134,7 @@ export default function MicroAppPage() {
         {app.external ? (
           <ExternalAppFrame config={app.external} appName={app.name} />
         ) : app.microFrontend ? (
-          <MicroAppLoader config={app.microFrontend} />
+          <MicroAppLoader config={app.microFrontend} appId={app.id} framework="react" />
         ) : null}
       </div>
     </div>

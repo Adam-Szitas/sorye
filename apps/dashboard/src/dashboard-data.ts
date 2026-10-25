@@ -1,8 +1,14 @@
-import type {
-  EmbedWidget,
-  HubSession,
-  WorkspaceEventSettings,
-  WorkspaceStorageInfo,
+import {
+  CALENDAR_LOCAL_STORAGE_KEY,
+  NOTES_LOCAL_STORAGE_KEY,
+  TASKS_LOCAL_STORAGE_KEY,
+  type CalendarEvent,
+  type EmbedWidget,
+  type HubSession,
+  type Note,
+  type TasksBoard,
+  type WorkspaceEventSettings,
+  type WorkspaceStorageInfo,
 } from '@sorye/types';
 
 export interface EventsStatus {
@@ -50,12 +56,7 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-function parseCalendarEvents(raw: unknown): Array<{ title: string; dates?: string[]; date?: string }> {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((item) => item && typeof item === 'object');
-}
-
-function countUpcomingEvents(events: Array<{ dates?: string[]; date?: string }>): number {
+function countUpcomingEvents(events: CalendarEvent[]): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const horizon = new Date(today);
@@ -63,8 +64,7 @@ function countUpcomingEvents(events: Array<{ dates?: string[]; date?: string }>)
 
   let count = 0;
   for (const event of events) {
-    const dates = event.dates ?? (event.date ? [event.date] : []);
-    for (const dateKey of dates) {
+    for (const dateKey of event.dates) {
       const d = new Date(`${dateKey}T12:00:00`);
       if (d >= today && d <= horizon) count += 1;
     }
@@ -72,37 +72,112 @@ function countUpcomingEvents(events: Array<{ dates?: string[]; date?: string }>)
   return count;
 }
 
-export function readLocalSnapshots(): LocalAppSnapshots {
-  const calendarRaw = safeParse<unknown>(
-    localStorage.getItem('sorye:calendar:events'),
-    [],
-  );
-  const calendarEvents = parseCalendarEvents(calendarRaw);
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
+  try {
+    const res = await fetch(path, {
+      credentials: 'include',
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
 
-  const tasksBoard = safeParse<{
-    tasks?: Array<{ statusId: string; updatedAt: string; title: string }>;
-  }>(localStorage.getItem('sorye:tasks:board'), {});
-  const tasks = tasksBoard.tasks ?? [];
+async function migrateTasksIfNeeded(): Promise<TasksBoard | null> {
+  const data = await fetchJson<{ board: TasksBoard; empty: boolean }>('/api/tasks');
+  if (!data) return null;
+  if (data.empty) {
+    const legacy = safeParse<TasksBoard | null>(
+      localStorage.getItem(TASKS_LOCAL_STORAGE_KEY),
+      null,
+    );
+    if (legacy?.statuses?.length) {
+      const migrated = await fetchJson<{ board: TasksBoard }>('/api/tasks', {
+        method: 'PUT',
+        body: JSON.stringify({ board: legacy, migrate: true }),
+      });
+      localStorage.removeItem(TASKS_LOCAL_STORAGE_KEY);
+      return migrated?.board ?? legacy;
+    }
+    return data.board;
+  }
+  localStorage.removeItem(TASKS_LOCAL_STORAGE_KEY);
+  return data.board;
+}
+
+async function migrateNotesIfNeeded(): Promise<Note[]> {
+  const data = await fetchJson<{ notes: Note[]; empty: boolean }>('/api/notes');
+  if (!data) return [];
+  if (data.empty) {
+    const legacy = safeParse<Note[]>(
+      localStorage.getItem(NOTES_LOCAL_STORAGE_KEY),
+      [],
+    );
+    if (legacy.length > 0) {
+      const migrated = await fetchJson<{ notes: Note[] }>('/api/notes', {
+        method: 'PUT',
+        body: JSON.stringify({ notes: legacy, migrate: true }),
+      });
+      localStorage.removeItem(NOTES_LOCAL_STORAGE_KEY);
+      return migrated?.notes ?? legacy;
+    }
+    return data.notes;
+  }
+  localStorage.removeItem(NOTES_LOCAL_STORAGE_KEY);
+  return data.notes;
+}
+
+async function migrateCalendarIfNeeded(): Promise<CalendarEvent[]> {
+  const data = await fetchJson<{ events: CalendarEvent[]; empty: boolean }>(
+    '/api/calendar',
+  );
+  if (!data) return [];
+  if (data.empty) {
+    const legacy = safeParse<CalendarEvent[]>(
+      localStorage.getItem(CALENDAR_LOCAL_STORAGE_KEY),
+      [],
+    );
+    if (legacy.length > 0) {
+      const migrated = await fetchJson<{ events: CalendarEvent[] }>(
+        '/api/calendar',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ events: legacy, migrate: true }),
+        },
+      );
+      localStorage.removeItem(CALENDAR_LOCAL_STORAGE_KEY);
+      return migrated?.events ?? legacy;
+    }
+    return data.events;
+  }
+  localStorage.removeItem(CALENDAR_LOCAL_STORAGE_KEY);
+  return data.events;
+}
+
+function buildSnapshots(
+  board: TasksBoard | null,
+  notes: Note[],
+  events: CalendarEvent[],
+): LocalAppSnapshots {
+  const tasks = board?.tasks ?? [];
   const openTasks = tasks.filter((t) => t.statusId !== 'status-done').length;
-
-  const notes = safeParse<unknown[]>(
-    localStorage.getItem('sorye:notes:items'),
-    [],
-  );
-
-  const relay = safeParse<{ messages?: Array<{ createdAt: string; title: string; sourceAppId: string }> }>(
-    localStorage.getItem('sorye:relay:config'),
-    {},
-  );
-  const relayMessages = relay.messages?.length ?? 0;
+  const relay = safeParse<{
+    messages?: Array<{ createdAt: string; title: string; sourceAppId: string }>;
+  }>(localStorage.getItem('sorye:relay:config'), {});
 
   return {
-    calendarEvents: calendarEvents.length,
-    upcomingEvents: countUpcomingEvents(calendarEvents),
+    calendarEvents: events.length,
+    upcomingEvents: countUpcomingEvents(events),
     openTasks,
     totalTasks: tasks.length,
-    notes: Array.isArray(notes) ? notes.length : 0,
-    relayMessages,
+    notes: notes.length,
+    relayMessages: relay.messages?.length ?? 0,
   };
 }
 
@@ -114,13 +189,14 @@ const SOURCE_LABELS: Record<string, string> = {
   relay: 'Relay',
 };
 
-export function buildActivityFeed(): ActivityItem[] {
+function buildActivityFeed(
+  board: TasksBoard | null,
+  notes: Note[],
+  events: CalendarEvent[],
+): ActivityItem[] {
   const items: ActivityItem[] = [];
 
-  const tasksBoard = safeParse<{
-    tasks?: Array<{ id: string; title: string; updatedAt: string }>;
-  }>(localStorage.getItem('sorye:tasks:board'), {});
-  for (const task of tasksBoard.tasks ?? []) {
+  for (const task of board?.tasks ?? []) {
     items.push({
       id: `task-${task.id}`,
       at: task.updatedAt,
@@ -129,10 +205,6 @@ export function buildActivityFeed(): ActivityItem[] {
     });
   }
 
-  const notes = safeParse<Array<{ id: string; title: string; updatedAt: string }>>(
-    localStorage.getItem('sorye:notes:items'),
-    [],
-  );
   for (const note of notes) {
     items.push({
       id: `note-${note.id}`,
@@ -159,15 +231,11 @@ export function buildActivityFeed(): ActivityItem[] {
     });
   }
 
-  const calendarRaw = safeParse<unknown>(
-    localStorage.getItem('sorye:calendar:events'),
-    [],
-  );
-  for (const event of parseCalendarEvents(calendarRaw)) {
-    const date = event.dates?.[0] ?? event.date;
+  for (const event of events) {
+    const date = event.dates[0];
     if (!date || !event.title) continue;
     items.push({
-      id: `cal-${event.title}-${date}`,
+      id: `cal-${event.id}`,
       at: `${date}T09:00:00.000Z`,
       title: event.title,
       source: 'Calendar',
@@ -229,10 +297,16 @@ export async function loadDashboardData(): Promise<DashboardData> {
     events = null;
   }
 
+  const [board, notes, calendarEvents] = await Promise.all([
+    migrateTasksIfNeeded(),
+    migrateNotesIfNeeded(),
+    migrateCalendarIfNeeded(),
+  ]);
+
   return {
     session,
-    snapshots: readLocalSnapshots(),
-    activity: buildActivityFeed(),
+    snapshots: buildSnapshots(board, notes, calendarEvents),
+    activity: buildActivityFeed(board, notes, calendarEvents),
     widgets,
     storage,
     events,

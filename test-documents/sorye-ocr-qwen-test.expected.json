@@ -1,0 +1,62 @@
+{
+  "pages": [
+    {
+      "title": "Sorye | Document reading test",
+      "lines": [
+        "DOCUMENT ID: SORYE-OCR-2026-001",
+        "This is synthetic test data. No customer information is included.",
+        "Purpose: check extraction, math retention, storage and summary.",
+        "",
+        "INVOICE: INV-TEST-1042       DATE: 2026-10-25",
+        "Supplier: Example Research Lab",
+        "Customer: Sorye Demo Workspace",
+        "",
+        "Item                    Quantity    Unit EUR    Total EUR",
+        "Optical sensor                 3       40.00       120.00",
+        "Calibration service            2       30.00        60.00",
+        "Subtotal                                          180.00",
+        "Tax at 20 percent                                  36.00",
+        "Grand total                                       216.00",
+        "",
+        "Payment due: 2026-11-08",
+        "PAGE-ONE-END-ALPHA"
+      ]
+    },
+    {
+      "title": "Mathematical expressions",
+      "lines": [
+        "Keep these expressions as source text. Do not silently rewrite.",
+        "ASCII notation is intentional for this extraction baseline.",
+        "",
+        "3*40+2*30=180",
+        "180*0.20=36",
+        "180+36=216",
+        "x^2+2*x+1=(x+1)^2",
+        "E=m*c^2",
+        "v=120/2=60",
+        "p=3.14159*r^2",
+        "",
+        "Units: distance in km, time in hours, speed in km/h.",
+        "The quadratic expression is an identity, not a measured result.",
+        "PAGE-TWO-END-BETA"
+      ]
+    },
+    {
+      "title": "Summary and verification",
+      "lines": [
+        "The lab supplied three optical sensors and two calibrations.",
+        "The invoice subtotal is EUR 180 and the tax is EUR 36.",
+        "The payable total is EUR 216, due on 2026-11-08.",
+        "The equations demonstrate arithmetic, powers and division.",
+        "",
+        "Verify that stored rows contain all three page-end markers.",
+        "Verify that equations have MATH markers in the saved data.",
+        "Verify that the summary mentions the invoice and its total.",
+        "This PDF has selectable text. It does not test scanned images.",
+        "A summary may omit details; the saved rows should preserve them.",
+        "",
+        "FINAL-SENTINEL-OMEGA-7391"
+      ]
+    }
+  ]
+}

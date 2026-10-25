@@ -10,11 +10,41 @@ const publicPaths = [
   '/embed.js',
   '/contact',
   '/apps/contact',
+  '/architecture',
   '/s',
 ];
 
+/** Dev-only: Vite remotes on another localhost port call Hub `/api` with cookies. */
+const DEV_LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
+
+function devStandaloneOrigin(req: {
+  headers: Headers;
+  nextUrl: URL;
+}): string | null {
+  if (process.env.NODE_ENV !== 'development') return null;
+  if (!req.nextUrl.pathname.startsWith('/api/')) return null;
+  const origin = req.headers.get('origin');
+  if (!origin || origin === req.nextUrl.origin) return null;
+  if (!DEV_LOCAL_ORIGIN.test(origin)) return null;
+  return origin;
+}
+
+function withDevCors(res: NextResponse, origin: string): NextResponse {
+  res.headers.set('Access-Control-Allow-Origin', origin);
+  res.headers.set('Access-Control-Allow-Credentials', 'true');
+  res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.headers.set('Vary', 'Origin');
+  return res;
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  const standaloneOrigin = devStandaloneOrigin(req);
+  if (standaloneOrigin && req.method === 'OPTIONS') {
+    return withDevCors(new NextResponse(null, { status: 204 }), standaloneOrigin);
+  }
+
   const isPublic = publicPaths.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
@@ -26,13 +56,14 @@ export default auth((req) => {
     isAuthDevBypass();
 
   if (isAdminApi) {
-    return NextResponse.next();
+    return standaloneOrigin ? withDevCors(NextResponse.next(), standaloneOrigin) : NextResponse.next();
   }
 
   if (!req.auth && !isPublic && !localBypass) {
     const login = new URL('/login', req.nextUrl.origin);
     login.searchParams.set('callbackUrl', pathname);
-    return NextResponse.redirect(login);
+    const redirect = NextResponse.redirect(login);
+    return standaloneOrigin ? withDevCors(redirect, standaloneOrigin) : redirect;
   }
 
   const res = NextResponse.next();
@@ -44,7 +75,7 @@ export default auth((req) => {
     res.headers.set('Content-Security-Policy', 'frame-ancestors *');
   }
 
-  return res;
+  return standaloneOrigin ? withDevCors(res, standaloneOrigin) : res;
 });
 
 export const config = {

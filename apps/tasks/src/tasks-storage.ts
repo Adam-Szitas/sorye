@@ -1,71 +1,88 @@
 import {
-  createDefaultBoard,
+  TASKS_LOCAL_STORAGE_KEY,
+  createDefaultTasksBoard,
   type TasksBoard,
-} from './status-handler';
+} from '@sorye/types';
+import { hubApiPath } from './hub-origin';
 
 export type { TasksBoard };
 
-const STORAGE_KEY = 'sorye:tasks:board';
-
-function isTaskStatus(value: unknown): value is TasksBoard['statuses'][number] {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === 'string' &&
-    typeof record.name === 'string' &&
-    typeof record.color === 'string' &&
-    typeof record.order === 'number'
-  );
+export function createDefaultBoard(): TasksBoard {
+  return createDefaultTasksBoard();
 }
 
-function isTaskItem(value: unknown): value is TasksBoard['tasks'][number] {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === 'string' &&
-    typeof record.title === 'string' &&
-    typeof record.body === 'string' &&
-    typeof record.statusId === 'string' &&
-    typeof record.createdAt === 'string' &&
-    typeof record.updatedAt === 'string'
-  );
+class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, body: string) {
+    super(body || `Request failed (${status})`);
+    this.status = status;
+  }
 }
 
-function normalizeBoard(raw: unknown): TasksBoard | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const record = raw as Record<string, unknown>;
-  if (!Array.isArray(record.statuses) || !Array.isArray(record.tasks)) {
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(hubApiPath(path), {
+    credentials: 'include',
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(res.status, text);
+  }
+  return res.json() as Promise<T>;
+}
+
+function readLegacyBoard(): TasksBoard | null {
+  try {
+    const raw = localStorage.getItem(TASKS_LOCAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const record = parsed as Record<string, unknown>;
+    if (!Array.isArray(record.statuses) || !Array.isArray(record.tasks)) {
+      return null;
+    }
+    return parsed as TasksBoard;
+  } catch {
     return null;
   }
-
-  const statuses = record.statuses.filter(isTaskStatus);
-  const tasks = record.tasks.filter(isTaskItem);
-  if (statuses.length === 0) return null;
-
-  const statusIds = new Set(statuses.map((s) => s.id));
-  const fallbackStatusId = statuses[0].id;
-
-  return {
-    statuses,
-    tasks: tasks.map((task) =>
-      statusIds.has(task.statusId)
-        ? task
-        : { ...task, statusId: fallbackStatusId },
-    ),
-  };
 }
 
-export function loadBoard(): TasksBoard {
+function clearLegacyBoard() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createDefaultBoard();
-    const parsed = JSON.parse(raw) as unknown;
-    return normalizeBoard(parsed) ?? createDefaultBoard();
+    localStorage.removeItem(TASKS_LOCAL_STORAGE_KEY);
   } catch {
-    return createDefaultBoard();
+    // ignore
   }
 }
 
-export function saveBoard(board: TasksBoard) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(board));
+export async function loadBoard(): Promise<TasksBoard> {
+  const data = await api<{ board: TasksBoard; empty: boolean }>('/api/tasks');
+  if (data.empty) {
+    const legacy = readLegacyBoard();
+    if (legacy) {
+      const migrated = await api<{ board: TasksBoard }>('/api/tasks', {
+        method: 'PUT',
+        body: JSON.stringify({ board: legacy, migrate: true }),
+      });
+      clearLegacyBoard();
+      return migrated.board;
+    }
+    return data.board;
+  }
+  clearLegacyBoard();
+  return data.board;
+}
+
+export async function saveBoard(board: TasksBoard): Promise<TasksBoard> {
+  const saved = await api<{ board: TasksBoard }>('/api/tasks', {
+    method: 'PUT',
+    body: JSON.stringify({ board }),
+  });
+  clearLegacyBoard();
+  return saved.board;
 }

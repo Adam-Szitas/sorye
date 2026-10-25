@@ -1,5 +1,6 @@
 import { getStoreDriver } from '@/lib/env';
 import { withWorkspaceDb } from '@/lib/workspace-db';
+import type { ListMessagesQuery } from './messenger-list';
 import * as jsonStore from './messenger-json';
 import * as postgresStore from './messenger-postgres';
 import * as workspaceDb from './messenger-workspace-db';
@@ -8,11 +9,15 @@ function hubStore() {
   return getStoreDriver() === 'postgres' ? postgresStore : jsonStore;
 }
 
-export const bootstrapMessenger = (userId: string, workspaceId: string) =>
+export const bootstrapMessenger = (
+  userId: string,
+  workspaceId: string,
+  options?: { includeMessages?: boolean },
+) =>
   withWorkspaceDb(
     workspaceId,
-    (db) => workspaceDb.bootstrapMessenger(db, userId, workspaceId),
-    () => hubStore().bootstrapMessenger(userId, workspaceId),
+    (db) => workspaceDb.bootstrapMessenger(db, userId, workspaceId, options),
+    () => hubStore().bootstrapMessenger(userId, workspaceId, options),
   );
 
 export const openDirectMessage = (
@@ -52,12 +57,12 @@ export const listMessages = (
   userId: string,
   workspaceId: string,
   channelId: string,
-  after?: string,
+  query: ListMessagesQuery,
 ) =>
   withWorkspaceDb(
     workspaceId,
-    (db) => workspaceDb.listMessages(db, userId, workspaceId, channelId, after),
-    () => hubStore().listMessages(userId, workspaceId, channelId, after),
+    (db) => workspaceDb.listMessages(db, userId, workspaceId, channelId, query),
+    () => hubStore().listMessages(userId, workspaceId, channelId, query),
   );
 
 export const ensureEventsChannel = (

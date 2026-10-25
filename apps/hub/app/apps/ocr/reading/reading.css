@@ -1,0 +1,163 @@
+.reading-root {
+  min-height: 100dvh;
+  padding: 2rem 1rem 4rem;
+  background: #f4f1ea;
+  color: #1c1917;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+}
+
+.reading {
+  width: min(44rem, 100%);
+  margin: 0 auto;
+  padding: 2rem 1.75rem 2.5rem;
+  background: #fffdf8;
+  border: 1px solid #e7e5e4;
+  border-radius: 0.75rem;
+}
+
+.reading-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+}
+
+.reading-toolbar a {
+  color: #9a3412;
+}
+
+.reading-print {
+  border: 1px solid #d6d3d1;
+  background: #fff;
+  color: #1c1917;
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
+.reading-kicker {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9a3412;
+}
+
+.reading h1 {
+  margin: 0.35rem 0 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.reading h2 {
+  margin: 1.75rem 0 0.6rem;
+  font-size: 1rem;
+}
+
+.reading h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #78716c;
+}
+
+.reading-meta {
+  margin: 0.35rem 0 0;
+  color: #78716c;
+  font-size: 0.8125rem;
+}
+
+.reading-summary {
+  margin: 1rem 0 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.reading-warning,
+.reading-warnings {
+  margin: 1rem 0 0;
+  color: #9a3412;
+  font-size: 0.875rem;
+}
+
+.reading-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+
+.reading-fields div {
+  margin: 0;
+}
+
+.reading-fields dt {
+  font-size: 0.75rem;
+  color: #78716c;
+}
+
+.reading-fields dd {
+  margin: 0.15rem 0 0;
+}
+
+.reading-table-wrap {
+  overflow-x: auto;
+}
+
+.reading table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.reading th,
+.reading td {
+  border-bottom: 1px solid #e7e5e4;
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.reading-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.reading-list li + li {
+  margin-top: 0.35rem;
+}
+
+.reading-transcript {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;
+}
+
+.reading-transcript p {
+  margin: 0.2rem 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+@media print {
+  .reading-root {
+    padding: 0;
+    background: #fff;
+  }
+
+  .reading {
+    width: auto;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+  }
+
+  .reading-toolbar {
+    display: none;
+  }
+}

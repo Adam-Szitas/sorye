@@ -22,6 +22,10 @@ Skips Google in **`next dev` only** so http://localhost:3000 opens the Hub launc
 - `getEnv()` **refuses to boot** if the flag is set when `NODE_ENV=production` (Fly.io)
 - Do not set this secret on Fly.io; production auth remains Google OAuth
 
+### Standalone remote origins (development only)
+
+A Vite app on its own port may call Hub `/api/*` with `credentials: 'include'` when `VITE_HUB_ORIGIN` points at Hub. `apps/hub/middleware.ts` adds `Access-Control-Allow-Origin` only when `NODE_ENV=development` and `Origin` is `http://localhost:<port>` or `http://127.0.0.1:<port>`. Production does not add this policy. The session cookie is still required (or the dev bypass above). `workspaceId` still comes from `ensureHubUser()`. This is not a second auth system.
+
 ## Fixes implemented
 
 ### SSRF — Relay webhooks
@@ -58,9 +62,15 @@ Skips Google in **`next dev` only** so http://localhost:3000 opens the Hub launc
 | `POST /api/storefront/products` | Title/price required; payload size cap; workspace from session |
 | `POST /api/storefront/orders` | Known products only; qty/line caps; payload size cap; workspace from session |
 | `POST /api/mail` | Workspace members / generated addresses only; image data URL schema; subject/body caps; workspace from session |
+| Mail `/api/mail/accounts*` | Session workspace + user; IMAP/SMTP hosts SSRF-checked (`assertSafeMailHost`); Gmail/Outlook hosts are presets (client host ignored); app passwords AES-256-GCM at rest (`MAIL_SECRET_KEY` or `AUTH_SECRET`); never returned to the client; rate-limited test/sync/send; payload size caps |
 | Drive `/api/files` | Workspace from session; bytes on disk under `.data/files/{workspaceId}/{uuid}` (never JSON/Postgres blobs); lookup by id **and** workspaceId; rename changes `displayName` only; path resolve + prefix check; mime sniff + size cap; `Content-Disposition: inline` only for raster images, PDF, and text/csv/json/markdown (`?inline=1`) — never HTML/SVG/script |
 | `POST /api/messenger` | Image data URL schema; text length cap |
+| `GET`/`PUT /api/tasks` | Workspace from session; board shape + size caps |
+| `GET`/`PUT /api/notes` | Workspace from session; note count/title/body caps |
+| `GET`/`PUT /api/calendar` | Workspace from session; event count/title/date caps |
 | `PATCH /api/relay` | Webhook URL safety on channel save |
+| `POST /api/ocr/analyze` | Session workspace; PDF magic-byte + 64 MB + 500 page caps; rate limit on new uploads; PDF bytes are not stored; `OCR_LLM_BASE_URL` is server env only and allowlisted (`localhost`, `127.0.0.1`, `::1`, `qwen3`, `host.docker.internal`) so it cannot be aimed at a metadata address; pattern JSON size cap. `POST /api/ocr/analyses/{id}/continue` resumes the same workspace row and does not count as a new upload. |
+| `GET /api/ocr/analyses` | Session workspace; list/get never cross workspaces. `POST /api/ocr/analyses/query` searches the latest 50 rows in that workspace (UTC dates, names, JSON keys, codes, amounts) and does not return page transcripts. `PATCH /api/ocr/analyses/{id}` renames a row in the same workspace; the name is stripped of control characters and capped at 180 characters. |
 
 ### Other hardening
 

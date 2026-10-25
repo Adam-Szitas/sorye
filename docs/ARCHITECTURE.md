@@ -2,6 +2,8 @@
 
 This document describes how the Sorye platform is structured for developers and AI agents working in the monorepo. Read this first before touching Hub APIs, micro-frontends, or cross-app flows.
 
+The same flows are drawn on the public **Architecture** page at `/architecture` (no sign-in). This file is the source of truth for paths, APIs, and what is live versus still a container to add.
+
 ## Mental model
 
 Sorye is a **workspace OS**: users sign in once, pick apps from a catalog, and run them inside a shared shell. Apps are mostly **Module Federation remotes** loaded by the **Hub** (Next.js). Shared contracts live in **`@sorye/types`**. Cross-app behavior uses **workspace events**, **Relay routing**, **handoffs**, and **notifications** — all orchestrated by Hub APIs.
@@ -21,7 +23,8 @@ Sorye is a **workspace OS**: users sign in once, pick apps from a catalog, and r
              ▼                 ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Hub server libs: store, events, relay, notifications, handoffs │
-│  Storage: JSON (.data/) dev  OR  Postgres (@sorye/db) prod      │
+│  Storage: .data JSON and/or Postgres (workspace-scoped)         │
+│  Durable Tasks/Notes/Calendar live here — not in localStorage   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -32,6 +35,7 @@ Sorye is a **workspace OS**: users sign in once, pick apps from a catalog, and r
 | `apps/hub/` | Shell, auth, all `/api/*` routes, MF host, embed host |
 | `apps/<name>/` | Vite MF remotes (dashboard, ocr, messenger, …) |
 | `packages/types/` | Single source of truth: catalog, events, relay, workspaces |
+| `packages/platform/` | Kernel client, global signals, private app signals, framework adapters (`@sorye/platform`) |
 | `packages/sdk/` | Lit design-system components + React wrappers |
 | `packages/db/` | Drizzle schema + Postgres client |
 | `docs/` | Architecture, security, per-app reference |
@@ -75,12 +79,27 @@ Pane state persists in `sessionStorage` (`sorye:hub:panes`).
 **Remote pattern:** each app exposes `./mount` from `src/mount.tsx`:
 
 ```tsx
-export function mount(container: HTMLElement) {
+export function mount(container: HTMLElement, context?: KernelMountContext) {
+  const connected = connectKernel({
+    appId: 'tasks',
+    framework: 'react',
+    context,
+    hubOrigin: import.meta.env.VITE_HUB_ORIGIN,
+  });
   const root = createRoot(container);
-  root.render(<App />);
-  return () => root.unmount();
+  root.render(
+    <KernelProvider kernel={connected.kernel}>
+      <App />
+    </KernelProvider>,
+  );
+  return () => {
+    root.unmount();
+    connected.release();
+  };
 }
 ```
+
+Remotes that ignore the second argument keep working. Hub passes `{ kernel }` from `MicroAppLoader`.
 
 Remotes call Hub APIs with `fetch('/api/...', { credentials: 'include' })` — same origin when embedded in Hub.
 
@@ -105,16 +124,24 @@ Workspace scoping: every authenticated API uses `session.workspace.id` from the 
 
 `STORE_DRIVER=json` (local) or `postgres` (production). Facade: `apps/hub/lib/store/index.ts`.
 
+There are **three** persistence layers. Do not mix them:
+
+| Store | What lives there |
+|-------|------------------|
+| **Browser localStorage** | Temporary UI only (selected tab, pane widths, dismissed guides, DevKit request log). **Not** for Tasks / Notes / Calendar records. |
+| **Hub `.data/*.json` + Drive disk** | Local/dev file store: users/workspaces when `STORE_DRIVER=json`, plus Mail, Storefront, Site, Drive bytes, Relay, events, notifications. |
+| **Postgres** (`STORE_DRIVER=postgres`) | Users, workspaces, Messenger, Canvas, Tasks / Notes / Calendar documents (`workspace_app_docs`), and OCR Qwen readings (`ocr_analyses`). |
+
 | Driver | Core state | App-specific state |
 |--------|------------|-------------------|
-| JSON | `apps/hub/.data/store.json` | Separate `*-json.ts` modules |
+| JSON | `apps/hub/.data/store.json` | Separate `*-json.ts` modules (`workspace-docs.json` for Tasks/Notes/Calendar) |
 | Postgres | `@sorye/db` schema | Same APIs, postgres implementations |
 
-Production **rejects** `STORE_DRIVER=json` (`lib/env.ts`).
+Production **rejects** `STORE_DRIVER=json` (`lib/env.ts`). After schema changes run `pnpm db:push`.
 
 ### Per-workspace Postgres override
 
-Canvas and Messenger can use a workspace-specific Postgres URL (`/api/workspace/storage`). Useful for enterprise isolation.
+Canvas, Messenger, and Tasks / Notes / Calendar can use a workspace-specific Postgres URL (`/api/workspace/storage`). Useful for enterprise isolation.
 
 ## Cross-app communication
 
@@ -196,13 +223,171 @@ Chrome-less MF mount; embed session cookie scoped to widget workspace.
 | `/api/handoffs` | Cross-app payloads |
 | `/api/messenger` | Chat bootstrap + messages |
 | `/api/canvas/boards/*` | Boards + SSE realtime |
+| `/api/tasks` | Workspace Kanban board (`GET`/`PUT`) |
+| `/api/notes` | Workspace notes (`GET`/`PUT`) |
+| `/api/calendar` | Workspace calendar events (`GET`/`PUT`) |
 | `/api/storefront/products` | Workspace product catalog (seeded kits) |
 | `/api/storefront/orders` | Enquiry/order requests for this workspace |
 | `/api/site` | Workspace public site editor (blocks); public view is `/s/[slug]` |
 | `/api/mail` | In-workspace mailbox + settings; draft/forward for Messenger |
+| `/api/mail/accounts` | Connected IMAP/SMTP accounts (list/add/remove/sync/send/read) |
 | `/api/files` | Drive list/upload; `/api/files/[id]` download (or inline preview for safe types), rename, delete |
 | `/api/protocolio/generate` | Hub bridge to external PDF API |
 | `/api/embed/*` | Widget keys + bootstrap |
+
+## Runtime flows
+
+Apps are frontends. Hub is the kernel. Nothing in an app calls another app. Cross-app work goes through Hub, which validates it and routes it.
+
+### Request
+
+1. The browser opens Hub (`:3000`). Auth.js establishes the session. `ensureHubUser()` loads the user, active workspace, and selected apps. `workspaceId` is taken from that session on every API route.
+2. The shell mounts an app. Module Federation remotes expose `./mount` and are loaded from their own origin (`remoteEntry.js`). Hub-native apps (Catalog, Mail, Drive, Site, Storefront, Reports) render inside the Hub bundle. Contact (`/contact`) and Site (`/s/[slug]`) are public pages.
+3. The app calls `fetch('/api/...', { credentials: 'include' })` or `kernel.emit`. Embedded remotes stay same-origin with Hub, so the cookie is the Hub session even when the script came from another port. A remote opened on its own port uses the same routes (see Platform SDK).
+4. The route checks the payload, then reads or writes through the store driver (Postgres or `.data` JSON). `workspaceId` comes from `ensureHubUser()`, never from the client body.
+
+Relay stays inside Hub. The app does not deliver webhooks itself.
+
+### Events and Relay
+
+1. An app calls `kernel.emit({ type: 'event', name, payload })` (`@sorye/platform`) or the older `emitWorkspaceEvent(name, payload)` helper. Both `POST /api/events`. Names are allowlisted. The client does not send `workspaceId`.
+2. `POST /api/events` checks the allowlisted name, payload size, and the workspace feature flag.
+3. Hub runs `deliverEventViaRelay` in-process: Messenger `#events` and HTTPS webhooks are live; email and WhatsApp are queued, not sent.
+4. Hub writes a notification. The shell updates badges via `sorye:hub:notify` and `BroadcastChannel('sorye-notifications')`.
+
+Handoffs (`/api/handoffs`) are the structured variant: a source app leaves a payload, the target polls `unconsumed=1`. Messenger chat is a separate API (`/api/messenger`); `#events` is the system channel Relay fills.
+
+### State
+
+| Scope | Owner | What it holds | How another app sees it |
+|-------|--------|----------------|-------------------------|
+| Kernel (global) | Hub (`createKernelHost`) | Session, workspace, focused app, notification unread count. Signals are writable only inside the host. | Read-only `kernel.signals` / `kernel.getState()`. Cross-app writes are `kernel.emit` (events, handoffs) or `kernel.navigate`. |
+| App (private) | That app (`createAppStore`, `signal`, `computed`) | Its own UI state and drafts. Stays in the app bundle. | It does not. No app-to-app imports or direct calls. |
+
+Browser `localStorage` is for pane widths, dismissed guides, and similar chrome. It is not the kernel store and not the Tasks / Notes / Calendar record store.
+
+`@sorye/sdk` is the Lit design system (buttons, cards, tokens). `@sorye/platform` is the kernel client. Do not confuse them.
+
+### Platform SDK (`@sorye/platform`)
+
+Package path: `packages/platform`. Signals core is `@preact/signals-core`, shared by every adapter. There is no Redux store.
+
+| Entry | Use |
+|-------|-----|
+| `@sorye/platform` | `signal`, `computed`, `createAppStore`, `connectKernel`, `createStandaloneKernel`, `kernel.emit` |
+| `@sorye/platform/host` | Hub only: `createKernelHost`, `startKernelSync` |
+| `@sorye/platform/react` | `KernelProvider`, `useKernel`, `useSignalValue` |
+| `@sorye/platform/vue` | `useKernelSignal` (pass Vue's `shallowRef` / `onScopeDispose`) |
+| `@sorye/platform/angular` | `kernelSignalSubscribable` for `toSignal()` |
+| `@sorye/platform/lit` | `withKernelSignals` mixin |
+
+Apps must not import each other. `kernel.emit({ type: 'event', ... })` posts to `POST /api/events`. `kernel.emit({ type: 'handoff', ... })` posts to `POST /api/handoffs` and sets `sourceAppId` from the mounted app. Hub still validates the body. `kernel.navigate({ appId, side })` dispatches `sorye:hub:open-app` when the shell is listening; otherwise it opens that app's `mountPath`.
+
+**Standalone.** `connectKernel` without a mount context (or `?standalone=1`) builds a local client and polls `GET /api/workspace` and `GET /api/notifications`. Set `VITE_HUB_ORIGIN=http://localhost:3000` when the document origin is the Vite port. Cookies stay the Hub session (`credentials: 'include'`). In development, Hub reflects CORS only for `http://localhost:<port>` and `http://127.0.0.1:<port>`. Production does not. Serve standalone behind the Hub origin (or a reverse proxy that forwards `/api`) so the call is first-party. `workspaceId` is never taken from the client. Standalone `navigate` needs `VITE_HUB_ORIGIN`; split panes exist only in the shell. Tasks (`apps/tasks`) is the reference remote.
+
+**React** (what Hub and current remotes use):
+
+```tsx
+import { connectKernel, createAppStore } from '@sorye/platform';
+import { KernelProvider, useKernel, useSignalValue } from '@sorye/platform/react';
+
+const ui = createAppStore('tasks', { searchQuery: '' });
+
+function Screen() {
+  const kernel = useKernel();
+  const workspaceName = useSignalValue(kernel.signals.workspaceName);
+  const searchQuery = useSignalValue(ui.state.searchQuery);
+  return <p>{workspaceName} {searchQuery}</p>;
+}
+```
+
+`useSignalValue` subscribes with React `useSyncExternalStore`.
+
+**Vue** — call inside `setup()`. Vue is not installed for Hub.
+
+```ts
+import { onScopeDispose, shallowRef } from 'vue';
+import { useKernelSignal } from '@sorye/platform/vue';
+
+const workspaceName = useKernelSignal(kernel.signals.workspaceName, {
+  shallowRef,
+  onScopeDispose,
+});
+```
+
+**Angular** — `@angular/core` is not a dependency of Hub. Bridge into `toSignal` from an injection context:
+
+```ts
+import { toSignal } from '@angular/core/rxjs-interop';
+import type { Observable } from 'rxjs';
+import { kernelSignalSubscribable } from '@sorye/platform/angular';
+
+const workspaceName = toSignal(
+  kernelSignalSubscribable(kernel.signals.workspaceName) as Observable<string | null>,
+  { requireSync: true },
+);
+```
+
+**Lit** — mixin, no `lit` dependency on the platform package:
+
+```ts
+import { LitElement, html } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import { withKernelSignals } from '@sorye/platform/lit';
+
+@customElement('sorye-demo')
+class SoryeDemo extends withKernelSignals(LitElement) {
+  kernel!: KernelClient;
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.watchKernelSignal(this.kernel.signals.workspaceName);
+  }
+  override render() {
+    return html`${this.kernel.signals.workspaceName.value ?? ''}`;
+  }
+}
+```
+
+Private app state should be signals (`createAppStore` / `signal` / `computed`), not a second global store. The kernel lists mounted apps with `framework: 'react' | 'vue' | 'angular' | 'lit'` (remotes today are `react`). It does not read private fields.
+
+### Storage
+
+| Layer | Live data |
+|-------|-----------|
+| Postgres (`STORE_DRIVER=postgres`) | Users, workspaces, Messenger, Canvas, Tasks / Notes / Calendar (`workspace_app_docs`), OCR Qwen readings (`ocr_analyses`) |
+| Hub `.data` on disk | Relay, events, notifications, handoffs, Mail, Storefront, Site, reports, Drive metadata and bytes (`.data/files/{workspaceId}/{uuid}`) |
+| Browser | Temporary UI only |
+
+Production refuses `STORE_DRIVER=json` and `AUTH_DEV_BYPASS`. Local JSON mode is for dev only.
+
+## Containers
+
+`docker-compose.yml` runs **Postgres 16** (`pnpm db:up`, volume `sorye_pg_data`, `localhost:5432`). The Qwen3-8B service is profile `qwen`: image `vllm/vllm-openai`, model `Qwen/Qwen3-8B`, container `sorye-qwen3-8b`, port `8000`, volume `sorye_qwen3`. It needs an NVIDIA GPU. Hub, remotes, Relay, mail, and Drive still run on the host. `fly.toml` points at `apps/hub/Dockerfile`, which is not in the repo yet.
+
+Add containers beside the existing Postgres service. Do not add an API process per app.
+
+| Service | Role | Status |
+|---------|------|--------|
+| `postgres` | OLTP for users, workspaces, Messenger, Canvas, Tasks / Notes / Calendar, OCR analyses | Live |
+| `qwen3` | `Qwen/Qwen3-8B` for OCR pattern JSON. Profile `qwen`. Hub calls `OCR_LLM_BASE_URL` (default `http://127.0.0.1:8000`) | Live |
+| `hub` | Next.js kernel: session, catalog, every `/api/*`. One replica (Canvas presence is in-memory). Mount `apps/hub/.data` or Relay, mail, and Drive disappear on recreate | Next |
+| One nginx image per remote | Static `dist/` on today’s Vite port. `NEXT_PUBLIC_*_REMOTE` is fixed at Hub **build** time and must be a browser URL (`http://localhost:3005/remoteEntry.js`), not a Docker DNS name | Next |
+| MinIO | Drive bytes. Database keeps metadata only | Later |
+| Mail worker | Same Node image, other command. IMAP sync and SMTP send must not block Hub requests. Not a public mail server | Later |
+
+Leave Google OAuth, Sentry, Stripe, and the user’s IMAP/SMTP host outside Compose. When Hub grows past one replica, fan out Relay and Canvas SSE with Postgres `LISTEN/NOTIFY`. Do not add Redis or a second language before that.
+
+From the host, `DATABASE_URL` uses `localhost`. From the Hub container it uses hostname `postgres`.
+
+### Boot order
+
+1. `pnpm db:up`, set `STORE_DRIVER=postgres` and `DATABASE_URL`, run `pnpm db:push`. Confirm Tasks / Notes / Calendar survive a Hub restart.
+2. Hub image plus a volume on `apps/hub/.data`. Point `DATABASE_URL` at `postgres:5432`. Confirm `POST /api/events` still lands in Relay on that volume.
+3. One remote image (Tasks, port 3005). Load it from Hub and emit one workspace event.
+4. Repeat for the other remotes. Hub-native apps stay in the Hub container.
+5. MinIO, then move Drive bytes off `.data/files`.
+6. Mail worker with `MAIL_SECRET_KEY` (falls back to `AUTH_SECRET` until then).
+7. Postgres `LISTEN/NOTIFY` only when a second Hub replica is actually required.
 
 ## Adding a new micro-frontend
 
@@ -223,6 +408,7 @@ Chrome-less MF mount; embed session cookie scoped to widget workspace.
 | Event pipeline | `apps/hub/lib/events.ts` → `relay.ts` |
 | Notification badges | `apps/hub/lib/notifications.ts`, `use-notifications.tsx` |
 | MF loading | `apps/hub/components/micro-app-loader.tsx` |
+| Kernel / app signals | `packages/platform`, `apps/hub/components/hub-kernel.tsx` |
 | Security helpers | `apps/hub/lib/security.ts` |
 | Per-app behavior | `docs/apps/APPS.md` |
 

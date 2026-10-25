@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -185,3 +186,67 @@ export const canvasBoards = pgTable('canvas_boards', {
     viewport?: { x: number; y: number; zoom: number };
   }>().notNull(),
 });
+
+/** One durable document per workspace for Tasks, Notes, or Calendar. */
+export const workspaceAppDocs = pgTable(
+  'workspace_app_docs',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    updatedBy: text('updated_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    revision: integer('revision').notNull().default(1),
+  },
+  (table) => [
+    uniqueIndex('workspace_app_docs_pk').on(table.workspaceId, table.kind),
+  ],
+);
+
+/**
+ * One Qwen reading of a PDF: row transcript plus pattern JSON.
+ * The PDF bytes themselves are not stored.
+ */
+export const ocrAnalyses = pgTable(
+  'ocr_analyses',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    fileName: text('file_name').notNull(),
+    model: text('model').notNull(),
+    status: text('status').notNull(),
+    pages: jsonb('pages')
+      .$type<Array<{ page: number; rows: string[] }>>()
+      .notNull(),
+    /** Page offsets for the flat line vector. Line text stays in `pages`. */
+    vector: jsonb('vector').$type<{
+      version: 1;
+      pageStarts: number[];
+      lineCount: number;
+      notes: Array<{ page: number; complete: boolean; warning: string | null }>;
+      cursor?: { next: number; total: number; missed: number };
+    } | null>(),
+    pattern: jsonb('pattern').$type<Record<string, unknown> | null>(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('ocr_analyses_workspace_created_idx').on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  ],
+);

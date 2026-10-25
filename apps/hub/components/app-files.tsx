@@ -15,6 +15,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
   type SyntheticEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -40,6 +41,68 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+type DriveAction = 'open' | 'download' | 'rename' | 'delete';
+
+const DRIVE_ACTION_CLASS: Record<DriveAction, string> = {
+  open: 'bg-[var(--color-accent)]/15 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25',
+  download: 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25',
+  rename: 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25',
+  delete: 'bg-red-500/15 text-red-300 hover:bg-red-500/25',
+};
+
+const DRIVE_ICON_BUTTON =
+  'inline-flex size-8 shrink-0 items-center justify-center rounded-lg transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current';
+
+function DriveActionIcon({ action }: { action: DriveAction }) {
+  const props = {
+    viewBox: '0 0 24 24',
+    className: 'size-4',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.75,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true as const,
+  };
+
+  if (action === 'open') {
+    return (
+      <svg {...props}>
+        <path d="M14 5h5v5" />
+        <path d="M19 5 10 14" />
+        <path d="M17 13.5V18a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4.5" />
+      </svg>
+    );
+  }
+
+  if (action === 'download') {
+    return (
+      <svg {...props}>
+        <path d="M12 4v11" />
+        <path d="M7.5 11.5 12 16l4.5-4.5" />
+        <path d="M5 19h14" />
+      </svg>
+    );
+  }
+
+  if (action === 'rename') {
+    return (
+      <svg {...props}>
+        <path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+        <path d="M13.5 6.5l3 3" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...props}>
+      <path d="M4 7h16" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+      <path d="M7 7l1 13h8l1-13" />
+    </svg>
+  );
 }
 
 function kindLabel(mime: string): string {
@@ -72,21 +135,19 @@ function supportsClosedBy(): boolean {
   );
 }
 
-function FilePreviewDialog({
-  file,
+function DriveModal({
+  labelledBy,
   onClose,
+  wide,
+  children,
 }: {
-  file: WorkspaceFile;
+  labelledBy: string;
   onClose: () => void;
+  wide?: boolean;
+  children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const uid = useId();
   const [mounted, setMounted] = useState(false);
-  const [text, setText] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const kind = previewKind(file.mime);
-  const src = inlineUrl(file.id);
 
   useEffect(() => {
     setMounted(true);
@@ -103,7 +164,72 @@ function FilePreviewDialog({
     const dialog = dialogRef.current;
     if (!dialog || !mounted) return;
     if (!dialog.open) dialog.showModal();
-  }, [mounted, file.id]);
+  }, [mounted]);
+
+  function onBackdropClick(event: SyntheticEvent<HTMLDialogElement>) {
+    if (supportsClosedBy()) return;
+    const dialog = event.currentTarget;
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    const native = event.nativeEvent as MouseEvent;
+    const inside =
+      rect.top <= native.clientY &&
+      native.clientY <= rect.top + rect.height &&
+      rect.left <= native.clientX &&
+      native.clientX <= rect.left + rect.width;
+    if (!inside) dialog.close();
+  }
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <>
+      <style>{`
+        .hub-modal {
+          position: fixed;
+          inset: 0;
+          margin: auto;
+          height: fit-content;
+          max-height: min(90dvh, 52rem);
+          overscroll-behavior: contain;
+        }
+        .hub-modal::backdrop {
+          background: rgba(0, 0, 0, 0.6);
+          overflow: hidden;
+          overscroll-behavior: contain;
+        }
+      `}</style>
+      <dialog
+        ref={dialogRef}
+        className={`hub-modal overflow-hidden rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-0 text-[var(--color-text)] shadow-2xl ${
+          wide ? 'w-[min(56rem,calc(100%-2rem))]' : 'w-[min(28rem,calc(100%-2rem))]'
+        }`}
+        aria-labelledby={labelledBy}
+        onClick={onBackdropClick}
+        onClose={onClose}
+      >
+        {children}
+      </dialog>
+    </>,
+    document.body,
+  );
+}
+
+function FilePreviewDialog({
+  file,
+  onClose,
+  onDownload,
+}: {
+  file: WorkspaceFile;
+  onClose: () => void;
+  onDownload: (file: WorkspaceFile) => void;
+}) {
+  const uid = useId();
+  const [text, setText] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const kind = previewKind(file.mime);
+  const src = inlineUrl(file.id);
 
   useEffect(() => {
     if (kind !== 'text') return;
@@ -139,28 +265,8 @@ function FilePreviewDialog({
     };
   }, [kind, src]);
 
-  function onBackdropClick(event: SyntheticEvent<HTMLDialogElement>) {
-    if (supportsClosedBy()) return;
-    const dialog = event.currentTarget;
-    if (event.target !== dialog) return;
-    const rect = dialog.getBoundingClientRect();
-    const native = event.nativeEvent as MouseEvent;
-    const inside =
-      rect.top <= native.clientY &&
-      native.clientY <= rect.top + rect.height &&
-      rect.left <= native.clientX &&
-      native.clientX <= rect.left + rect.width;
-    if (!inside) dialog.close();
-  }
-
-  const dialog = (
-    <dialog
-      ref={dialogRef}
-      className="w-[min(56rem,calc(100%-2rem))] max-h-[min(90dvh,52rem)] overflow-hidden rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-0 text-[var(--color-text)] shadow-2xl backdrop:bg-black/60"
-      aria-labelledby={`${uid}-preview-title`}
-      onClick={onBackdropClick}
-      onClose={onClose}
-    >
+  return (
+    <DriveModal labelledBy={`${uid}-preview-title`} onClose={onClose} wide>
       <div className="flex max-h-[min(90dvh,52rem)] flex-col">
         <header className="flex shrink-0 items-start justify-between gap-3 border-b border-white/8 px-5 py-4">
           <div className="min-w-0">
@@ -179,17 +285,38 @@ function FilePreviewDialog({
               href={src}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+              className={`${DRIVE_ICON_BUTTON} ${DRIVE_ACTION_CLASS.open}`}
+              aria-label={`New tab ${file.displayName}`}
             >
-              New tab
+              <DriveActionIcon action="open" />
             </a>
             <button
               type="button"
-              className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-              onClick={onClose}
+              className={`${DRIVE_ICON_BUTTON} ${DRIVE_ACTION_CLASS.download}`}
+              aria-label={`Download ${file.displayName}`}
+              onClick={() => onDownload(file)}
             >
-              Close
+              <DriveActionIcon action="download" />
             </button>
+            <form method="dialog">
+              <button
+                type="submit"
+                className={`${DRIVE_ICON_BUTTON} text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text)]`}
+                aria-label="Close"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  aria-hidden
+                >
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </form>
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-4">
@@ -231,13 +358,16 @@ function FilePreviewDialog({
               </>
             )
           ) : null}
+          {kind === null ? (
+            <p className="py-6 text-sm text-[var(--color-text-muted)]">
+              This file does not have an inline preview. Download it to open
+              it in another app.
+            </p>
+          ) : null}
         </div>
       </div>
-    </dialog>
+    </DriveModal>
   );
-
-  if (!mounted) return null;
-  return createPortal(dialog, document.body);
 }
 
 export function AppFiles() {
@@ -545,21 +675,16 @@ export function AppFiles() {
             </thead>
             <tbody>
               {visible.map((file) => {
-                const canOpen = isInlinePreviewMime(file.mime);
                 return (
                   <tr key={file.id} className="border-b border-white/6">
                     <td className="max-w-[16rem] py-3 pr-3">
-                      {canOpen ? (
-                        <button
-                          type="button"
-                          className="block max-w-full truncate text-left font-medium text-[var(--color-accent)] hover:underline"
-                          onClick={() => setPreviewTarget(file)}
-                        >
-                          {file.displayName}
-                        </button>
-                      ) : (
-                        <div className="truncate font-medium">{file.displayName}</div>
-                      )}
+                      <button
+                        type="button"
+                        className="block max-w-full truncate text-left font-medium text-[var(--color-accent)] hover:underline"
+                        onClick={() => setPreviewTarget(file)}
+                      >
+                        {file.displayName}
+                      </button>
                       <div className="truncate font-mono text-[10px] text-[var(--color-text-muted)]">
                         {file.relativePath}
                       </div>
@@ -575,39 +700,27 @@ export function AppFiles() {
                     </td>
                     <td className="py-3">
                       <div className="flex flex-wrap justify-end gap-1">
-                        {canOpen ? (
+                        {(
+                          [
+                            ['open', 'Open', () => setPreviewTarget(file)],
+                            ['download', 'Download', () => void downloadFile(file)],
+                            ['rename', 'Rename', () => {
+                              setRenameTarget(file);
+                              setRenameValue(file.displayName);
+                            }],
+                            ['delete', 'Delete', () => setDeleteTarget(file)],
+                          ] as const
+                        ).map(([action, label, onClick]) => (
                           <button
+                            key={action}
                             type="button"
-                            className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-                            onClick={() => setPreviewTarget(file)}
+                            className={`${DRIVE_ICON_BUTTON} ${DRIVE_ACTION_CLASS[action]}`}
+                            aria-label={`${label} ${file.displayName}`}
+                            onClick={onClick}
                           >
-                            Open
+                            <DriveActionIcon action={action} />
                           </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-                          onClick={() => void downloadFile(file)}
-                        >
-                          Download
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-                          onClick={() => {
-                            setRenameTarget(file);
-                            setRenameValue(file.displayName);
-                          }}
-                        >
-                          Rename
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-lg px-2 py-1 text-xs text-red-300/80 transition hover:bg-red-400/10 hover:text-red-200"
-                          onClick={() => setDeleteTarget(file)}
-                        >
-                          Delete
-                        </button>
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -622,24 +735,22 @@ export function AppFiles() {
         <FilePreviewDialog
           file={previewTarget}
           onClose={() => setPreviewTarget(null)}
+          onDownload={(item) => void downloadFile(item)}
         />
       ) : null}
 
       {renameTarget ? (
-        <div
-          className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
-          role="presentation"
-          onClick={() => setRenameTarget(null)}
-        >
+        <DriveModal labelledBy={`${uid}-rename-title`} onClose={() => setRenameTarget(null)}>
           <form
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-5 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
+            className="p-5"
             onSubmit={(event) => {
               event.preventDefault();
               void saveRename();
             }}
           >
-            <h2 className="text-base font-semibold">Rename file</h2>
+            <h2 id={`${uid}-rename-title`} className="text-base font-semibold">
+              Rename file
+            </h2>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">
               Changes the display name only. Storage id stays {renameTarget.id}.
             </p>
@@ -671,21 +782,12 @@ export function AppFiles() {
               </button>
             </div>
           </form>
-        </div>
+        </DriveModal>
       ) : null}
 
       {deleteTarget ? (
-        <div
-          className="absolute inset-0 z-20 flex items-center justify-center bg-black/50 p-4"
-          role="presentation"
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-5 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-labelledby={`${uid}-delete-title`}
-          >
+        <DriveModal labelledBy={`${uid}-delete-title`} onClose={() => setDeleteTarget(null)}>
+          <div className="p-5">
             <h2 id={`${uid}-delete-title`} className="text-base font-semibold">
               Delete file
             </h2>
@@ -711,7 +813,7 @@ export function AppFiles() {
               </button>
             </div>
           </div>
-        </div>
+        </DriveModal>
       ) : null}
     </div>
   );

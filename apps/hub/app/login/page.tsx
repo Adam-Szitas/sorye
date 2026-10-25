@@ -155,6 +155,13 @@ export default async function LoginPage({
           >
             Contact
           </a>
+          {' · '}
+          <a
+            href="/architecture"
+            className="text-[var(--color-accent)] underline-offset-2 hover:underline"
+          >
+            Architecture
+          </a>
         </p>
       </div>
     </div>

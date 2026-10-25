@@ -1,19 +1,31 @@
 import { randomUUID } from 'crypto';
 import {
+  MAIL_ACCOUNT_LABEL_MAX,
+  MAIL_ACCOUNT_PASSWORD_MAX,
   MAIL_ADDRESS_SUFFIX,
   MAIL_BODY_MAX,
+  MAIL_EXTERNAL_BODY_MAX,
+  MAIL_MAX_CONNECTED_ACCOUNTS,
   MAIL_MAX_MESSAGES,
   MAIL_PERSONAL_EMAIL_MAX,
   MAIL_SUBJECT_MAX,
+  MAIL_SYNC_MESSAGE_MAX,
+  type MailAccountEndpoint,
+  type MailAccountProvider,
+  type MailAccountStatus,
   type MailBootstrap,
+  type MailConnectedAccount,
   type MailDraft,
   type MailDraftInput,
+  type MailExternalMessage,
+  type MailFolderId,
   type MailMember,
   type MailMessage,
   type MailProfile,
   type MailSettingsInput,
   type SendMailInput,
 } from '@sorye/types';
+import { decryptMailSecret, encryptMailSecret } from '@/lib/storage-crypto';
 import { validateImageDataUrl } from '@/lib/security-limits';
 import { getWorkspaceMembers } from '@/lib/store';
 import { jsonDataFile } from '@/lib/store/json-file';
@@ -30,11 +42,33 @@ interface MailProfileRecord {
   notifyMessenger: boolean;
 }
 
+interface MailAccountRecord {
+  id: string;
+  label: string;
+  email: string;
+  provider: MailAccountProvider;
+  imap: MailAccountEndpoint;
+  smtp: MailAccountEndpoint;
+  username: string;
+  passwordEncrypted: string;
+  lastSync: string | null;
+  status: MailAccountStatus;
+  statusMessage?: string;
+}
+
+interface MailExternalFolderCache {
+  inbox: MailExternalMessage[];
+  sent: MailExternalMessage[];
+  drafts: MailExternalMessage[];
+}
+
 interface WorkspaceMailState {
   workspaceSlug: string;
   profiles: Record<string, MailProfileRecord>;
   messages: MailMessage[];
   drafts: Record<string, MailDraft>;
+  accounts: Record<string, MailAccountRecord[]>;
+  external: Record<string, Record<string, MailExternalFolderCache>>;
 }
 
 type MailStore = Record<string, WorkspaceMailState>;
@@ -82,13 +116,24 @@ function cloneDraft(draft: MailDraft | undefined): MailDraft | null {
   return { ...draft };
 }
 
+function emptyFolders(): MailExternalFolderCache {
+  return { inbox: [], sent: [], drafts: [] };
+}
+
 function emptyState(workspaceName: string, workspaceId: string): WorkspaceMailState {
   return {
     workspaceSlug: slugify(workspaceName, `ws-${idSuffix(workspaceId)}`),
     profiles: {},
     messages: [],
     drafts: {},
+    accounts: {},
+    external: {},
   };
+}
+
+function ensureCollections(state: WorkspaceMailState): void {
+  if (!state.accounts) state.accounts = {};
+  if (!state.external) state.external = {};
 }
 
 function usedGeneratedAddresses(
@@ -159,6 +204,7 @@ async function withWorkspaceState<T>(
     if (!state.workspaceSlug) {
       state.workspaceSlug = slugify(workspaceName, `ws-${idSuffix(workspaceId)}`);
     }
+    ensureCollections(state);
     store[workspaceId] = state;
     return fn(state);
   });
@@ -226,6 +272,7 @@ export async function bootstrapMail(input: {
       inbox,
       sent,
       draft: cloneDraft(state.drafts[input.userId]),
+      accounts: listPublicAccounts(state, input.userId),
     };
   });
 }
@@ -384,4 +431,278 @@ export async function saveMailDraft(input: {
 
 export function isGeneratedMailAddress(value: string): boolean {
   return GENERATED_RE.test(value.trim().toLowerCase());
+}
+
+function toPublicAccount(record: MailAccountRecord): MailConnectedAccount {
+  return {
+    id: record.id,
+    label: record.label,
+    email: record.email,
+    provider: record.provider,
+    imap: { ...record.imap },
+    smtp: { ...record.smtp },
+    username: record.username,
+    lastSync: record.lastSync,
+    status: record.status,
+    statusMessage: record.statusMessage,
+  };
+}
+
+function listPublicAccounts(
+  state: WorkspaceMailState,
+  userId: string,
+): MailConnectedAccount[] {
+  return (state.accounts[userId] ?? []).map(toPublicAccount);
+}
+
+function cloneExternal(message: MailExternalMessage): MailExternalMessage {
+  return { ...message };
+}
+
+export function parseMailAccountEmail(raw: string): string {
+  return parsePersonalEmail(raw);
+}
+
+export async function listMailAccounts(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+}): Promise<MailConnectedAccount[]> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) =>
+    listPublicAccounts(state, input.userId),
+  );
+}
+
+export interface MailAccountSecret {
+  account: MailConnectedAccount;
+  password: string;
+}
+
+export async function getMailAccountSecret(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+}): Promise<MailAccountSecret> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const record = (state.accounts[input.userId] ?? []).find(
+      (account) => account.id === input.accountId,
+    );
+    if (!record) throw new Error('Mail account not found');
+    return {
+      account: toPublicAccount(record),
+      password: decryptMailSecret(record.passwordEncrypted),
+    };
+  });
+}
+
+export async function addMailAccount(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  record: Omit<MailAccountRecord, 'id' | 'passwordEncrypted'> & {
+    password: string;
+  };
+}): Promise<MailConnectedAccount> {
+  const password = input.record.password;
+  if (!password || password.length > MAIL_ACCOUNT_PASSWORD_MAX) {
+    throw new Error('App password is required');
+  }
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const existing = state.accounts[input.userId] ?? [];
+    if (existing.length >= MAIL_MAX_CONNECTED_ACCOUNTS) {
+      throw new Error(`You can connect up to ${MAIL_MAX_CONNECTED_ACCOUNTS} accounts`);
+    }
+    const email = input.record.email.toLowerCase();
+    if (existing.some((account) => account.email === email)) {
+      throw new Error('That email is already connected');
+    }
+    const record: MailAccountRecord = {
+      id: `acct-${randomUUID().slice(0, 10)}`,
+      label: input.record.label,
+      email,
+      provider: input.record.provider,
+      imap: input.record.imap,
+      smtp: input.record.smtp,
+      username: input.record.username,
+      passwordEncrypted: encryptMailSecret(password),
+      lastSync: input.record.lastSync,
+      status: input.record.status,
+      statusMessage: input.record.statusMessage,
+    };
+    state.accounts[input.userId] = [...existing, record];
+    return toPublicAccount(record);
+  });
+}
+
+export async function removeMailAccount(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+}): Promise<void> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const existing = state.accounts[input.userId] ?? [];
+    if (!existing.some((account) => account.id === input.accountId)) {
+      throw new Error('Mail account not found');
+    }
+    state.accounts[input.userId] = existing.filter(
+      (account) => account.id !== input.accountId,
+    );
+    const userExternal = state.external[input.userId];
+    if (userExternal) {
+      delete userExternal[input.accountId];
+    }
+  });
+}
+
+export async function updateMailAccountStatus(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+  status: MailAccountStatus;
+  statusMessage?: string;
+  lastSync?: string | null;
+}): Promise<MailConnectedAccount> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const record = (state.accounts[input.userId] ?? []).find(
+      (account) => account.id === input.accountId,
+    );
+    if (!record) throw new Error('Mail account not found');
+    record.status = input.status;
+    record.statusMessage = input.statusMessage;
+    if (input.lastSync !== undefined) record.lastSync = input.lastSync;
+    return toPublicAccount(record);
+  });
+}
+
+export async function listExternalMessages(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+  folder: MailFolderId;
+}): Promise<MailExternalMessage[]> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const record = (state.accounts[input.userId] ?? []).find(
+      (account) => account.id === input.accountId,
+    );
+    if (!record) throw new Error('Mail account not found');
+    const cached = state.external[input.userId]?.[input.accountId];
+    return (cached?.[input.folder] ?? []).map((message) => {
+      const copy = cloneExternal(message);
+      delete copy.body;
+      return copy;
+    });
+  });
+}
+
+export async function putExternalMessages(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+  folders: MailExternalFolderCache;
+}): Promise<MailExternalFolderCache> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const record = (state.accounts[input.userId] ?? []).find(
+      (account) => account.id === input.accountId,
+    );
+    if (!record) throw new Error('Mail account not found');
+    const prev = state.external[input.userId]?.[input.accountId];
+    const merged = emptyFolders();
+    for (const folder of ['inbox', 'sent', 'drafts'] as const) {
+      const previousById = new Map(
+        (prev?.[folder] ?? []).map((message) => [message.id, message]),
+      );
+      merged[folder] = input.folders[folder]
+        .slice(0, MAIL_SYNC_MESSAGE_MAX)
+        .map((message) => {
+          const older = previousById.get(message.id);
+          if (older?.body && !message.body) {
+            return { ...message, body: older.body };
+          }
+          return message;
+        });
+    }
+    if (!state.external[input.userId]) state.external[input.userId] = {};
+    state.external[input.userId][input.accountId] = merged;
+    record.lastSync = new Date().toISOString();
+    record.status = 'ok';
+    record.statusMessage = undefined;
+    return {
+      inbox: merged.inbox.map((message) => {
+        const copy = cloneExternal(message);
+        delete copy.body;
+        return copy;
+      }),
+      sent: merged.sent.map((message) => {
+        const copy = cloneExternal(message);
+        delete copy.body;
+        return copy;
+      }),
+      drafts: merged.drafts.map((message) => {
+        const copy = cloneExternal(message);
+        delete copy.body;
+        return copy;
+      }),
+    };
+  });
+}
+
+export async function getExternalMessage(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+  messageId: string;
+}): Promise<MailExternalMessage> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const cached = state.external[input.userId]?.[input.accountId];
+    if (!cached) throw new Error('Message not found');
+    for (const folder of ['inbox', 'sent', 'drafts'] as const) {
+      const found = cached[folder].find((message) => message.id === input.messageId);
+      if (found) return cloneExternal(found);
+    }
+    throw new Error('Message not found');
+  });
+}
+
+export async function setExternalMessageBody(input: {
+  workspaceId: string;
+  workspaceName: string;
+  userId: string;
+  accountId: string;
+  messageId: string;
+  body: string;
+}): Promise<MailExternalMessage> {
+  return withWorkspaceState(input.workspaceId, input.workspaceName, (state) => {
+    const cached = state.external[input.userId]?.[input.accountId];
+    if (!cached) throw new Error('Message not found');
+    for (const folder of ['inbox', 'sent', 'drafts'] as const) {
+      const found = cached[folder].find((message) => message.id === input.messageId);
+      if (found) {
+        found.body = clip(input.body, MAIL_EXTERNAL_BODY_MAX);
+        return cloneExternal(found);
+      }
+    }
+    throw new Error('Message not found');
+  });
+}
+
+export function clipMailText(value: string, max: number): string {
+  return clip(value, max);
+}
+
+export function accountLabelOf(
+  provider: MailAccountProvider,
+  email: string,
+  label?: string,
+): string {
+  const named = clip(label ?? '', MAIL_ACCOUNT_LABEL_MAX);
+  if (named) return named;
+  if (provider === 'gmail') return `Gmail · ${email}`;
+  if (provider === 'outlook') return `Outlook · ${email}`;
+  return email;
 }

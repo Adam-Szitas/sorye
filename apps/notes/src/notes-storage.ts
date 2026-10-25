@@ -1,35 +1,75 @@
-export interface Note {
-  id: string;
-  title: string;
-  body: string;
-  updatedAt: string;
-}
+import { NOTES_LOCAL_STORAGE_KEY, type Note } from '@sorye/types';
 
-const STORAGE_KEY = 'sorye:notes:items';
+export type { Note };
 
-export function loadNotes(): Note[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seedNotes();
-    const parsed = JSON.parse(raw) as Note[];
-    return Array.isArray(parsed) ? parsed : seedNotes();
-  } catch {
-    return seedNotes();
+class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, body: string) {
+    super(body || `Request failed (${status})`);
+    this.status = status;
   }
 }
 
-export function saveNotes(notes: Note[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    credentials: 'include',
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new ApiError(res.status, text);
+  }
+  return res.json() as Promise<T>;
 }
 
-function seedNotes(): Note[] {
-  const now = new Date().toISOString();
-  return [
-    {
-      id: 'note-seed-1',
-      title: 'Welcome to Notes',
-      body: 'Capture ideas, meeting notes, and docs here. Data is stored locally in your browser for now.',
-      updatedAt: now,
-    },
-  ];
+function readLegacyNotes(): Note[] | null {
+  try {
+    const raw = localStorage.getItem(NOTES_LOCAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed as Note[];
+  } catch {
+    return null;
+  }
+}
+
+function clearLegacyNotes() {
+  try {
+    localStorage.removeItem(NOTES_LOCAL_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export async function loadNotes(): Promise<Note[]> {
+  const data = await api<{ notes: Note[]; empty: boolean }>('/api/notes');
+  if (data.empty) {
+    const legacy = readLegacyNotes();
+    if (legacy && legacy.length > 0) {
+      const migrated = await api<{ notes: Note[] }>('/api/notes', {
+        method: 'PUT',
+        body: JSON.stringify({ notes: legacy, migrate: true }),
+      });
+      clearLegacyNotes();
+      return migrated.notes;
+    }
+    return data.notes;
+  }
+  clearLegacyNotes();
+  return data.notes;
+}
+
+export async function saveNotes(notes: Note[]): Promise<Note[]> {
+  const saved = await api<{ notes: Note[] }>('/api/notes', {
+    method: 'PUT',
+    body: JSON.stringify({ notes }),
+  });
+  clearLegacyNotes();
+  return saved.notes;
 }

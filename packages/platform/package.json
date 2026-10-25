@@ -1,0 +1,52 @@
+{
+  "name": "@sorye/platform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./host": {
+      "types": "./src/host.ts",
+      "import": "./src/host.ts"
+    },
+    "./react": {
+      "types": "./src/react.tsx",
+      "import": "./src/react.tsx"
+    },
+    "./vue": {
+      "types": "./src/vue.ts",
+      "import": "./src/vue.ts"
+    },
+    "./angular": {
+      "types": "./src/angular.ts",
+      "import": "./src/angular.ts"
+    },
+    "./lit": {
+      "types": "./src/lit.ts",
+      "import": "./src/lit.ts"
+    }
+  },
+  "scripts": {
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@preact/signals-core": "^1.8.1",
+    "@sorye/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "react": "^19.1.0",
+    "typescript": "^5.8.3"
+  }
+}

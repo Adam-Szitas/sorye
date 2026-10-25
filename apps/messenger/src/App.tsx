@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   MessengerBootstrap,
   MessengerChannel,
   MessengerMember,
   MessengerMessage,
 } from '@sorye/types';
-import { HUB_MAIL_COMPOSE_EVENT } from '@sorye/types';
+import { HUB_MAIL_COMPOSE_EVENT, MESSENGER_PAGE_SIZE } from '@sorye/types';
 import { compressImageFile, formatBytes } from './image-compress';
 import {
   createChannel,
+  fetchMessages,
   loadMessenger,
   markMessengerRead,
+  mergeMessages,
   openDm,
   pollMessages,
   sendMessage,
@@ -76,11 +78,22 @@ export default function App() {
   const [dmOpen, setDmOpen] = useState(false);
   const [mobileShowChannels, setMobileShowChannels] = useState(true);
   const [eventsBusy, setEventsBusy] = useState(false);
+  const [threadMessages, setThreadMessages] = useState<MessengerMessage[]>([]);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [showJump, setShowJump] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastMsgAtRef = useRef<string | undefined>(undefined);
+  const threadReqRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+  const pendingRestore = useRef<{ height: number; top: number } | null>(null);
+  const hasMoreOlderRef = useRef(false);
+  const threadMessagesRef = useRef<MessengerMessage[]>([]);
 
   const refresh = useCallback(async () => {
     const next = await loadMessenger();
@@ -120,12 +133,9 @@ export default function App() {
     void markMessengerRead(channelId);
   }, [channelId, loading]);
 
-  const messages = useMemo(() => {
-    if (!data || !channelId) return [];
-    return data.messages
-      .filter((m) => m.channelId === channelId)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [data, channelId]);
+  const messages = threadMessages;
+  threadMessagesRef.current = threadMessages;
+  hasMoreOlderRef.current = hasMoreOlder;
 
   const activeChannel = data?.channels.find((c) => c.id === channelId);
   const isEventsChannel = activeChannel?.name === 'events';
@@ -149,22 +159,128 @@ export default function App() {
     );
   }, [data, dmChannels]);
 
-  useEffect(() => {
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const el = scrollerRef.current;
+    if (!el) return;
     stickToBottom.current = true;
+    setShowJump(false);
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  const loadLatest = useCallback(async (id: string) => {
+    const req = ++threadReqRef.current;
+    setThreadLoading(true);
+    setHasMoreOlder(false);
+    setThreadMessages([]);
+    setShowJump(false);
+    stickToBottom.current = true;
+    pendingRestore.current = null;
+    lastMsgAtRef.current = undefined;
+    try {
+      const page = await fetchMessages({
+        channelId: id,
+        limit: MESSENGER_PAGE_SIZE,
+      });
+      if (req !== threadReqRef.current) return;
+      setThreadMessages(page.messages);
+      setHasMoreOlder(page.hasMore);
+      lastMsgAtRef.current =
+        page.messages.at(-1)?.createdAt ?? new Date().toISOString();
+    } catch (err) {
+      if (req !== threadReqRef.current) return;
+      setError(err instanceof Error ? err.message : 'Could not load messages');
+    } finally {
+      if (req === threadReqRef.current) setThreadLoading(false);
+    }
+  }, []);
+
+  const loadOlder = useCallback(async () => {
+    const id = channelId;
+    if (!id || loadingOlderRef.current || !hasMoreOlderRef.current) return;
+    const oldest = threadMessagesRef.current[0];
+    if (!oldest) return;
+    const el = scrollerRef.current;
+    const req = threadReqRef.current;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    if (el) {
+      pendingRestore.current = { height: el.scrollHeight, top: el.scrollTop };
+    }
+    try {
+      const page = await fetchMessages({
+        channelId: id,
+        before: oldest.id,
+        limit: MESSENGER_PAGE_SIZE,
+      });
+      if (req !== threadReqRef.current) return;
+      setThreadMessages((prev) => mergeMessages(page.messages, prev));
+      setHasMoreOlder(page.hasMore);
+    } catch {
+      pendingRestore.current = null;
+      setHasMoreOlder(false);
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
   }, [channelId]);
 
   useEffect(() => {
-    if (!stickToBottom.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, channelId]);
+    stickToBottom.current = true;
+    setShowJump(false);
+    if (!channelId) {
+      threadReqRef.current += 1;
+      setThreadMessages([]);
+      setHasMoreOlder(false);
+      setThreadLoading(false);
+      return;
+    }
+    void loadLatest(channelId);
+  }, [channelId, loadLatest]);
+
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const restore = pendingRestore.current;
+    if (restore) {
+      el.scrollTop = restore.top + (el.scrollHeight - restore.height);
+      pendingRestore.current = null;
+      return;
+    }
+    if (stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, channelId, threadLoading]);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || threadLoading || loadingOlder || !hasMoreOlder) return;
+    if (el.scrollHeight <= el.clientHeight + 24) {
+      void loadOlder();
+    }
+  }, [messages, hasMoreOlder, threadLoading, loadingOlder, loadOlder]);
+
+  useEffect(() => {
+    const root = scrollerRef.current;
+    const top = topSentinelRef.current;
+    if (!root || !top || threadLoading) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) void loadOlder();
+      },
+      { root, rootMargin: '120px 0px 0px 0px', threshold: 0 },
+    );
+    io.observe(top);
+    return () => io.disconnect();
+  }, [channelId, loadOlder, threadLoading, messages.length]);
 
   useEffect(() => {
     if (!channelId) return;
-    lastMsgAtRef.current = messages.at(-1)?.createdAt;
+    const latest = messages.at(-1)?.createdAt;
+    if (latest) lastMsgAtRef.current = latest;
   }, [channelId, messages]);
 
   useEffect(() => {
-    if (!channelId) return;
+    if (!channelId || threadLoading) return;
     let cancelled = false;
     let inFlight = false;
     const timer = window.setInterval(async () => {
@@ -174,15 +290,7 @@ export default function App() {
         const after = lastMsgAtRef.current;
         const newer = await pollMessages(channelId, after);
         if (cancelled || newer.length === 0) return;
-        setData((prev) => {
-          if (!prev) return prev;
-          const ids = new Set(prev.messages.map((m) => m.id));
-          const merged = [...prev.messages];
-          for (const m of newer) {
-            if (!ids.has(m.id)) merged.push(m);
-          }
-          return { ...prev, messages: merged };
-        });
+        setThreadMessages((prev) => mergeMessages(prev, newer));
         lastMsgAtRef.current = newer.at(-1)?.createdAt ?? after;
         void markMessengerRead(channelId);
       } catch {
@@ -195,7 +303,7 @@ export default function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [channelId]);
+  }, [channelId, threadLoading]);
 
   async function forwardToMail(msg: MessengerMessage) {
     const subject = msg.text?.trim()
@@ -250,9 +358,10 @@ export default function App() {
         kind: 'text',
         text: draft.trim(),
       });
-      setData((prev) =>
-        prev ? { ...prev, messages: [...prev.messages, message] } : prev,
-      );
+      setThreadMessages((prev) => mergeMessages(prev, [message]));
+      lastMsgAtRef.current = message.createdAt;
+      stickToBottom.current = true;
+      setShowJump(false);
       setDraft('');
       setError(null);
     } catch (err) {
@@ -279,9 +388,10 @@ export default function App() {
         imageWidth: compressed.width,
         imageHeight: compressed.height,
       });
-      setData((prev) =>
-        prev ? { ...prev, messages: [...prev.messages, message] } : prev,
-      );
+      setThreadMessages((prev) => mergeMessages(prev, [message]));
+      lastMsgAtRef.current = message.createdAt;
+      stickToBottom.current = true;
+      setShowJump(false);
       setDraft('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Image upload failed');
@@ -344,7 +454,13 @@ export default function App() {
       }
       const next = await refresh();
       const eventsCh = next.channels.find((c) => c.name === 'events');
-      if (eventsCh) setChannelId(eventsCh.id);
+      if (eventsCh) {
+        if (eventsCh.id === channelId) {
+          void loadLatest(eventsCh.id);
+        } else {
+          setChannelId(eventsCh.id);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Test event failed');
     } finally {
@@ -575,80 +691,114 @@ export default function App() {
           </div>
         ) : null}
 
-        <div
-          className="message-scroller"
-          ref={scrollerRef}
-          onScroll={() => {
-            const el = scrollerRef.current;
-            if (!el) return;
-            stickToBottom.current =
-              el.scrollHeight - el.scrollTop - el.clientHeight < 96;
-          }}
-        >
-          {!channelId || messages.length === 0 ? (
-            <p className="empty-thread">
-              {isEventsChannel
-                ? data.events?.alive
-                  ? 'No movements yet. Create a task, note, or calendar event — or send a test event.'
-                  : data.events?.enabled
-                    ? 'Enable Messenger and at least one other app in the Hub.'
-                    : 'Open Dashboard → App events and turn on the feature flag.'
-                : activeChannel?.kind === 'dm'
-                  ? 'Start the conversation — only you two can see it.'
-                  : 'No messages yet. Say hello or attach a photo.'}
-            </p>
-          ) : (
-            messages.map((msg: MessengerMessage) => {
-              const mine = msg.author.id === data.user.id;
-              const system = msg.author.id === 'sorye-events';
-              return (
-                <article
-                  key={msg.id}
-                  className={`bubble ${mine ? 'mine' : 'theirs'}${system ? ' system' : ''}`}
-                >
-                  <header>
-                    <strong>{msg.author.name}</strong>
-                    <time>
-                      {new Date(msg.createdAt).toLocaleString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </time>
-                  </header>
-                  {msg.kind === 'image' && msg.imageDataUrl ? (
-                    <figure>
-                      <img
-                        src={msg.imageDataUrl}
-                        alt={msg.text || 'Uploaded image'}
-                        width={msg.imageWidth}
-                        height={msg.imageHeight}
-                      />
-                      {msg.imageBytes != null ? (
-                        <figcaption>{formatBytes(msg.imageBytes)}</figcaption>
-                      ) : null}
-                    </figure>
-                  ) : null}
-                  {msg.text ? (
-                    <p className={system ? 'event-body' : undefined}>
-                      {system ? renderMessageText(msg.text) : msg.text}
-                    </p>
-                  ) : null}
-                  <footer className="bubble-actions">
-                    <button
-                      type="button"
-                      className="fwd-mail"
-                      onClick={() => void forwardToMail(msg)}
+        <div className="message-pane">
+          <div
+            className="message-scroller"
+            ref={scrollerRef}
+            onScroll={() => {
+              const el = scrollerRef.current;
+              if (!el) return;
+              const nearBottom =
+                el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+              stickToBottom.current = nearBottom;
+              const shouldJump =
+                !nearBottom && threadMessagesRef.current.length > 0;
+              setShowJump((prev) => (prev === shouldJump ? prev : shouldJump));
+              if (el.scrollTop < 80) void loadOlder();
+            }}
+          >
+            {!channelId || (messages.length === 0 && !threadLoading) ? (
+              <p className="empty-thread">
+                {isEventsChannel
+                  ? data.events?.alive
+                    ? 'No movements yet. Create a task, note, or calendar event — or send a test event.'
+                    : data.events?.enabled
+                      ? 'Enable Messenger and at least one other app in the Hub.'
+                      : 'Open Dashboard → App events and turn on the feature flag.'
+                  : activeChannel?.kind === 'dm'
+                    ? 'Start the conversation — only you two can see it.'
+                    : 'No messages yet. Say hello or attach a photo.'}
+              </p>
+            ) : (
+              <div className="message-stack">
+                <div
+                  ref={topSentinelRef}
+                  className="thread-sentinel"
+                  aria-hidden
+                />
+                {loadingOlder ? (
+                  <p className="history-status">Loading earlier messages…</p>
+                ) : !hasMoreOlder && messages.length > 0 ? (
+                  <p className="history-status">Beginning of conversation</p>
+                ) : null}
+                {threadLoading ? (
+                  <p className="history-status">Loading conversation…</p>
+                ) : null}
+                {messages.map((msg: MessengerMessage) => {
+                  const mine = msg.author.id === data.user.id;
+                  const system = msg.author.id === 'sorye-events';
+                  return (
+                    <article
+                      key={msg.id}
+                      className={`bubble ${mine ? 'mine' : 'theirs'}${system ? ' system' : ''}`}
                     >
-                      Forward to Mail
-                    </button>
-                  </footer>
-                </article>
-              );
-            })
-          )}
-          <div ref={bottomRef} />
+                      <header>
+                        <strong>{msg.author.name}</strong>
+                        <time>
+                          {new Date(msg.createdAt).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </time>
+                      </header>
+                      {msg.kind === 'image' && msg.imageDataUrl ? (
+                        <figure>
+                          <img
+                            src={msg.imageDataUrl}
+                            alt={msg.text || 'Uploaded image'}
+                            width={msg.imageWidth}
+                            height={msg.imageHeight}
+                            onLoad={() => {
+                              if (stickToBottom.current) scrollToLatest();
+                            }}
+                          />
+                          {msg.imageBytes != null ? (
+                            <figcaption>{formatBytes(msg.imageBytes)}</figcaption>
+                          ) : null}
+                        </figure>
+                      ) : null}
+                      {msg.text ? (
+                        <p className={system ? 'event-body' : undefined}>
+                          {system ? renderMessageText(msg.text) : msg.text}
+                        </p>
+                      ) : null}
+                      <footer className="bubble-actions">
+                        <button
+                          type="button"
+                          className="fwd-mail"
+                          onClick={() => void forwardToMail(msg)}
+                        >
+                          Forward to Mail
+                        </button>
+                      </footer>
+                    </article>
+                  );
+                })}
+                <div ref={bottomRef} className="thread-sentinel" aria-hidden />
+              </div>
+            )}
+          </div>
+          {showJump ? (
+            <button
+              type="button"
+              className="jump-latest"
+              onClick={() => scrollToLatest()}
+            >
+              Latest
+            </button>
+          ) : null}
         </div>
 
         <footer className="composer">

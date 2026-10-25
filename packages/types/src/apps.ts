@@ -371,14 +371,14 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     id: 'mail',
     name: 'Mail',
     description:
-      'In-workspace mailbox — Sorye Mail addresses, compose, and Messenger forward.',
+      'Workspace mailbox plus your own Gmail, Outlook, or IMAP — not a public MX.',
     usageIntro: {
       summary:
-        'Inbox and Sent are in-workspace mail only — not a public internet inbox.',
+        'Sorye Mail is the default in-app address. Connect Gmail, Outlook, or custom IMAP/SMTP to read and send from your own inbox. Hub is not a public internet mail server.',
       steps: [
-        'Open Inbox or Sent, then select a message to read it.',
-        'Compose to a teammate; paste a screenshot if you need one.',
-        'Settings holds your Sorye Mail address and optional personal email. Hub does not send internet email.',
+        'Use the Sorye mailbox to write teammates at {user}@{workspace}.mail.sorye.',
+        'Add account (left pane) to connect Gmail, Outlook, or custom IMAP with an app password.',
+        'Switch accounts to inbox, read, and compose From the selected address. Paste a screenshot if you need one.',
       ],
     },
     slug: 'mail',
@@ -398,7 +398,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
         'Keep images, PDFs, text, and Office files in this workspace. Rename never moves the stored file.',
       steps: [
         'Upload a file (about 25 MB max — images, PDF, text, Office).',
-        'Search by name, type:pdf / type:image, or /regex/. Open images, PDF, and text in a preview.',
+        'Search by name, type:pdf / type:image, or /regex/. Open any file in a centered preview. Images, PDF, and text render there; other types offer a download.',
         'Rename, download, or delete. Other workspaces cannot see these files.',
       ],
     },
@@ -459,13 +459,13 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     id: 'ocr',
     name: 'OCR',
     description:
-      'Upload a PDF, extract a layout matrix, and send it to Protocolio.',
+      'Upload a PDF, review the layout matrix, and ask a local Qwen3 model for pattern JSON.',
     usageIntro: {
-      summary: 'Turn a PDF into a table matrix, then export or hand off for PDF.',
+      summary: 'Read a PDF as rows, then store the model pattern JSON in Postgres.',
       steps: [
-        'Upload a PDF — each page is analyzed into a layout matrix.',
-        'Review Show matrix; export CSV if you need a spreadsheet.',
-        'Send to Protocolio to generate a PDF (open Protocolio to auto-load).',
+        'Upload a PDF. The browser still builds a layout matrix you can export or send to Protocolio.',
+        'Analyze with Qwen. Hub stores each page as the visible lines, with spaces kept and [IMAGE] where a figure has no text.',
+        'Qwen3 8B reads the rows in small slices. Stored tables can be searched by UTC date, name, JSON field, code, and amount.',
       ],
     },
     slug: 'ocr',

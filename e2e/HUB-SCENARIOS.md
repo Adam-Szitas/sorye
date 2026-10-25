@@ -28,7 +28,8 @@ Free-plan workspaces only have **two optional app slots**. Advanced tests may **
 |------|-----|
 | Studio WebGPU sample | Already in `hub.spec.ts`: chrome + blocked **or** ready; sample part optional |
 | OCR full PDF | Smoke upload chrome only (`hub.spec.ts`). No real document pipeline |
-| Real SMTP / internet mail | In-workspace Mail only. Contact Send would open `mailto:` |
+| Real SMTP / internet mail | Connected IMAP accounts need a real app password; e2e stays on the Sorye mailbox. Contact Send would open `mailto:` |
 | Site publish / public `/s/…` | Flaky vs existing published slug |
+| Architecture page | Public doc at `/architecture` (also linked from Contact and login). No e2e yet |
 | SUSM / ESPM | Own projects; Hub iframe skipped unless `ALLOW_LIVE_E2E=true` |
 | Other companies’ data | Local `AUTH_DEV_BYPASS` workspace only |

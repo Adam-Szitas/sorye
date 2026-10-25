@@ -1,10 +1,10 @@
 {
   "latestErrorEvent": {
     "code": "TYPE-001",
-    "message": "Failed to generate type declaration. Execute the below cmd to reproduce and fix the error. #TYPE-001\nargs: {\"cmd\":\"npx tsc --project D:\\\\projects\\\\sorye\\\\apps\\\\messenger\\\\node_modules\\\\.federation\\\\tsconfig.df9e68308f8a7e357c762b8ddb05596e.json\"}\nView the docs to see how to solve: https://module-federation.io/guide/troubleshooting/type#type-001",
+    "message": "Failed to generate type declaration. Execute the below cmd to reproduce and fix the error. #TYPE-001\nargs: {\"cmd\":\"npx tsc --project D:\\\\projects\\\\sorye\\\\apps\\\\messenger\\\\node_modules\\\\.federation\\\\tsconfig.98ea67161a01ce69f2674285c259ea1a.json\"}\nView the docs to see how to solve: https://module-federation.io/guide/troubleshooting/type#type-001",
     "args": {
-      "cmd": "npx tsc --project D:\\projects\\sorye\\apps\\messenger\\node_modules\\.federation\\tsconfig.df9e68308f8a7e357c762b8ddb05596e.json"
+      "cmd": "npx tsc --project D:\\projects\\sorye\\apps\\messenger\\node_modules\\.federation\\tsconfig.98ea67161a01ce69f2674285c259ea1a.json"
     },
-    "timestamp": 1788813577509
+    "timestamp": 1790621635757
   }
 }

@@ -11,8 +11,34 @@ export const MAX_STOREFRONT_PRODUCT_BYTES = 8_000;
 export const MAX_SITE_BYTES = 32_000;
 /** Mail send/draft JSON cap (image data URL + subject/body). */
 export const MAX_MAIL_BYTES = 6_000_000;
+/** Add/update connected mail account (no image). */
+export const MAX_MAIL_ACCOUNT_BYTES = 8_000;
+export const MAX_MAIL_ACCOUNTS = 8;
+export const MAX_MAIL_SYNC_MESSAGES = 80;
+export const MAX_MAIL_EXTERNAL_BODY = 50_000;
 /** Drive upload cap — bytes go to disk, never the JSON/Postgres row. */
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+
+/** OCR → Qwen upload. The PDF is read in memory and not stored. */
+export const MAX_OCR_PDF_BYTES = 64 * 1024 * 1024;
+export const MAX_OCR_PAGES = 500;
+export const MAX_OCR_ANALYSES = 50;
+export const MAX_OCR_ANALYSIS_BYTES = 16_000_000;
+
+/** Tasks / Notes / Calendar workspace documents. */
+export const MAX_TASKS_BOARD_BYTES = 256_000;
+export const MAX_NOTES_BYTES = 512_000;
+export const MAX_CALENDAR_BYTES = 256_000;
+export const MAX_TASK_STATUSES = 30;
+export const MAX_TASKS = 500;
+export const MAX_TASK_TITLE_LENGTH = 200;
+export const MAX_TASK_BODY_LENGTH = 8_000;
+export const MAX_NOTES = 200;
+export const MAX_NOTE_TITLE_LENGTH = 200;
+export const MAX_NOTE_BODY_LENGTH = 50_000;
+export const MAX_CALENDAR_EVENTS = 1_000;
+export const MAX_CALENDAR_TITLE_LENGTH = 200;
+export const MAX_CALENDAR_DATES = 366;
 
 export function validateImageDataUrl(
   value: string,

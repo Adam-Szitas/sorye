@@ -3,8 +3,9 @@ import type {
   MessengerChannel,
   MessengerMessage,
   MessengerMessageKind,
+  MessengerMessagesPage,
 } from '@sorye/types';
-import { HUB_NOTIFY_EVENT } from '@sorye/types';
+import { HUB_NOTIFY_EVENT, MESSENGER_PAGE_SIZE } from '@sorye/types';
 
 export async function loadMessenger(): Promise<MessengerBootstrap> {
   const res = await fetch('/api/messenger', { credentials: 'include' });
@@ -62,18 +63,56 @@ export async function sendMessage(input: {
   return data.message as MessengerMessage;
 }
 
+export async function fetchMessages(input: {
+  channelId: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+}): Promise<MessengerMessagesPage> {
+  const params = new URLSearchParams({ channelId: input.channelId });
+  params.set('limit', String(input.limit ?? MESSENGER_PAGE_SIZE));
+  if (input.before) params.set('before', input.before);
+  if (input.after) params.set('after', input.after);
+  const res = await fetch(`/api/messenger/messages?${params}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error('Could not load messages.');
+  }
+  const data = (await res.json()) as MessengerMessagesPage;
+  return {
+    messages: data.messages ?? [],
+    hasMore: Boolean(data.hasMore),
+  };
+}
+
 export async function pollMessages(
   channelId: string,
   after?: string,
 ): Promise<MessengerMessage[]> {
-  const params = new URLSearchParams({ channelId });
-  if (after) params.set('after', after);
-  const res = await fetch(`/api/messenger/messages?${params}`, {
-    credentials: 'include',
+  try {
+    const page = await fetchMessages({
+      channelId,
+      after,
+      limit: MESSENGER_PAGE_SIZE,
+    });
+    return page.messages;
+  } catch {
+    return [];
+  }
+}
+
+export function mergeMessages(
+  ...pages: MessengerMessage[][]
+): MessengerMessage[] {
+  const byId = new Map<string, MessengerMessage>();
+  for (const page of pages) {
+    for (const msg of page) byId.set(msg.id, msg);
+  }
+  return [...byId.values()].sort((a, b) => {
+    const byTime = a.createdAt.localeCompare(b.createdAt);
+    return byTime !== 0 ? byTime : a.id.localeCompare(b.id);
   });
-  if (!res.ok) return [];
-  const data = (await res.json()) as { messages: MessengerMessage[] };
-  return data.messages ?? [];
 }
 
 export async function markMessengerRead(channelId?: string): Promise<void> {

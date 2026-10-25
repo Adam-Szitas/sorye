@@ -7,6 +7,11 @@ import {
 } from '@sorye/types';
 import { jsonDataFile } from './json-file';
 import { getHubSession, getHubSessionForWorkspace, getWorkspaceMembers } from './json-store';
+import {
+  paginateChannelMessages,
+  type ListMessagesQuery,
+  type ListMessagesOutcome,
+} from './messenger-list';
 
 interface MessengerStoreData {
   channels: Record<string, MessengerChannel>;
@@ -137,7 +142,11 @@ export async function postSystemMessage(
   });
 }
 
-export async function bootstrapMessenger(userId: string, workspaceId: string) {
+export async function bootstrapMessenger(
+  userId: string,
+  workspaceId: string,
+  options?: { includeMessages?: boolean },
+) {
   const session = await assertMember(userId, workspaceId);
   if (!session) return null;
 
@@ -151,10 +160,13 @@ export async function bootstrapMessenger(userId: string, workspaceId: string) {
       return a.name.localeCompare(b.name);
     });
 
+  const includeMessages = options?.includeMessages === true;
   const visibleIds = new Set(channels.map((c) => c.id));
-  const messages = Object.values(store.messages)
-    .filter((m) => m.workspaceId === workspaceId && visibleIds.has(m.channelId))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const messages = includeMessages
+    ? Object.values(store.messages)
+        .filter((m) => m.workspaceId === workspaceId && visibleIds.has(m.channelId))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    : [];
 
   return {
     workspace: {
@@ -284,18 +296,20 @@ export async function listMessages(
   userId: string,
   workspaceId: string,
   channelId: string,
-  after?: string,
-): Promise<MessengerMessage[] | null> {
+  query: ListMessagesQuery,
+): Promise<ListMessagesOutcome> {
   const session = await assertMember(userId, workspaceId);
-  if (!session) return null;
+  if (!session) return { status: 'forbidden' };
 
   const store = await readStore();
   const channel = store.channels[channelId];
-  if (!channel || channel.workspaceId !== workspaceId) return null;
-  if (!canSeeChannel(channel, userId)) return null;
+  if (!channel || channel.workspaceId !== workspaceId) {
+    return { status: 'forbidden' };
+  }
+  if (!canSeeChannel(channel, userId)) return { status: 'forbidden' };
 
-  return Object.values(store.messages)
-    .filter((m) => m.channelId === channelId)
-    .filter((m) => !after || m.createdAt > after)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const channelMessages = Object.values(store.messages).filter(
+    (m) => m.channelId === channelId,
+  );
+  return paginateChannelMessages(channelMessages, query);
 }

@@ -1,20 +1,21 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useKernel, useSignalValue } from '@sorye/platform/react';
 import { StatusHandler, taskMatchesQuery } from './status-handler';
-import { loadBoard, saveBoard } from './tasks-storage';
+import { createDefaultBoard, loadBoard, saveBoard } from './tasks-storage';
 import { KanbanBoard } from './kanban-board';
 import { StatusSettings } from './status-settings';
-import { emitWorkspaceEvent } from './emit-event';
+import { emitTaskEvent } from './emit-event';
+import { createTasksUi } from './tasks-ui';
 import type { TasksBoard } from './tasks-storage';
+import type { KernelClient } from '@sorye/platform';
 import './styles.css';
 
-type Panel = 'board' | 'settings';
-
-function emitTaskDiff(prev: TasksBoard, next: TasksBoard) {
+function emitTaskDiff(kernel: KernelClient, prev: TasksBoard, next: TasksBoard) {
   const prevById = new Map(prev.tasks.map((t) => [t.id, t]));
   for (const task of next.tasks) {
     const before = prevById.get(task.id);
     if (!before) {
-      void emitWorkspaceEvent('sorye.task.created', {
+      void emitTaskEvent(kernel, 'sorye.task.created', {
         title: `Task created: ${task.title}`,
         summary: `Added to board`,
         appId: 'tasks',
@@ -25,7 +26,7 @@ function emitTaskDiff(prev: TasksBoard, next: TasksBoard) {
     if (before.statusId !== task.statusId) {
       const from = prev.statuses.find((s) => s.id === before.statusId)?.name;
       const to = next.statuses.find((s) => s.id === task.statusId)?.name;
-      void emitWorkspaceEvent('sorye.task.moved', {
+      void emitTaskEvent(kernel, 'sorye.task.moved', {
         title: `Task moved: ${task.title}`,
         summary: `${from ?? 'status'} → ${to ?? 'status'}`,
         appId: 'tasks',
@@ -34,7 +35,7 @@ function emitTaskDiff(prev: TasksBoard, next: TasksBoard) {
       continue;
     }
     if (before.title !== task.title || before.body !== task.body) {
-      void emitWorkspaceEvent('sorye.task.updated', {
+      void emitTaskEvent(kernel, 'sorye.task.updated', {
         title: `Task updated: ${task.title}`,
         appId: 'tasks',
         entityId: task.id,
@@ -44,10 +45,39 @@ function emitTaskDiff(prev: TasksBoard, next: TasksBoard) {
 }
 
 export default function App() {
-  const [board, setBoard] = useState(loadBoard);
-  const [panel, setPanel] = useState<Panel>('board');
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const kernel = useKernel();
+  const workspaceName = useSignalValue(kernel.signals.workspaceName);
+  const userDisplayName = useSignalValue(kernel.signals.userDisplayName);
+  const uiRef = useRef<ReturnType<typeof createTasksUi> | null>(null);
+  if (!uiRef.current) uiRef.current = createTasksUi();
+  const ui = uiRef.current;
+  const panel = useSignalValue(ui.state.panel);
+  const searchQuery = useSignalValue(ui.state.searchQuery);
+  const newTaskTitle = useSignalValue(ui.state.newTaskTitle);
+  const contextLabel = [workspaceName, userDisplayName]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
+  const [board, setBoard] = useState<TasksBoard>(createDefaultBoard);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadBoard()
+      .then((next) => {
+        if (cancelled) return;
+        setBoard(next);
+        setLoadState('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handler = useMemo(() => new StatusHandler(board), [board]);
 
@@ -60,18 +90,21 @@ export default function App() {
   const apply = useCallback(
     (next: StatusHandler) => {
       const snapshot = next.getBoard();
-      emitTaskDiff(board, snapshot);
+      emitTaskDiff(kernel, board, snapshot);
       setBoard(snapshot);
-      saveBoard(snapshot);
+      void saveBoard(snapshot).then(
+        () => setSaveError(null),
+        () => setSaveError('Could not save tasks to the workspace.'),
+      );
     },
-    [board],
+    [board, kernel],
   );
 
   const addTask = () => {
     const next = handler.addTask(newTaskTitle);
     if (next.getBoard() !== board) {
       apply(next);
-      setNewTaskTitle('');
+      ui.state.newTaskTitle.value = '';
     }
   };
 
@@ -80,7 +113,11 @@ export default function App() {
       <header className="tasks-header">
         <div>
           <h1>Tasks</h1>
-          <p>Kanban board with configurable workflow statuses</p>
+          <p>
+            {contextLabel
+              ? `${contextLabel} · Kanban board with configurable workflow statuses`
+              : 'Kanban board with configurable workflow statuses'}
+          </p>
         </div>
         <div className="tasks-header-actions">
           <span className="tasks-badge">Productivity</span>
@@ -90,7 +127,9 @@ export default function App() {
               role="tab"
               aria-selected={panel === 'board' ? 'true' : 'false'}
               className={panel === 'board' ? 'active' : undefined}
-              onClick={() => setPanel('board')}
+              onClick={() => {
+                ui.state.panel.value = 'board';
+              }}
             >
               Board
             </button>
@@ -99,7 +138,9 @@ export default function App() {
               role="tab"
               aria-selected={panel === 'settings' ? 'true' : 'false'}
               className={panel === 'settings' ? 'active' : undefined}
-              onClick={() => setPanel('settings')}
+              onClick={() => {
+                ui.state.panel.value = 'settings';
+              }}
             >
               Statuses
             </button>
@@ -107,7 +148,21 @@ export default function App() {
         </div>
       </header>
 
-      {panel === 'board' ? (
+      {loadState === 'loading' ? (
+        <p className="search-results-meta">Loading workspace tasks…</p>
+      ) : null}
+      {loadState === 'error' ? (
+        <p className="search-results-meta" role="alert">
+          Could not load tasks from the workspace.
+        </p>
+      ) : null}
+      {saveError ? (
+        <p className="search-results-meta" role="alert">
+          {saveError}
+        </p>
+      ) : null}
+
+      {loadState === 'ready' && panel === 'board' ? (
         <>
           <div className="tasks-toolbar">
             <label className="field field-search field-grow">
@@ -117,14 +172,18 @@ export default function App() {
                   type="search"
                   placeholder="Search by title or notes..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    ui.state.searchQuery.value = e.target.value;
+                  }}
                 />
                 {searchQuery ? (
                   <button
                     type="button"
                     className="btn-icon search-clear"
                     aria-label="Clear search"
-                    onClick={() => setSearchQuery('')}
+                    onClick={() => {
+                      ui.state.searchQuery.value = '';
+                    }}
                   >
                     ×
                   </button>
@@ -147,7 +206,9 @@ export default function App() {
                 type="text"
                 placeholder="What needs to be done?"
                 value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
+                onChange={(e) => {
+                  ui.state.newTaskTitle.value = e.target.value;
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') addTask();
                 }}
@@ -164,9 +225,11 @@ export default function App() {
             onChange={apply}
           />
         </>
-      ) : (
+      ) : null}
+
+      {loadState === 'ready' && panel === 'settings' ? (
         <StatusSettings handler={handler} onChange={apply} />
-      )}
+      ) : null}
     </div>
   );
 }

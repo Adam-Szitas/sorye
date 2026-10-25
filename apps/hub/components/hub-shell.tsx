@@ -18,8 +18,9 @@ import {
 import dynamic from 'next/dynamic';
 import { signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppLauncher } from '@/components/app-launcher';
+import { HubKernelProvider } from '@/components/hub-kernel';
 import {
   AppWorkspace,
   type PaneSide,
@@ -486,6 +487,7 @@ function HubShellLoaded({
       const app = APP_CATALOG.find((entry) => entry.id === detail?.appId);
       if (!app) return;
       openApp(app, detail.side);
+      event.preventDefault();
     }
     function onManage() {
       navigatePanel('picker');
@@ -504,8 +506,21 @@ function HubShellLoaded({
   const leftApp = resolveApp(panes.leftId);
   const rightApp = resolveApp(panes.rightId);
   const workspaceOpen = Boolean(leftApp || rightApp);
+  const activeAppId =
+    (panes.focus === 'right' ? rightApp?.id : leftApp?.id) ??
+    leftApp?.id ??
+    rightApp?.id ??
+    null;
+  const kernelSession = useMemo(
+    () => ({ user, workspace, workspaces }),
+    [user, workspace, workspaces],
+  );
   return (
-    <>
+    <HubKernelProvider
+      session={kernelSession}
+      notificationUnread={unreadTotal}
+      activeAppId={activeAppId}
+    >
       <TopBar
         user={user}
         workspace={workspace}
@@ -677,6 +692,6 @@ function HubShellLoaded({
       <NotificationCenter />
       <NotificationToasts />
       <MailComposeHost />
-    </>
+    </HubKernelProvider>
   );
 }

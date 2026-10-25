@@ -54,6 +54,18 @@ const envSchema = z
 
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+
+    /** Qwen3-8B server origin. Allowlisted hosts only — see assertSafeLlmBaseUrl. */
+    OCR_LLM_PROVIDER: z.enum(['vllm', 'ollama']).default('vllm'),
+    OCR_LLM_BASE_URL: z
+      .string()
+      .optional()
+      .transform((value) => value?.trim() || 'http://127.0.0.1:8000'),
+    /** Hugging Face model id served by the Qwen container. */
+    OCR_LLM_MODEL: z
+      .string()
+      .optional()
+      .transform((value) => value?.trim() || 'Qwen/Qwen3-8B'),
   })
   .superRefine((env, ctx) => {
     if (env.STORE_DRIVER === 'postgres' && !env.DATABASE_URL) {

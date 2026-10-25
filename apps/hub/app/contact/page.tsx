@@ -13,12 +13,20 @@ export default function ContactPage() {
         >
           Sorye
         </Link>
-        <Link
-          href="/login"
-          className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-        >
-          Sign in
-        </Link>
+        <nav className="flex items-center gap-1">
+          <Link
+            href="/architecture"
+            className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+          >
+            Architecture
+          </Link>
+          <Link
+            href="/login"
+            className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+          >
+            Sign in
+          </Link>
+        </nav>
       </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <AppContact />

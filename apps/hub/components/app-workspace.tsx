@@ -88,7 +88,7 @@ function AppPane({
         ) : app.external ? (
           <ExternalAppFrame config={app.external} appName={app.name} />
         ) : app.microFrontend ? (
-          <MicroAppLoader config={app.microFrontend} />
+          <MicroAppLoader config={app.microFrontend} appId={app.id} framework="react" />
         ) : (
           <div className="flex flex-1 items-center justify-center p-6 text-sm text-[var(--color-text-muted)]">
             {app.name} is not available in split view yet.
