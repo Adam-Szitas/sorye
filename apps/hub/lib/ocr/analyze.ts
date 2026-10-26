@@ -1,5 +1,6 @@
 import type { OcrAiPage, OcrAnalysisStatus, OcrPatternDocument } from '@sorye/types';
-import { completeJson, llmModelName } from './llm';
+import { completeJson, llmModelName, assertLlmAvailable, LlmUnavailableError } from './llm';
+import { assertGpuHeadroom } from './gpu-guard';
 import { chunkRowPages, splitChunk } from './chunks';
 import { buildVector, completenessWarning } from './vector';
 import {
@@ -74,7 +75,7 @@ async function readSliceWithRetry(
     try {
       return await readSlice(text, signal, 0);
     } catch (err) {
-      if (isCancelled(err, signal)) throw err;
+      if (isCancelled(err, signal) || err instanceof LlmUnavailableError) throw err;
       last = err;
     }
   }
@@ -97,14 +98,18 @@ export async function analyzeRowPages(
   signal?: AbortSignal,
   options: AnalyzeOptions = {},
 ): Promise<OcrLlmResult> {
-  let model = 'Qwen/Qwen3-8B';
+  let model = 'none';
   try {
     model = llmModelName();
+    if (hasInk(pages)) {
+      await assertLlmAvailable(signal);
+      await assertGpuHeadroom();
+    }
   } catch (err) {
     return {
       model,
       status: 'rows_only',
-      pattern: supplementFromRows(emptyPattern(), pages),
+      pattern: supplementFromRows(options.prior ?? emptyPattern(), pages),
       error: err instanceof Error ? err.message : 'OCR LLM is not configured.',
       cursor: { next: 0, total: 0, missed: 0 },
     };
@@ -139,6 +144,14 @@ export async function analyzeRowPages(
       parts.push(await readSliceWithRetry(chunks[index]!, signal));
       index += 1;
     } catch (err) {
+      if (err instanceof LlmUnavailableError) {
+        return {
+          model, status: 'rows_only',
+          pattern: supplementFromRows(parts.length ? mergePatterns(parts) : emptyPattern(), pages),
+          error: err.message,
+          cursor: { next: index, total: chunks.length, missed },
+        };
+      }
       if (isCancelled(err, signal)) break;
       missed += 1;
       index += 1;

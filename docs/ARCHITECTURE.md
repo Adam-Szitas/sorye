@@ -139,6 +139,12 @@ There are **three** persistence layers. Do not mix them:
 
 Production **rejects** `STORE_DRIVER=json` (`lib/env.ts`). After schema changes run `pnpm db:push`.
 
+### Relay cloud storage
+
+Relay accepts workspace-scoped AWS S3 and Cloudflare R2 connections. Connection metadata and AES-256-GCM-encrypted credentials are stored in `apps/hub/.data/relay-storages.json`; `STORAGE_SECRET_KEY` is a server-only environment secret used to encrypt/decrypt those credentials. Set it to a random value of at least 32 characters in the deployment secret manager and keep it stable; losing or rotating it without re-encrypting the stored records makes existing connections unusable. The Hub process environment cannot be safely mutated by a runtime UI, so user-entered provider keys belong in this encrypted vault, not in process environment variables or browser storage.
+
+Normal Relay/Drive API responses include only connection metadata. Secret reveal is an explicit, rate-limited admin action with `Cache-Control: no-store`; connection setup, rotation, reveal, and removal require a Sorye admin. Other authenticated members of that workspace may list, upload, and download objects. Provider endpoints are fixed by the selected provider, all storage identifiers are resolved within the session workspace, and Drive proxy requests have size and rate limits. Persistent `.data` storage is required for deployments using this JSON-backed Relay metadata.
+
 ### Per-workspace Postgres override
 
 Canvas, Messenger, and Tasks / Notes / Calendar can use a workspace-specific Postgres URL (`/api/workspace/storage`). Useful for enterprise isolation.
@@ -369,7 +375,7 @@ Add containers beside the existing Postgres service. Do not add an API process p
 | Service | Role | Status |
 |---------|------|--------|
 | `postgres` | OLTP for users, workspaces, Messenger, Canvas, Tasks / Notes / Calendar, OCR analyses | Live |
-| `qwen3` | `Qwen/Qwen3-8B` for OCR pattern JSON. Profile `qwen`. Hub calls `OCR_LLM_BASE_URL` (default `http://127.0.0.1:8000`) | Live |
+| `qwen3` | `Qwen/Qwen3-8B` for OCR pattern JSON. Profile `qwen`. Hub calls `OCR_LLM_BASE_URL` (explicit configuration required; no default) | Live |
 | `hub` | Next.js kernel: session, catalog, every `/api/*`. One replica (Canvas presence is in-memory). Mount `apps/hub/.data` or Relay, mail, and Drive disappear on recreate | Next |
 | One nginx image per remote | Static `dist/` on today’s Vite port. `NEXT_PUBLIC_*_REMOTE` is fixed at Hub **build** time and must be a browser URL (`http://localhost:3005/remoteEntry.js`), not a Docker DNS name | Next |
 | MinIO | Drive bytes. Database keeps metadata only | Later |

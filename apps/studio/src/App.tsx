@@ -1,3 +1,4 @@
+import { uploadToDrive } from '@sorye/sdk/files';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { StudioModelStats, StudioTooMuchReport } from '@sorye/types';
 import {
@@ -143,6 +144,7 @@ export default function App() {
         await bootStage();
       }
       const object = await loadModelFromFile(file);
+      await uploadToDrive(file, 'studio');
       presentObject(object, {
         name: file.name,
         format: fileExtension(file.name) || 'mesh',

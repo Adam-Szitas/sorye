@@ -80,6 +80,7 @@ export async function POST(req: Request) {
     file = await createWorkspaceFile({
       workspaceId: session.workspace.id,
       displayName: upload.name,
+      sourceAppId: typeof form.get('sourceAppId') === 'string' ? String(form.get('sourceAppId')) : 'files',
       bytes,
     });
   } catch (err) {

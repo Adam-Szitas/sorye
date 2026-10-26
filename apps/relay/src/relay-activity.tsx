@@ -127,7 +127,7 @@ export function RelayActivity({
                     className={`delivery-item status-${delivery.status}`}
                   >
                     <span className="delivery-channel">
-                      {CHANNEL_META[delivery.channelKind].label}
+                      {delivery.channelKind === 'app' ? 'App' : CHANNEL_META[delivery.channelKind].label}
                     </span>
                     <span className="delivery-detail">{delivery.detail}</span>
                     <span className={`delivery-status status-${delivery.status}`}>

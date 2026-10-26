@@ -296,6 +296,11 @@ Configuration UI for routing workspace events to Messenger, email, webhooks, Wha
 - **Writes:** `PATCH /api/relay` (sources, channels, routes, quiet hours)
 - **Test:** `POST /api/relay` with `action: 'test'` injects test message
 - **Listens:** `BroadcastChannel('sorye-relay')` for live refresh when other apps emit events
+- **Cloud storage:** Admins can connect AWS S3 or Cloudflare R2. Credentials are encrypted in Hub `.data/relay-storages.json` with the server-only `STORAGE_SECRET_KEY`; provider secrets never enter Relay config or browser storage. Explicit credential reveal is admin-only and no-store. Other workspace members can browse, upload, and download through Drive.
+
+### Cloud storage setup
+
+Use a dedicated provider access key scoped to one bucket. Hub validates access with `HeadBucket`; Relay then stores the credential using AES-256-GCM. AWS permissions needed for current Drive actions are `s3:ListBucket`, `s3:GetObject`, and `s3:PutObject`; no object-delete permission is used. R2 uses its account ID and S3-compatible API token. Do not use personal root credentials. Configure `STORAGE_SECRET_KEY` in the Hub host's secret manager before connecting a provider. This runtime-managed vault is intentionally separate from process environment variables, which cannot safely be edited by a UI while the server is running.
 
 ## Channel behavior (server-side)
 
@@ -507,6 +512,8 @@ Default **Sorye Mail** address (`{user-slug}@{workspace-slug}.mail.sorye`) is an
 
 Workspace file locker. Members upload, search, preview, list, rename, download, and delete files for **this workspace only**. Bytes live on Hub disk; the JSON store holds metadata (id, workspaceId, displayName, relative path, mime, size, timestamps). Rename updates `displayName` only — the on-disk uuid never changes. Search is a client-side filter of the fetched list (plain, `/regex/`, `type:pdf` / `type:image`). Open/preview is limited to raster images, PDF, and text — Office stays download-only.
 
+Connected cloud storage appears as named virtual folders here. Browsing, uploads, and downloads are proxied through Hub so provider credentials stay server-side; cloud objects remain in the provider bucket and are not copied into local Drive. Current providers are AWS S3 and Cloudflare R2.
+
 ## Storage
 
 - Disk: `apps/hub/.data/files/{workspaceId}/{uuid}` (uuid is the storage filename)
@@ -525,6 +532,8 @@ Workspace file locker. Members upload, search, preview, list, rename, download, 
 | `apps/hub/lib/files.ts` | Disk + metadata store + disposition helper |
 | `apps/hub/app/api/files/route.ts` | `GET/POST /api/files` |
 | `apps/hub/app/api/files/[id]/route.ts` | `GET/PATCH/DELETE /api/files/[id]` |
+| `apps/hub/lib/cloud-storage.ts` | Provider adapter, workspace-isolated connection vault, and object operations |
+| `apps/hub/app/api/relay/storages/**` | Admin connection management and authenticated Drive object proxy |
 
 ## Communications
 
@@ -575,7 +584,11 @@ Upload PDF → browser layout matrix (columns/rows) for review, CSV, or Protocol
 
 The **layout matrix stays in the browser**. Analyze with Qwen sends the PDF to Hub (`POST /api/ocr/analyze`, 64 MB, 500 pages). Hub calls the `Qwen/Qwen3-8B` container in small slices. A slice that hits the output limit is split and read again. Long documents stay on `extracting` and continue through `POST /api/ocr/analyses/{id}/continue`. Hub writes `ocr_analyses`. With `STORE_DRIVER=json` the same record lands in `apps/hub/.data/ocr-analyses.json` until Postgres is on.
 
-If Qwen is down, the lines are still stored (`status: "rows_only"`) and image markers are copied into the pattern JSON.
+All three Hub settings (`OCR_LLM_PROVIDER`, `OCR_LLM_BASE_URL`, `OCR_LLM_MODEL`) are required, with no defaults. Hub checks the running server and configured model before inference. If configuration is missing/invalid or Qwen is down, the LLM is excluded and the lines are still stored (`status: "rows_only"`) and image markers are copied into the pattern JSON.
+
+The OCR workspace uses shared SDK buttons and design tokens with its amber app accent. The upload/review/understand steps lead to a source preview and table review; library filters are collapsible. Completed readings, both embedded and on their own page, use the SDK's `DocumentTranscript` and `JsonDocument` components. Transcripts retain every source row and whitespace, grouped by page with line numbers. **Show AI-aligned JSON** reveals the full content document, with copy/download controls: aligned records, fields, patterns, math, images, and the complete page transcript. The export omits layout/font metadata and internal workspace/user identifiers; it uses `buildOcrReadingDocument` in `@sorye/types`, the same alignment as the visible table. Browser-only extraction has a separate **Show extracted JSON** control containing text and table rows, also without styling metadata.
+
+UI regression check (OCR dev server on port 3011): `node scripts/test-ocr-ui.cjs`. This uses a mocked Hub response and does not call the LLM or persist documents.
 
 ## Qwen/Qwen3-8B in Docker
 
@@ -603,6 +616,7 @@ In `apps/hub/.env.local`:
 ```
 STORE_DRIVER=postgres
 DATABASE_URL=postgresql://sorye:sorye@localhost:5432/sorye
+OCR_LLM_PROVIDER=vllm
 OCR_LLM_BASE_URL=http://127.0.0.1:8000
 OCR_LLM_MODEL=Qwen/Qwen3-8B
 ```

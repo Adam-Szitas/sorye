@@ -1,4 +1,5 @@
 'use client';
+import { uploadToDrive } from '@sorye/sdk/files';
 
 import {
   MAIL_BODY_MAX,
@@ -104,6 +105,7 @@ export function MailComposeDialog({
     setError(null);
     try {
       const compressed = await compressImageFile(file);
+      await uploadToDrive(file, 'mail');
       setImageDataUrl(compressed.dataUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not attach image');

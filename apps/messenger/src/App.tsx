@@ -1,4 +1,6 @@
+import { uploadToDrive } from '@sorye/sdk/files';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+
 import type {
   MessengerBootstrap,
   MessengerChannel,
@@ -376,6 +378,7 @@ export default function App() {
     setError(null);
     try {
       const compressed = await compressImageFile(file);
+      await uploadToDrive(file, 'messenger');
       setCompressNote(
         `${formatBytes(compressed.originalBytes)} → ${formatBytes(compressed.bytesApprox)} · ${compressed.width}×${compressed.height}`,
       );

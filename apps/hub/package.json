@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@module-federation/runtime": "^2.7.0",
     "@sentry/nextjs": "^10.75.1",
     "@sorye/db": "workspace:*",

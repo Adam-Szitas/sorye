@@ -124,7 +124,7 @@ export function AppLauncher({
                     onClick={() => onOpenApp(app, 'left')}
                     aria-label={`Open ${app.name} on the left`}
                   >
-                    L
+                    Left
                   </button>
                   <button
                     type="button"
@@ -132,7 +132,7 @@ export function AppLauncher({
                     onClick={() => onOpenApp(app, 'right')}
                     aria-label={`Open ${app.name} on the right`}
                   >
-                    R
+                    Right
                   </button>
                 </div>
               ) : null}

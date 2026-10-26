@@ -2,10 +2,11 @@
 
 export const FILE_DISPLAY_NAME_MAX = 180;
 /** Upload cap (bytes). Bytes are never stored in the JSON/Postgres record. */
-export const FILE_MAX_BYTES = 25 * 1024 * 1024;
+export const FILE_MAX_BYTES = 64 * 1024 * 1024;
 export const FILE_MAX_PER_WORKSPACE = 200;
 
 export const FILE_ALLOWED_MIMES = [
+  'application/octet-stream', // Download-only Studio mesh documents.
   'image/jpeg',
   'image/png',
   'image/webp',
@@ -57,6 +58,8 @@ export interface WorkspaceFile {
   id: string;
   workspaceId: string;
   displayName: string;
+  /** App folder; older uploads without a source remain in Drive. */
+  sourceAppId?: string;
   relativePath: string;
   mime: string;
   size: number;
@@ -68,4 +71,9 @@ export interface FileListResponse {
   files: WorkspaceFile[];
   maxBytes: number;
   maxFiles: number;
+}
+
+/** Apps that can open the original bytes, rather than an exported derivative. */
+export function fileOpenAppIds(mime: string): string[] {
+  return mime === 'application/pdf' ? ['ocr'] : [];
 }

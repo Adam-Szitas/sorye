@@ -1,3 +1,4 @@
+import { uploadToDrive } from '@sorye/sdk/files';
 import { useRef, useState, useId } from 'react';
 import type { GridBlock, GridCell, GridAlign, GridValign, GridRowSettings } from '@protocolio/sdk';
 import { maxTextWidthInGridCell, clampTextWidth } from '@protocolio/sdk';
@@ -231,6 +232,7 @@ function GridCellEditor({
   const selectId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const kind = getCellContentKind(cell);
   const block = cell.blocks[0];
   const colGap = gridBlock.gap ?? 8;
@@ -265,9 +267,13 @@ function GridCellEditor({
     e.target.value = '';
     if (!file) return;
     setLoading(true);
+    setUploadError(null);
     try {
       const dataUri = await fileToDataUri(file);
+      await uploadToDrive(file, 'protocolio');
       onChange(updateCellBlock(cell, { type: 'image', src: dataUri, width: 80, align: cell.align ?? 'center' }));
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Could not save image');
     } finally {
       setLoading(false);
     }
@@ -275,6 +281,7 @@ function GridCellEditor({
 
   return (
     <div className="grid-cell">
+      {uploadError ? <p role="alert">{uploadError}</p> : null}
       <strong>{label}</strong>
       <label htmlFor={selectId}>Content</label>
       <select

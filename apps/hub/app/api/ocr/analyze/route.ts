@@ -1,8 +1,8 @@
 import { ensureHubUser } from '@/lib/ensure-user';
+import { createWorkspaceFile, readWorkspaceFileBytes, FileAccessError } from '@/lib/files';
 import { analyzeRowPages } from '@/lib/ocr/analyze';
 import { storeOcrBatch } from '@/lib/ocr/store-batch';
 import { acquireOcrSlot } from '@/lib/ocr/admission';
-import { assertGpuHeadroom } from '@/lib/ocr/gpu-guard';
 import { assertOcrAnalyzeRateLimit } from '@/lib/ocr/rate-limit';
 import { llmModelName, releaseLoadedModel } from '@/lib/ocr/llm';
 import { readPdfAsRows } from '@/lib/ocr/read-pdf';
@@ -61,14 +61,6 @@ export async function POST(req: Request) {
   }
   const hold = { model: false };
   try {
-    try {
-      await assertGpuHeadroom();
-    } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : 'GPU is not ready' },
-        { status: 503, headers: { 'Retry-After': '10', 'Cache-Control': 'no-store' } },
-      );
-    }
     const signal = AbortSignal.any([req.signal, AbortSignal.timeout(240_000)]);
     return await analyzeUpload(req, session, signal, hold);
   } finally {
@@ -90,7 +82,17 @@ async function analyzeUpload(
     return NextResponse.json({ error: 'Expected a PDF upload' }, { status: 400 });
   }
 
-  const upload = form.get('file');
+  let upload = form.get('file');
+  const fileId = form.get('fileId');
+  if (typeof fileId === 'string') {
+    try {
+      const stored = await readWorkspaceFileBytes(session.workspace.id, fileId);
+      upload = new File([new Uint8Array(stored.bytes)], stored.file.displayName, { type: stored.file.mime });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : 'Could not read file' },
+        { status: err instanceof FileAccessError ? err.status : 500 });
+    }
+  }
   if (!(upload instanceof File)) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 });
   }
@@ -109,6 +111,16 @@ async function analyzeUpload(
   }
   if (!isPdf(bytes)) {
     return NextResponse.json({ error: 'Only PDF files can be analyzed' }, { status: 400 });
+  }
+
+  if (typeof fileId !== 'string') {
+    try {
+      await createWorkspaceFile({ workspaceId: session.workspace.id, displayName: upload.name,
+        bytes: Buffer.from(bytes), sourceAppId: 'ocr' });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : 'Could not save PDF to Drive' },
+        { status: err instanceof FileAccessError ? err.status : 500 });
+    }
   }
 
   let pages;
@@ -138,11 +150,11 @@ async function analyzeUpload(
     );
   }
 
-  let model = 'Qwen/Qwen3-8B';
+  let model = 'none';
   try {
     model = llmModelName();
   } catch {
-    model = 'Qwen/Qwen3-8B';
+    model = 'none';
   }
 
   let saved;

@@ -1,7 +1,6 @@
 import { ensureHubUser } from '@/lib/ensure-user';
 import { acquireOcrSlot } from '@/lib/ocr/admission';
 import { analyzeRowPages } from '@/lib/ocr/analyze';
-import { assertGpuHeadroom } from '@/lib/ocr/gpu-guard';
 import { releaseLoadedModel } from '@/lib/ocr/llm';
 import { storeOcrBatch } from '@/lib/ocr/store-batch';
 import { getOcrAnalysis } from '@/lib/store/ocr-analyses';
@@ -48,15 +47,6 @@ export async function POST(
 
   const hold = { model: false };
   try {
-    try {
-      await assertGpuHeadroom();
-    } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : 'GPU is not ready' },
-        { status: 503, headers: { ...headers, 'Retry-After': '10' } },
-      );
-    }
-
     const signal = AbortSignal.any([req.signal, AbortSignal.timeout(240_000)]);
     const cursor = loaded.analysis.vector.cursor;
     const reading = await analyzeRowPages(loaded.analysis.pages, signal, {

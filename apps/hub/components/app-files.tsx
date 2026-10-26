@@ -1,12 +1,17 @@
 'use client';
 
 import {
+  APP_CATALOG,
+  fileOpenAppIds,
   FILE_DISPLAY_NAME_MAX,
   FILE_MAX_BYTES,
+  type CloudStorageConnection,
+  type CloudStorageObject,
   type FileListResponse,
   type WorkspaceFile,
 } from '@sorye/types';
 import { isInlinePreviewMime } from '@/lib/file-preview';
+import { AppIcon } from './app-icon';
 import { filterWorkspaceFiles } from '@/lib/file-search';
 import {
   useCallback,
@@ -385,6 +390,11 @@ export function AppFiles() {
   const [previewTarget, setPreviewTarget] = useState<WorkspaceFile | null>(null);
   const [query, setQuery] = useState('');
   const [regexMode, setRegexMode] = useState(false);
+  const [folder, setFolder] = useState<string | null>(null);
+  const [cloudStorages, setCloudStorages] = useState<CloudStorageConnection[]>([]);
+  const [cloudStorageId, setCloudStorageId] = useState<string | null>(null);
+  const [cloudPrefix, setCloudPrefix] = useState('');
+  const [cloudObjects, setCloudObjects] = useState<CloudStorageObject[] | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch('/api/files', { credentials: 'include' });
@@ -415,6 +425,52 @@ export function AppFiles() {
     };
   }, [load]);
 
+  const loadCloudObjects = useCallback(async (storageId: string, prefix: string) => {
+    const params = new URLSearchParams({ prefix });
+    const response = await fetch(`/api/relay/storages/${encodeURIComponent(storageId)}/objects?${params}`, { credentials: 'include', cache: 'no-store' });
+    const data = await response.json().catch(() => ({})) as { objects?: CloudStorageObject[]; error?: string };
+    if (!response.ok) throw new Error(data.error ?? 'Could not load cloud folder');
+    return data.objects ?? [];
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshStorages = () => void fetch('/api/relay/storages', { credentials: 'include', cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) return [] as CloudStorageConnection[];
+        const data = await response.json() as { storages?: CloudStorageConnection[] };
+        return data.storages ?? [];
+      })
+      .then((storages) => {
+        if (cancelled) return;
+        setCloudStorages(storages);
+        setCloudStorageId((current) => current && !storages.some((storage) => storage.id === current) ? null : current);
+      })
+      .catch(() => { if (!cancelled) setCloudStorages([]); });
+    refreshStorages();
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel('sorye-relay');
+      channel.onmessage = () => refreshStorages();
+    } catch { /* BroadcastChannel is optional; the view still works on reload. */ }
+    return () => { cancelled = true; channel?.close(); };
+  }, []);
+
+  useEffect(() => {
+    if (!cloudStorageId) { setCloudObjects(null); return; }
+    let cancelled = false;
+    setCloudObjects(null);
+    void loadCloudObjects(cloudStorageId, cloudPrefix).then((objects) => {
+      if (!cancelled) setCloudObjects(objects);
+    }).catch((err) => {
+      if (!cancelled) {
+        setCloudObjects([]);
+        setError(err instanceof Error ? err.message : 'Could not load cloud folder');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [cloudStorageId, cloudPrefix, loadCloudObjects]);
+
   const filtered = useMemo(
     () => filterWorkspaceFiles(files ?? [], query, regexMode),
     [files, query, regexMode],
@@ -430,6 +486,16 @@ export function AppFiles() {
       for (const item of incoming) {
         const body = new FormData();
         body.append('file', item);
+        if (cloudStorageId) {
+          body.append('prefix', cloudPrefix);
+          const response = await fetch(`/api/relay/storages/${encodeURIComponent(cloudStorageId)}/objects`, {
+            method: 'POST', credentials: 'include', body,
+          });
+          const data = await response.json().catch(() => ({})) as { error?: string };
+          if (!response.ok) throw new Error(data.error ?? `Could not upload ${item.name}`);
+          continue;
+        }
+        body.append('sourceAppId', 'files');
         const res = await fetch('/api/files', {
           method: 'POST',
           credentials: 'include',
@@ -443,7 +509,8 @@ export function AppFiles() {
           throw new Error(data.error ?? `Could not upload ${item.name}`);
         }
       }
-      await load();
+      if (cloudStorageId) setCloudObjects(await loadCloudObjects(cloudStorageId, cloudPrefix));
+      else await load();
       setNotice(
         incoming.length === 1
           ? `Uploaded ${incoming[0]?.name ?? 'file'}`
@@ -454,6 +521,23 @@ export function AppFiles() {
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  async function openInApp(file: WorkspaceFile, targetAppId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/files/${file.id}/open`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetAppId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not open file');
+      window.location.assign(data.href);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open file');
+      setBusy(false);
     }
   }
 
@@ -475,6 +559,27 @@ export function AppFiles() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not download');
     }
+  }
+
+  async function downloadCloudObject(object: CloudStorageObject) {
+    if (!cloudStorageId) return;
+    setError(null);
+    try {
+      const params = new URLSearchParams({ key: object.key });
+      const response = await fetch(`/api/relay/storages/${encodeURIComponent(cloudStorageId)}/object?${params}`, { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? 'Could not download file');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url; link.download = object.name; link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not download file'); }
+  }
+
+  function openCloudStorage(storage: CloudStorageConnection) {
+    setFolder(null); setCloudPrefix(''); setCloudStorageId(storage.id); setError(null);
   }
 
   async function saveRename() {
@@ -542,7 +647,26 @@ export function AppFiles() {
   const searchId = `${uid}-search`;
   const regexId = `${uid}-regex`;
   const searching = query.trim().length > 0;
-  const visible = filtered.files;
+  const visible = filtered.files.filter((file) =>
+    folder
+      ? (file.sourceAppId ?? 'files') === folder
+      : (file.sourceAppId ?? 'files') === 'files',
+  );
+  const folders = APP_CATALOG.filter(
+    (app) => app.id !== 'files' && files.some((file) => file.sourceAppId === app.id),
+  );
+  const folderCounts = new Map(
+    folders.map((app) => [app.id, files.filter((file) => file.sourceAppId === app.id).length]),
+  );
+  const folderName = (appId?: string) => APP_CATALOG.find((app) => app.id === (appId ?? 'files'))?.name ?? 'Drive';
+  const cloudStorage = cloudStorages.find((storage) => storage.id === cloudStorageId) ?? null;
+  const cloudPath = cloudPrefix.split('/').filter(Boolean);
+  const visibleCloudObjects = (cloudObjects ?? []).filter((object) => !query.trim() || object.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const summary = cloudStorage
+    ? cloudObjects === null ? `Loading ${cloudStorage.name}…` : `${visibleCloudObjects.length} item${visibleCloudObjects.length === 1 ? '' : 's'} in ${cloudStorage.name}`
+    : searching
+      ? `${visible.length} of ${files.length} workspace file${files.length === 1 ? '' : 's'}`
+      : `${files.length} workspace file${files.length === 1 ? '' : 's'}`;
 
   return (
     <div className="@container relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -550,15 +674,13 @@ export function AppFiles() {
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Drive</h1>
           <p className="text-xs text-[var(--color-text-muted)]">
-            {searching
-              ? `${visible.length} of ${files.length} file${files.length === 1 ? '' : 's'}`
-              : `${files.length} file${files.length === 1 ? '' : 's'}`}
+            {summary}
             {' · '}
             up to {maxMb} MB each
           </p>
         </div>
         <label className="rounded-lg bg-[var(--color-accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-surface)] transition hover:brightness-110">
-          {busy ? 'Working…' : 'Upload'}
+          {busy ? 'Working…' : cloudStorage ? `Upload to ${cloudStorage.name}` : 'Upload'}
           <input
             ref={inputRef}
             className="sr-only"
@@ -609,11 +731,39 @@ export function AppFiles() {
           void uploadList(event.dataTransfer.files);
         }}
       >
-        Drop files here, or use Upload. Images, PDF, text, and Office — no
-        executables.
+        {cloudStorage ? `Drop files here to upload to ${cloudStorage.name}. ` : 'Drop files here, or use Upload. '}
+        Images, PDF, text, Office, and Studio meshes — no executables.
       </div>
 
       <div className="mx-4 mt-3 shrink-0 sm:mx-5">
+        <nav aria-label="Drive location" className="mb-3 flex min-h-10 items-center gap-2 text-sm">
+          <button
+            type="button"
+            aria-current={folder === null && !cloudStorageId ? 'page' : undefined}
+            className={`rounded-md px-2 py-1.5 transition ${folder === null && !cloudStorageId ? 'font-semibold text-[var(--color-text)]' : 'text-[var(--color-accent)] hover:bg-white/8'}`}
+            onClick={() => { setFolder(null); setCloudStorageId(null); setCloudPrefix(''); }}
+          >
+            Drive
+          </button>
+          {cloudStorage ? (
+            <>
+              <span aria-hidden="true" className="text-[var(--color-text-muted)]">/</span>
+              <button type="button" className="rounded-md px-2 py-1.5 text-[var(--color-accent)] hover:bg-white/8" onClick={() => setCloudPrefix('')}>{cloudStorage.name}</button>
+              {cloudPath.map((segment, index) => {
+                const targetPrefix = `${cloudPath.slice(0, index + 1).join('/')}/`;
+                const current = index === cloudPath.length - 1;
+                return <span key={targetPrefix} className="contents"><span aria-hidden="true" className="text-[var(--color-text-muted)]">/</span>{current ? <span aria-current="page" className="truncate font-semibold">{segment}</span> : <button type="button" className="text-[var(--color-accent)] hover:underline" onClick={() => setCloudPrefix(targetPrefix)}>{segment}</button>}</span>;
+              })}
+            </>
+          ) : folder ? (
+            <>
+              <span aria-hidden="true" className="text-[var(--color-text-muted)]">/</span>
+              <span aria-current="page" className="truncate font-semibold text-[var(--color-text)]">
+                {folderName(folder)}
+              </span>
+            </>
+          ) : null}
+        </nav>
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[12rem] flex-1">
             <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={searchId}>
@@ -624,13 +774,13 @@ export function AppFiles() {
               className={FIELD_CLASS}
               type="search"
               value={query}
-              placeholder="Name, type:pdf, or /regex/"
+              placeholder={cloudStorage ? 'Search file names' : 'Name, type:pdf, or /regex/'}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <label
+          {!cloudStorage ? <label
             className="flex items-center gap-2 pb-2 text-xs text-[var(--color-text-muted)]"
             htmlFor={regexId}
           >
@@ -641,9 +791,9 @@ export function AppFiles() {
               onChange={(event) => setRegexMode(event.target.checked)}
             />
             Regex
-          </label>
+          </label> : null}
         </div>
-        {filtered.error ? (
+        {!cloudStorage && filtered.error ? (
           <p className="mt-1 text-xs text-red-300" role="alert">
             {filtered.error}
           </p>
@@ -651,16 +801,62 @@ export function AppFiles() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-4 py-3 sm:px-5">
-        {files.length === 0 ? (
+        {cloudStorage ? (
+          cloudObjects === null ? (
+            <p className="py-8 text-sm text-[var(--color-text-muted)]">Loading {cloudStorage.name}…</p>
+          ) : cloudObjects.length === 0 ? (
+            <p className="py-8 text-sm text-[var(--color-text-muted)]">This cloud folder is empty. Upload a file to add one.</p>
+          ) : visibleCloudObjects.length === 0 ? (
+            <p className="py-8 text-sm text-[var(--color-text-muted)]">No cloud files match this search.</p>
+          ) : (
+            <table className="w-full min-w-[30rem] border-collapse text-left text-sm">
+              <caption className="sr-only">Files in {cloudStorage.name}</caption>
+              <thead><tr className="border-b border-white/8 text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]"><th className="py-2 pr-3 font-medium">Name</th><th className="py-2 pr-3 font-medium">Size</th><th className="py-2 pr-3 font-medium">Updated</th><th className="py-2 font-medium"><span className="sr-only">Actions</span></th></tr></thead>
+              <tbody>{visibleCloudObjects.map((object) => <tr key={object.key} className="border-b border-white/6">
+                <td className="max-w-[24rem] py-3 pr-3">{object.isFolder ? <button type="button" className="text-left font-medium text-[var(--color-accent)] hover:underline" onClick={() => setCloudPrefix(object.key)}>{object.name}/</button> : <span className="truncate">{object.name}</span>}</td>
+                <td className="py-3 pr-3 text-[var(--color-text-muted)]">{object.isFolder ? '—' : formatSize(object.size)}</td>
+                <td className="py-3 pr-3 text-[var(--color-text-muted)]">{object.lastModified ? formatWhen(object.lastModified) : '—'}</td>
+                <td className="py-3 text-right">{!object.isFolder ? <button type="button" className={`${DRIVE_ICON_BUTTON} ${DRIVE_ACTION_CLASS.download}`} aria-label={`Download ${object.name}`} onClick={() => void downloadCloudObject(object)}><DriveActionIcon action="download" /></button> : null}</td>
+              </tr>)}</tbody>
+            </table>
+          )
+        ) : files.length === 0 && cloudStorages.length === 0 ? (
           <p className="py-8 text-sm text-[var(--color-text-muted)]">
             No files in this workspace yet.
           </p>
-        ) : visible.length === 0 ? (
+        ) : visible.length === 0 && (folder !== null || (folders.length === 0 && cloudStorages.length === 0)) ? (
           <p className="py-8 text-sm text-[var(--color-text-muted)]">
             No files match this search.
           </p>
         ) : (
-          <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
+          <>
+          {!folder && !cloudStorageId && folders.length + cloudStorages.length > 0 ? (
+            <ul aria-label="Drive folders" className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {folders.map((app) => (
+                <li key={app.id}>
+                  <button
+                    type="button"
+                    onClick={() => { setCloudStorageId(null); setFolder(app.id); }}
+                    className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-[var(--color-accent)]/40 hover:bg-white/[0.06]"
+                  >
+                    <svg aria-hidden="true" className="size-5 shrink-0 text-[var(--color-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /></svg>
+                    <span className="min-w-0 flex-1 truncate font-medium">{app.name}</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">{folderCounts.get(app.id)} files</span>
+                  </button>
+                </li>
+              ))}
+              {cloudStorages.map((storage) => (
+                <li key={storage.id}>
+                  <button type="button" onClick={() => openCloudStorage(storage)} className="flex w-full items-center gap-3 rounded-xl border border-sky-300/15 bg-sky-300/[0.03] p-3 text-left transition hover:border-sky-300/40 hover:bg-sky-300/[0.06]">
+                    <svg aria-hidden="true" className="size-5 shrink-0 text-sky-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /></svg>
+                    <span className="min-w-0 flex-1 truncate font-medium">{storage.name}</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">{storage.provider === 'aws-s3' ? 'S3' : 'R2'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {visible.length > 0 ? <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
             <caption className="sr-only">Workspace files</caption>
             <thead>
               <tr className="border-b border-white/8 text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
@@ -686,7 +882,7 @@ export function AppFiles() {
                         {file.displayName}
                       </button>
                       <div className="truncate font-mono text-[10px] text-[var(--color-text-muted)]">
-                        {file.relativePath}
+                        {folderName(file.sourceAppId)} / {file.displayName}
                       </div>
                     </td>
                     <td className="py-3 pr-3 text-[var(--color-text-muted)]">
@@ -700,6 +896,12 @@ export function AppFiles() {
                     </td>
                     <td className="py-3">
                       <div className="flex flex-wrap justify-end gap-1">
+                        {fileOpenAppIds(file.mime).map((appId) => {
+                          const app = APP_CATALOG.find((entry) => entry.id === appId)!;
+                          return <button key={appId} type="button" disabled={busy}
+                            title={`Open in ${app.name}`} aria-label={`Open ${file.displayName} in ${app.name}`}
+                            onClick={() => void openInApp(file, appId)}><AppIcon app={app} size="sm" /></button>;
+                        })}
                         {(
                           [
                             ['open', 'Open', () => setPreviewTarget(file)],
@@ -727,7 +929,8 @@ export function AppFiles() {
                 );
               })}
             </tbody>
-          </table>
+          </table> : null}
+          </>
         )}
       </div>
 

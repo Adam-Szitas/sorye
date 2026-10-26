@@ -71,3 +71,15 @@ Open http://localhost:3002
 ```bash
 pnpm --filter @sorye/sdk build
 ```
+
+## Workspace uploads
+
+Use `uploadToDrive(file, sourceAppId)` from `@sorye/sdk/files` before processing a user upload. It returns the stored file id and saves the original in the app's Drive folder. Pass a third argument for a standalone app's Hub `/api/files` URL. Upload failures must be shown to the user. Existing Drive files should be reused by id, never uploaded again.
+
+Drive folders are metadata keyed by catalog app id and displayed using the app's current name. Files without a source remain in Drive. Original bytes retain stable ids across renames. `POST /api/files/:id/open` with `{ targetAppId }` validates workspace access and MIME compatibility, then delivers a `workspace-file` handoff through Relay and returns the destination URL. Explicit app handoffs work independently of optional Messenger notification settings. OCR resolves the handoff's file id against authenticated Drive storage; Qwen accepts `fileId` instead of another upload.
+
+## React document readers
+
+Import `DocumentTranscript` and `JsonDocument` from `@sorye/sdk/react/document-reading`.
+`DocumentTranscript` accepts `pages: { page: number; rows: string[] }[]`, retaining line order and whitespace.
+`JsonDocument` accepts `value`, `fileName`, and an optional `label`; its accessible disclosure shows the complete JSON with copy and download actions. Pass a content-only projection, not internal storage records. Both components include scoped styles and support document color overrides through `--document-surface`, `--document-text`, `--document-border`, and `--document-muted-surface`.

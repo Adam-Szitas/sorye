@@ -1,6 +1,6 @@
 /** Cross-app handoffs — OCR (and others) → Protocolio PDF generation. */
 
-export type HandoffKind = 'pdf-template';
+export type HandoffKind = 'pdf-template' | 'workspace-file';
 
 export interface AppHandoff {
   id: string;

@@ -5,6 +5,8 @@ import {
   FILE_DISPLAY_NAME_MAX,
   FILE_MAX_BYTES,
   FILE_MAX_PER_WORKSPACE,
+  APP_CATALOG,
+  STUDIO_MESH_EXTENSIONS,
   type WorkspaceFile,
 } from '@sorye/types';
 import { jsonDataFile } from '@/lib/store/json-file';
@@ -261,6 +263,10 @@ function resolveMime(buf: Buffer, displayName: string): string {
   }
 
   const kind = detectKind(buf);
+  // Mesh documents are download-only: never serve embedded scripts/XML inline.
+  if ((STUDIO_MESH_EXTENSIONS as readonly string[]).includes(ext.slice(1))) {
+    return 'application/octet-stream';
+  }
   if (kind === 'jpeg') return 'image/jpeg';
   if (kind === 'png') return 'image/png';
   if (kind === 'gif') return 'image/gif';
@@ -296,6 +302,11 @@ function resolveMime(buf: Buffer, displayName: string): string {
   }
 
   throw new FileAccessError('That file type is not allowed', 400);
+}
+
+/** Shared content sniffing/blocked-type policy for local and cloud Drive uploads. */
+export function resolveWorkspaceFileMime(buf: Buffer, displayName: string): string {
+  return resolveMime(buf, displayName);
 }
 
 /** `inline` only after the GET route checks `isInlinePreviewMime`. */
@@ -360,7 +371,12 @@ export async function createWorkspaceFile(input: {
   workspaceId: string;
   displayName: string;
   bytes: Buffer;
+  sourceAppId?: string;
 }): Promise<WorkspaceFile> {
+  const sourceAppId = input.sourceAppId ?? 'files';
+  if (!APP_CATALOG.some((app) => app.id === sourceAppId)) {
+    throw new FileAccessError('Unknown source app', 400);
+  }
   const workspaceId = assertSafeSegment(input.workspaceId, 'workspace');
   if (input.bytes.length === 0) {
     throw new FileAccessError('File is empty', 400);
@@ -380,6 +396,7 @@ export async function createWorkspaceFile(input: {
   const now = new Date().toISOString();
 
   const row: WorkspaceFile = {
+    sourceAppId,
     id,
     workspaceId,
     displayName,

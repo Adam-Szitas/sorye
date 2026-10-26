@@ -397,7 +397,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       summary:
         'Keep images, PDFs, text, and Office files in this workspace. Rename never moves the stored file.',
       steps: [
-        'Upload a file (about 25 MB max — images, PDF, text, Office).',
+        'Upload a file (64 MB max — images, PDF, text, Office, or Studio meshes).',
         'Search by name, type:pdf / type:image, or /regex/. Open any file in a centered preview. Images, PDF, and text render there; other types offer a download.',
         'Rename, download, or delete. Other workspaces cannot see these files.',
       ],
@@ -459,13 +459,14 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     id: 'ocr',
     name: 'OCR',
     description:
-      'Upload a PDF, review the layout matrix, and ask a local Qwen3 model for pattern JSON.',
+      'Extract PDF tables, read a page-by-page transcript, and inspect clean AI-aligned JSON.',
     usageIntro: {
-      summary: 'Read a PDF as rows, then store the model pattern JSON in Postgres.',
+      summary: 'Upload, review, and understand a PDF with tables, a complete transcript, and content-only JSON.',
       steps: [
         'Upload a PDF. The browser still builds a layout matrix you can export or send to Protocolio.',
         'Analyze with Qwen. Hub stores each page as the visible lines, with spaces kept and [IMAGE] where a figure has no text.',
         'Qwen3 8B reads the rows in small slices. Stored tables can be searched by UTC date, name, JSON field, code, and amount.',
+        'Open a reading to review its transcript. Show AI-aligned JSON to inspect, copy, or download the complete document without layout styling.',
       ],
     },
     slug: 'ocr',

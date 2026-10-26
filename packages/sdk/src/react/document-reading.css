@@ -1,0 +1,73 @@
+.sorye-transcript, .sorye-json-document {
+  font-family: var(--sorye-font, system-ui, sans-serif);
+  min-width: 0;
+}
+.sorye-transcript-page {
+  margin-block: 1rem;
+  border: 1px solid var(--document-border, #d6d3d1);
+  border-radius: var(--sorye-radius-md, .75rem);
+  background: var(--document-surface, #fff);
+  color: var(--document-text, #1c1917);
+  overflow: hidden;
+}
+.sorye-transcript-page header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 1.25rem;
+  border-bottom: 1px solid var(--document-border, #d6d3d1);
+  background: var(--document-muted-surface, #f5f5f4);
+  font-size: .8rem;
+}
+.sorye-transcript-page header span { color: var(--document-muted, #57534e); }
+.sorye-transcript-page ol { margin: 0; padding: 1rem 1.25rem 1rem 3.5rem; }
+.sorye-transcript-page li {
+  padding: .3rem .5rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+  font-size: .9375rem;
+  font-variant-numeric: tabular-nums;
+  tab-size: 4;
+}
+.sorye-transcript-page li::marker { color: var(--document-muted, #57534e); font-size: .7rem; }
+.sorye-transcript-page li:nth-child(even) { background: var(--document-muted-surface, #f5f5f4); }
+.sorye-transcript-page > p { padding: 1rem; }
+.sorye-json-document { margin-block: 1.25rem; }
+.sorye-json-document button {
+  padding: .65rem 1rem;
+  border: 1px solid var(--document-border, #d6d3d1);
+  border-radius: var(--sorye-radius-sm, .5rem);
+  background: var(--document-surface, #fff);
+  color: var(--document-text, #1c1917);
+  font: inherit;
+  font-size: .8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sorye-json-document button:hover { background: var(--document-muted-surface, #f5f5f4); }
+.sorye-json-document :focus-visible { outline: 2px solid #9a3412; outline-offset: 3px; }
+.sorye-json-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: 1rem; }
+.sorye-json-actions span { margin-right: auto; font-size: .8rem; }
+.sorye-json-document [role='status'] { font-size: .8rem; }
+.sorye-json-document pre {
+  max-height: 32rem;
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--document-border, #d6d3d1);
+  border-radius: var(--sorye-radius-md, .75rem);
+  background: var(--document-muted-surface, #f5f5f4);
+  color: var(--document-text, #1c1917);
+  font-size: .8rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+@media (max-width: 480px) {
+  .sorye-transcript-page ol { padding: .75rem .5rem .75rem 2.75rem; }
+}
+@media print {
+  .sorye-json-document { display: none; }
+  .sorye-transcript-page { overflow: visible; }
+  .sorye-transcript-page header { break-after: avoid; }
+  .sorye-transcript-page li { break-inside: avoid; }
+}

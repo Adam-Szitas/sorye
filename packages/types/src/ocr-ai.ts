@@ -417,3 +417,22 @@ export interface OcrAnalysis {
   error: string | null;
   createdAt: string;
 }
+
+/** Content-only export: the visible aligned records plus the complete, unmodified transcript. */
+export function buildOcrReadingDocument(analysis: OcrAnalysis) {
+  const pattern = analysis.pattern;
+  return {
+    fileName: analysis.fileName,
+    status: analysis.status,
+    ...(analysis.error ? { warning: analysis.error } : {}),
+    documentKind: pattern?.documentKind ?? 'Document',
+    summary: pattern?.summary ?? '',
+    fields: { ...pattern?.fields },
+    records: alignRecordsToRows(pattern?.records ?? [], analysis.pages),
+    patterns: (pattern?.patterns ?? []).map(({ name, description, repeats, page, rowIndexes }) =>
+      ({ name, description, repeats, page, rowIndexes: [...rowIndexes] })),
+    math: (pattern?.math ?? []).map(({ page, row, text }) => ({ page, row, text })),
+    images: (pattern?.images ?? []).map(({ page, row, marker }) => ({ page, row, marker })),
+    transcript: analysis.pages.map(({ page, rows }) => ({ page, rows: [...rows] })),
+  };
+}

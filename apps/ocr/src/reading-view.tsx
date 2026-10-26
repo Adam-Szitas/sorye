@@ -1,6 +1,7 @@
+import { DocumentTranscript, JsonDocument } from '@sorye/sdk/react/document-reading';
 import type { OcrAnalysis } from '@sorye/types';
 import {
-  alignRecordsToRows,
+  buildOcrReadingDocument,
   ocrReadingText,
   recordColumnLabel,
   recordTableColumns,
@@ -9,7 +10,8 @@ import { hubApiPath } from './hub-origin';
 
 export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
   const pattern = analysis.pattern;
-  const records = alignRecordsToRows(pattern?.records ?? [], analysis.pages ?? []);
+  const document = buildOcrReadingDocument(analysis);
+  const records = document.records;
   const columns = recordTableColumns(records);
   const pageUrl = hubApiPath(`/apps/ocr/reading/${analysis.id}`);
   const kind = pattern?.documentKind?.trim() || 'Document';
@@ -29,8 +31,11 @@ export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
           Open page
         </a>
       </header>
+      <p className="ocr-reading-meta">{analysis.pages.length} pages · {analysis.pages.reduce((total, page) => total + page.rows.length, 0)} transcript lines · {records.length} records</p>
       {summary ? <p className="ocr-reading-summary">{summary}</p> : null}
       {analysis.error ? <p className="ocr-error">{analysis.error}</p> : null}
+
+      <JsonDocument value={document} fileName={analysis.fileName} />
 
       {pattern && Object.keys(pattern.fields).length > 0 ? (
         <section>
@@ -49,8 +54,9 @@ export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
       {records.length > 0 && columns.length > 0 ? (
         <section>
           <h3>Records</h3>
-          <div className="ocr-reading-table-wrap">
+          <div className="ocr-reading-table-wrap" tabIndex={0} role="region" aria-label="Document records">
             <table>
+              <caption className="ocr-sr-only">Document records aligned to the extracted rows</caption>
               <thead>
                 <tr>
                   {columns.map((column) => {
@@ -61,7 +67,7 @@ export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
                         scope="col"
                         aria-label={label || `Column ${Number(column.slice(1)) + 1}`}
                       >
-                        {label || '\u00a0'}
+                        {label || `Column ${Number(column.slice(1)) + 1}`}
                       </th>
                     );
                   })}
@@ -83,14 +89,8 @@ export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
 
       <section className="ocr-reading-transcript">
         <h3>Transcript</h3>
-        {analysis.pages.map((page) => (
-          <div key={page.page}>
-            <h4>Page {page.page}</h4>
-            {page.rows.map((row, index) => (
-              <p key={index}>{ocrReadingText(row) || row}</p>
-            ))}
-          </div>
-        ))}
+        <p className="ocr-transcript-note">The complete extracted text, in page order. Line numbers restart on each page.</p>
+        <DocumentTranscript pages={analysis.pages} />
       </section>
     </article>
   );

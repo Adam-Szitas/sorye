@@ -21,6 +21,14 @@ function mailKey() {
   return deriveKey(override || getEnv().AUTH_SECRET);
 }
 
+function storageKey() {
+  const override = process.env.STORAGE_SECRET_KEY?.trim();
+  if (!override || override.length < 32) {
+    throw new Error('STORAGE_SECRET_KEY must be set to at least 32 characters');
+  }
+  return deriveKey(override);
+}
+
 function encryptWithKey(plain: string, secret: Buffer): string {
   const iv = randomBytes(IV_LEN);
   const cipher = createCipheriv(ALGO, secret, iv);
@@ -57,6 +65,14 @@ export function encryptMailSecret(plain: string): string {
 
 export function decryptMailSecret(payload: string): string {
   return decryptWithKey(payload, mailKey());
+}
+
+export function encryptStorageSecret(plain: string): string {
+  return encryptWithKey(plain, storageKey());
+}
+
+export function decryptStorageSecret(payload: string): string {
+  return decryptWithKey(payload, storageKey());
 }
 
 export function hintsFromDatabaseUrl(url: string): {

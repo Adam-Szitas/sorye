@@ -287,6 +287,113 @@
   padding: 1.25rem;
 }
 
+.storage-heading,
+.storage-card-top,
+.storage-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.storage-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 1rem 0 0;
+  list-style: none;
+}
+
+.storage-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.storage-card-top p,
+.storage-secret p {
+  margin: 0.25rem 0 0;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.storage-connected {
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+  font-size: 0.6875rem;
+}
+
+.storage-actions {
+  justify-content: flex-start;
+  margin-top: 0.8rem;
+}
+
+.storage-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+  padding: 1rem;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 0.85rem;
+  background: rgba(96, 165, 250, 0.04);
+}
+
+.storage-form h3,
+.storage-form > p,
+.storage-form > button,
+.storage-form > div {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.storage-form select,
+.storage-form input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #111827;
+  color: inherit;
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+}
+
+.storage-secret {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.9rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 0.8rem;
+  background: rgba(251, 191, 36, 0.04);
+}
+
+.storage-secret code {
+  display: block;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border-radius: 0.4rem;
+  background: rgba(0, 0, 0, 0.25);
+  color: #e2e8f0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.storage-empty,
+.storage-message {
+  margin: 1rem 0 0;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+}
+
+.storage-message.error { color: #fca5a5; }
+
 .relay-panel h2 {
   margin: 0 0 0.35rem;
   font-size: 1rem;

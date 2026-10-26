@@ -28,6 +28,8 @@ const envSchema = z
 
     ADMIN_SECRET: z.string().min(8),
     ADMIN_EMAILS: z.string().default(''),
+    /** Dedicated key for encrypted cloud-storage credentials (32+ chars). */
+    STORAGE_SECRET_KEY: z.string().min(32).optional(),
 
     NEXT_PUBLIC_DASHBOARD_REMOTE: z
       .string()
@@ -56,16 +58,16 @@ const envSchema = z
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
     /** Qwen3-8B server origin. Allowlisted hosts only — see assertSafeLlmBaseUrl. */
-    OCR_LLM_PROVIDER: z.enum(['vllm', 'ollama']).default('vllm'),
+    OCR_LLM_PROVIDER: z.string().optional(),
     OCR_LLM_BASE_URL: z
       .string()
       .optional()
-      .transform((value) => value?.trim() || 'http://127.0.0.1:8000'),
+      .transform((value) => value?.trim() || undefined),
     /** Hugging Face model id served by the Qwen container. */
     OCR_LLM_MODEL: z
       .string()
       .optional()
-      .transform((value) => value?.trim() || 'Qwen/Qwen3-8B'),
+      .transform((value) => value?.trim() || undefined),
   })
   .superRefine((env, ctx) => {
     if (env.STORE_DRIVER === 'postgres' && !env.DATABASE_URL) {

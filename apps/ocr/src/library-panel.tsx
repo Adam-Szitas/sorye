@@ -114,11 +114,12 @@ export function LibraryPanel() {
         <div>
           <h2>Stored tables</h2>
           <p>
-            The latest 50 PDF extractions. Dates are UTC days. A code or a field name looks
-            inside the saved JSON, not the page transcript.
+            Revisit your latest 50 documents, or filter by date, name, and extracted values.
           </p>
         </div>
       </header>
+      <details className="ocr-library-filters">
+        <summary>Filter stored tables</summary>
       <form className="ocr-library-form" onSubmit={(event) => void onSearch(event)}>
         <label>
           From
@@ -186,8 +187,10 @@ export function LibraryPanel() {
           {busy ? 'Searching…' : 'Search tables'}
         </button>
       </form>
+      </details>
       {error ? <p className="ocr-error">{error}</p> : null}
-      {hits.length === 0 && !busy ? <p className="ocr-muted">No stored tables match this search.</p> : null}
+      {busy ? <p className="ocr-library-empty" role="status">Loading your documents…</p> : null}
+      {hits.length === 0 && !busy ? <div className="ocr-library-empty"><strong>No documents to show</strong><p>Analyze a PDF to save a reading here, or adjust your filters.</p></div> : null}
       <div className="ocr-library-results">
         {hits.map((hit) => {
           const columns = recordTableColumns(hit.records);
@@ -255,6 +258,7 @@ export function LibraryPanel() {
                   </table>
                 </div>
               ) : null}
+              <a className="ocr-library-open" href={hubApiPath(`/apps/ocr/reading/${hit.id}`)} target="_blank" rel="noopener">Open reading & transcript →</a>
               {hit.recordCount > hit.records.length ? (
                 <p className="ocr-muted">Showing {hit.records.length} of {hit.recordCount} rows.</p>
               ) : null}

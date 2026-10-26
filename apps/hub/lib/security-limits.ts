@@ -17,9 +17,9 @@ export const MAX_MAIL_ACCOUNTS = 8;
 export const MAX_MAIL_SYNC_MESSAGES = 80;
 export const MAX_MAIL_EXTERNAL_BODY = 50_000;
 /** Drive upload cap — bytes go to disk, never the JSON/Postgres row. */
-export const MAX_FILE_BYTES = 25 * 1024 * 1024;
+export { FILE_MAX_BYTES as MAX_FILE_BYTES } from '@sorye/types';
 
-/** OCR → Qwen upload. The PDF is read in memory and not stored. */
+/** OCR → Qwen upload. Original PDFs are retained in workspace Drive. */
 export const MAX_OCR_PDF_BYTES = 64 * 1024 * 1024;
 export const MAX_OCR_PAGES = 500;
 export const MAX_OCR_ANALYSES = 50;

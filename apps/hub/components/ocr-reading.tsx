@@ -1,6 +1,7 @@
+import { DocumentTranscript, JsonDocument } from '@sorye/sdk/react/document-reading';
 import type { OcrAnalysis } from '@sorye/types';
 import {
-  alignRecordsToRows,
+  buildOcrReadingDocument,
   ocrReadingText,
   recordColumnLabel,
   recordTableColumns,
@@ -9,7 +10,8 @@ import { PrintReadingButton } from './ocr-reading-print';
 
 export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
   const pattern = analysis.pattern;
-  const records = alignRecordsToRows(pattern?.records ?? [], analysis.pages ?? []);
+  const document = buildOcrReadingDocument(analysis);
+  const records = document.records;
   const columns = recordTableColumns(records);
   const kind = pattern?.documentKind?.trim() || 'Document';
   const summary = ocrReadingText(pattern?.summary ?? '');
@@ -28,7 +30,7 @@ export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
         </p>
         <h1>{analysis.fileName}</h1>
         <p className="reading-meta">
-          {analysis.lines.length} lines · {analysis.model} · {analysis.id}
+          {analysis.pages.length} pages · {analysis.lines.length} transcript lines · {records.length} records
         </p>
         {summary ? <p className="reading-summary">{summary}</p> : null}
         {analysis.error ? <p className="reading-warning">{analysis.error}</p> : null}
@@ -39,6 +41,8 @@ export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
             ))}
           </ul>
         ) : null}
+
+        <JsonDocument value={document} fileName={analysis.fileName} />
 
         {pattern && Object.keys(pattern.fields).length > 0 ? (
           <section>
@@ -57,7 +61,7 @@ export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
         {records.length > 0 && columns.length > 0 ? (
           <section>
             <h2>Records</h2>
-            <div className="reading-table-wrap">
+            <div className="reading-table-wrap" tabIndex={0} role="region" aria-label="Document records">
               <table>
                 <thead>
                   <tr>
@@ -69,7 +73,7 @@ export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
                           scope="col"
                           aria-label={label || `Column ${Number(column.slice(1)) + 1}`}
                         >
-                          {label || '\u00a0'}
+                          {label || `Column ${Number(column.slice(1)) + 1}`}
                         </th>
                       );
                     })}
@@ -123,18 +127,8 @@ export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
 
         <section className="reading-transcript">
           <h2>Transcript</h2>
-          {analysis.pages.map((page) => (
-            <div key={page.page}>
-              <h3>Page {page.page}</h3>
-              {page.rows.length === 0 ? (
-                <p className="reading-meta">No extracted text.</p>
-              ) : (
-                page.rows.map((row, index) => (
-                  <p key={index}>{ocrReadingText(row) || row}</p>
-                ))
-              )}
-            </div>
-          ))}
+          <p className="reading-meta">The complete extracted text, in page order. Line numbers restart on each page.</p>
+          <DocumentTranscript pages={analysis.pages} />
         </section>
       </article>
     </div>

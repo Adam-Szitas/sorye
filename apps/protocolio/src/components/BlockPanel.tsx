@@ -1,3 +1,4 @@
+import { uploadToDrive } from '@sorye/sdk/files';
 import { useState, useRef, useId } from 'react';
 import type {
   Block, TextBlock, ImageBlock, DividerBlock,
@@ -330,6 +331,7 @@ function ImageConfig({ block, onChange }: { block: ImageBlock; onChange: (b: Blo
     setSelectedId('upload');
     try {
       const dataUri = await fileToDataUri(file);
+      await uploadToDrive(file, 'protocolio');
       onChange({ ...block, src: dataUri });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to read file');

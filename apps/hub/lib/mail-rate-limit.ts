@@ -7,6 +7,15 @@ export function assertMailRateLimit(
   max: number,
   windowMs: number,
 ): void {
+  assertRateLimit(key, max, windowMs, 'Too many mail requests. Try again in a minute.');
+}
+
+export function assertRateLimit(
+  key: string,
+  max: number,
+  windowMs: number,
+  message = 'Too many requests. Try again in a minute.',
+): void {
   const now = Date.now();
   const current = buckets.get(key);
   if (!current || current.resetAt <= now) {
@@ -15,7 +24,7 @@ export function assertMailRateLimit(
   }
   current.count += 1;
   if (current.count > max) {
-    throw new Error('Too many mail requests. Try again in a minute.');
+    throw new Error(message);
   }
 }
 

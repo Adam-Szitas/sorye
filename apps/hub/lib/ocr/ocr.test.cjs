@@ -30,6 +30,93 @@ const { chunkRowPages, MAX_TRANSCRIPT_BYTES } = load('./chunks.ts');
 const { emptyPattern, normalizePattern, supplementFromRows } = load('./pattern.ts');
 const run = (text, x = 0, math = false) => ({ text, x, y: 0, height: 12, width: text.length * 6, math });
 
+test('reading export keeps complete transcript and aligned content without layout or identity metadata', () => {
+  const { buildOcrReadingDocument, alignRecordsToRows } = load('../../../../packages/types/src/ocr-ai.ts');
+  const pages = [{ page: 1, rows: ['Item\tAmount', 'Service\t96 491,29', 'x_y = 2  m²'] }, { page: 2, rows: [] }];
+  const pattern = { ...emptyPattern(), fields: { Total: '96 491,29' }, math: [{ page: 1, row: 2, text: 'x_y = 2  m²' }] };
+  const source = { fileName: 'invoice.pdf', status: 'rows_only', error: 'Model unavailable', pages, pattern,
+    workspaceId: 'private', createdBy: 'private', layout: { fontSize: 12 }, vector: { cursor: {} } };
+  const before = JSON.stringify(source);
+  const document = buildOcrReadingDocument(source);
+  assert.deepEqual(document.transcript, pages);
+  assert.deepEqual(document.records, alignRecordsToRows(pattern.records, pages));
+  assert.deepEqual(document.math, pattern.math);
+  assert.equal(document.warning, 'Model unavailable');
+  for (const key of ['workspaceId', 'createdBy', 'layout', 'fontSize', 'vector']) assert.equal(key in document, false);
+  assert.equal(JSON.stringify(source), before, 'export must not mutate stored data');
+  assert.deepEqual(buildOcrReadingDocument({ ...source, pattern: null }).transcript, pages);
+});
+
+test('LLM requires complete explicit configuration and a running server with the model', async () => {
+  const oldFetch = global.fetch;
+  const configured = { OCR_LLM_PROVIDER: 'ollama', OCR_LLM_BASE_URL: 'http://127.0.0.1:8000', OCR_LLM_MODEL: 'qwen3:8b' };
+  let env = {};
+  let calls = 0;
+  const llm = load('./llm.ts', {
+    '@/lib/env': { getEnv: () => env },
+    '@/lib/security': { assertSafeLlmBaseUrl: (url) => url },
+  });
+  try {
+    global.fetch = async () => { calls++; throw new Error('offline'); };
+    for (const key of Object.keys(configured)) {
+      env = { ...configured, [key]: undefined };
+      await assert.rejects(llm.completeJson('document'), /LLM skipped/);
+      await llm.releaseLoadedModel();
+    }
+    assert.equal(calls, 0, 'missing config must never cause network calls, including cleanup');
+    env = configured;
+    await assert.rejects(llm.completeJson('document'), /LLM skipped/);
+    assert.equal(calls, 1, 'offline servers receive only a readiness probe');
+    global.fetch = async () => Response.json({ models: [] });
+    await assert.rejects(llm.assertLlmAvailable(), /LLM skipped/);
+    global.fetch = async () => Response.json({ models: [{ name: 'qwen3:8b' }] });
+    await llm.assertLlmAvailable();
+    env = { ...configured, OCR_LLM_PROVIDER: 'vllm' };
+    global.fetch = async (url, init) => {
+      assert.equal(String(url), 'http://127.0.0.1:8000/v1/models');
+      assert.equal(init.redirect, 'error');
+      return Response.json({ data: [{ id: 'qwen3:8b' }] });
+    };
+    await llm.assertLlmAvailable();
+    global.fetch = async () => Response.json({}, { status: 503 });
+    await assert.rejects(llm.assertLlmAvailable(), /LLM skipped/);
+  } finally { global.fetch = oldFetch; }
+});
+
+test('unavailable LLM is excluded while rows and prior results are retained', async () => {
+  class Unavailable extends Error {}
+  let calls = 0;
+  const { analyzeRowPages } = load('./analyze.ts', {
+    './llm': {
+      llmModelName: () => 'test', LlmUnavailableError: Unavailable,
+      assertLlmAvailable: async () => { throw new Unavailable('LLM skipped'); },
+      completeJson: async () => { calls++; },
+    },
+  });
+  const prior = { ...emptyPattern(), summary: 'Previously read section' };
+  const result = await analyzeRowPages([{ page: 1, rows: ['retained text'] }], undefined, { prior });
+  assert.equal(result.status, 'rows_only');
+  assert.equal(result.pattern.summary, prior.summary);
+  assert.equal(result.error, 'LLM skipped');
+  assert.equal(calls, 0);
+});
+
+test('server stopping during work excludes remaining slices without retries', async () => {
+  class Unavailable extends Error {}
+  let calls = 0;
+  const { analyzeRowPages } = load('./analyze.ts', {
+    './llm': {
+      llmModelName: () => 'test', LlmUnavailableError: Unavailable,
+      assertLlmAvailable: async () => {},
+      completeJson: async () => { calls++; throw new Unavailable('Server stopped'); },
+    },
+  });
+  const result = await analyzeRowPages([{ page: 1, rows: Array(100).fill('text '.repeat(100)) }]);
+  assert.equal(result.status, 'rows_only');
+  assert.equal(result.error, 'Server stopped');
+  assert.equal(calls, 1);
+});
+
 test('long source rows retain their middle and both ends', () => {
   const text = 'a'.repeat(10000) + 'MIDDLE' + 'b'.repeat(15000);
   assert.deepEqual(layoutToRows([run(text)], []), [text]);
@@ -198,7 +285,7 @@ test('a scrambled model reply is put back on the listing lines', async () => {
 
   const { analyzeRowPages } = load('./analyze.ts', {
     './llm': {
-      llmModelName: () => 'test',
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
       completeJson: async () => ({
         documentKind: 'table',
         summary: 'Position',
@@ -294,7 +381,7 @@ test('space-separated listing lines keep grouped amounts on their own row', asyn
 
   const { analyzeRowPages } = load('./analyze.ts', {
     './llm': {
-      llmModelName: () => 'test',
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
       completeJson: async () => ({
         documentKind: 'table',
         summary: 'Position',
@@ -383,7 +470,7 @@ test('document vector keeps page offsets and marks an image-only page incomplete
 
 test('image-only pages are not reported ready even if the model succeeds', async () => {
   const { analyzeRowPages } = load('./analyze.ts', {
-    './llm': { llmModelName: () => 'test', completeJson: async () => emptyPattern() },
+    './llm': { llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {}, completeJson: async () => emptyPattern() },
   });
   const result = await analyzeRowPages([{ page: 2, rows: ['[IMAGE]'] }]);
   assert.equal(result.status, 'rows_only');
@@ -392,7 +479,7 @@ test('image-only pages are not reported ready even if the model succeeds', async
 
 test('model failure preserves every source math annotation', async () => {
   const { analyzeRowPages } = load('./analyze.ts', {
-    './llm': { llmModelName: () => 'test', completeJson: async () => { throw new Error('Unavailable'); } },
+    './llm': { llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {}, completeJson: async () => { throw new Error('Unavailable'); } },
   });
   const result = await analyzeRowPages([{ page: 1, rows: ['[MATH]x=2[/MATH]'] }]);
   assert.equal(result.status, 'rows_only');
@@ -459,7 +546,7 @@ test('output limit is split until every slice finishes', async () => {
   const calls = [];
   const { analyzeRowPages } = load('./analyze.ts', {
     './llm': {
-      llmModelName: () => 'test',
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
       completeJson: async (text) => {
         calls.push(text);
         const blocks = text.split('\n').filter((line) => line.startsWith('PAGE ')).length;
@@ -481,7 +568,7 @@ test('output limit is split until every slice finishes', async () => {
 test('a long document pauses with a cursor instead of failing the rest', async () => {
   const { analyzeRowPages } = load('./analyze.ts', {
     './llm': {
-      llmModelName: () => 'test',
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
       completeJson: async () => ({ documentKind: 'article', summary: 'Part', patterns: [], records: [], fields: {}, math: [], images: [] }),
     },
   });
@@ -522,6 +609,7 @@ test('Ollama requests enforce context, output, thinking and batch limits', async
   const oldFetch = global.fetch;
   const requests = [];
   global.fetch = async (url, init) => {
+    if (String(url).endsWith('/api/tags')) return Response.json({ models: [{ name: 'qwen3:8b' }] });
     requests.push({ url, ...init, body: JSON.parse(init.body) });
     return Response.json({ message: { content: JSON.stringify(emptyPattern()) }, done_reason: 'stop' });
   };
@@ -578,7 +666,9 @@ test('GPU headroom guard rejects low memory, overheating and missing telemetry',
 
 test('model output truncation is reported as incomplete rather than accepted JSON', async () => {
   const oldFetch = global.fetch;
-  global.fetch = async () => Response.json({ message: { content: '{}' }, done_reason: 'length' });
+  global.fetch = async (url) => String(url).endsWith('/api/tags')
+    ? Response.json({ models: [{ name: 'qwen3:8b' }] })
+    : Response.json({ message: { content: '{}' }, done_reason: 'length' });
   try {
     const { completeJson } = load('./llm.ts', {
       '@/lib/env': { getEnv: () => ({ OCR_LLM_PROVIDER: 'ollama', OCR_LLM_BASE_URL: 'http://127.0.0.1:8000', OCR_LLM_MODEL: 'qwen3:8b' }) },

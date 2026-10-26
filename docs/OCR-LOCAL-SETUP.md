@@ -56,8 +56,10 @@ These are selectable-text PDFs, not scanned-image accuracy tests. Regenerate the
 
 The Node.js Hub owns admission and inference requests. The OCR browser app never calls the LLM directly.
 
+LLM participation is opt-in: all of `OCR_LLM_PROVIDER` (`ollama` or `vllm`), `OCR_LLM_BASE_URL`, and `OCR_LLM_MODEL` must be explicitly set in the Hub environment. Restart Hub after changing them. There are no implicit connection defaults. Before inference, Hub probes the running server (three-second timeout) and requires the configured model in Ollama `/api/tags` or vLLM `/v1/models`. Ollama weights can remain unloaded until an actual inference request; Hub never starts a server or downloads a model. Missing/invalid configuration, an offline server, or a missing model excludes the LLM stage and saves `rows_only`, preserving extracted rows and any previous partial pattern. A server failure during inference stops the remaining sections without repeated inference attempts. Cleanup only contacts a model that was used.
+
 - One active document per Hub process, across workspaces and browser tabs. Excess requests receive HTTP 429 plus `Retry-After`; they are not queued in memory. The lock survives Next development module reloads and releases on errors.
-- A one-second pause after a completed document prevents rapid restarts. Before processing, the local GPU guard rejects requests if less than 1,536 MiB is free or the reported temperature is at least 85 C (HTTP 503).
+- A one-second pause after a completed document prevents rapid restarts. After model availability is verified, the optional local GPU guard skips the LLM stage if less than 1,536 MiB is free or the reported temperature is at least 85 C; PDF extraction is retained as `rows_only`.
 - Transcript chunks are at most 4,000 UTF-8 bytes. The combined system/user input is rejected above 6,000 bytes; source rows are never shortened to fit.
 - One sequential model call per chunk, with 8,192 context tokens, at most 1,800 generated tokens, thinking disabled, and batch size 128 in Ollama.
 - The model returns compact representative records rather than copying every source record into its limited output. Every extracted source row and detected math annotation remains in storage independently of model output.

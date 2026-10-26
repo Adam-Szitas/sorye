@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { RelayStorages } from './relay-storages';
 import { Select } from '@sorye/sdk/react';
 import {
   CHANNEL_META,
@@ -221,6 +222,8 @@ export function RelayConfigure({
           </label>
         </div>
       </section>
+
+      <RelayStorages />
     </div>
   );
 }

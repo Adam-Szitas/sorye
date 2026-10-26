@@ -85,7 +85,7 @@ export interface RelayRoute {
 
 export interface RelayDeliveryRecord {
   channelId: string;
-  channelKind: RelayChannelKind;
+  channelKind: RelayChannelKind | 'app';
   status: RelayDeliveryStatus;
   detail: string;
   sentAt?: string;

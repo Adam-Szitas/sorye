@@ -20,6 +20,7 @@ export * from './storefront';
 export * from './site';
 export * from './mail';
 export * from './files';
+export * from './cloud-storage';
 
 import type { SubscriptionTierId } from './subscription';
 import type { UserWorkspace } from './workspace';

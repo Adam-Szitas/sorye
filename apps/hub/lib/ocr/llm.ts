@@ -8,9 +8,45 @@ const OUTPUT_TOKENS = 1800;
 const MAX_INPUT_BYTES = 6000;
 /** How long Ollama may keep weights resident if the process dies mid-request. */
 const OLLAMA_KEEP_ALIVE = '30s';
+let modelUsed = false;
+
+export class LlmUnavailableError extends Error {}
+
+function configuration() {
+  const env = getEnv();
+  if (!['ollama', 'vllm'].includes(env.OCR_LLM_PROVIDER ?? '') ||
+      !env.OCR_LLM_BASE_URL || !env.OCR_LLM_MODEL) {
+    throw new LlmUnavailableError('LLM skipped: set OCR_LLM_PROVIDER, OCR_LLM_BASE_URL and OCR_LLM_MODEL in the Hub environment.');
+  }
+  return { provider: env.OCR_LLM_PROVIDER, base: assertSafeLlmBaseUrl(env.OCR_LLM_BASE_URL), model: env.OCR_LLM_MODEL.trim() };
+}
+
+/** Probe the running server without loading weights or sending document text. */
+export async function assertLlmAvailable(parentSignal?: AbortSignal): Promise<void> {
+  try {
+    const { provider, base } = configuration();
+    const model = llmModelName();
+    const signal = AbortSignal.timeout(3000);
+    const response = await fetch(new URL(provider === 'ollama' ? '/api/tags' : '/v1/models', base), {
+      signal: parentSignal ? AbortSignal.any([parentSignal, signal]) : signal,
+      cache: 'no-store', redirect: 'error',
+    });
+    if (!response.ok) throw new Error('Model server is unavailable');
+    const payload = await response.json();
+    const entries = provider === 'ollama' ? payload?.models : payload?.data;
+    const expected = provider === 'ollama' && !model.includes(':') ? `${model}:latest` : model;
+    if (!Array.isArray(entries) || !entries.some((entry: { name?: string; model?: string; id?: string } | null) =>
+      provider === 'ollama' ? (entry?.name === expected || entry?.model === expected) : entry?.id === model)) {
+      throw new Error('Configured model is unavailable');
+    }
+  } catch (err) {
+    if (err instanceof LlmUnavailableError) throw err;
+    throw new LlmUnavailableError('LLM skipped: the configured model server must be running and list the configured model. Extracted rows are retained.');
+  }
+}
 
 export function llmModelName(): string {
-  const model = getEnv().OCR_LLM_MODEL.trim();
+  const { model } = configuration();
   if (
     model.length > 80 ||
     model.includes('..') ||
@@ -23,7 +59,7 @@ export function llmModelName(): string {
 
 /** OpenAI-compatible chat route on the Qwen/Qwen3-8B container. */
 export function llmChatUrl(): string {
-  const base = assertSafeLlmBaseUrl(getEnv().OCR_LLM_BASE_URL);
+  const { base } = configuration();
   return new URL(getEnv().OCR_LLM_PROVIDER === 'ollama' ? '/api/chat' : '/v1/chat/completions', base).toString();
 }
 
@@ -92,6 +128,7 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
     ? AbortSignal.any([parentSignal, AbortSignal.timeout(LLM_TIMEOUT_MS)])
     : AbortSignal.timeout(LLM_TIMEOUT_MS);
   signal.throwIfAborted();
+  await assertLlmAvailable(signal);
   const ollama = getEnv().OCR_LLM_PROVIDER === 'ollama';
   const url = llmChatUrl();
   const model = llmModelName();
@@ -114,6 +151,7 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
 
   let response: Response;
   try {
+    modelUsed = true;
     response = await postChat(url, body, signal);
     if (!ollama && response.status === 400) {
       const preview = (await response.clone().text()).slice(0, 400);
@@ -134,7 +172,7 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
     }
     const aborted = err instanceof Error && err.name === 'TimeoutError';
     console.error('[ocr] qwen unreachable', aborted ? 'timeout' : err);
-    throw new Error(
+    throw new LlmUnavailableError(
       aborted
         ? 'Qwen3-8B took too long. The rows are still stored.'
         : `Qwen3-8B is not reachable. ${startHint()}`,
@@ -144,7 +182,7 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
   if (!response.ok) {
     const errorBody = (await response.text()).slice(0, 500);
     console.error('[ocr] qwen status', response.status);
-    throw new Error(classifyFailure(response.status, errorBody));
+    throw new LlmUnavailableError(classifyFailure(response.status, errorBody));
   }
 
   const payload = (await response.json()) as unknown;
@@ -171,9 +209,11 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
  * container, so this is a no-op for that provider.
  */
 export async function releaseLoadedModel(): Promise<void> {
+  if (!modelUsed) return;
+  modelUsed = false;
   if (getEnv().OCR_LLM_PROVIDER !== 'ollama') return;
   try {
-    const base = assertSafeLlmBaseUrl(getEnv().OCR_LLM_BASE_URL);
+    const { base } = configuration();
     await fetch(new URL('/api/generate', base).toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

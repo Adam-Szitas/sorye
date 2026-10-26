@@ -1,6 +1,10 @@
+import '@sorye/sdk/register';
+import '@sorye/sdk/tokens.css';
+import { Button } from '@sorye/sdk/react';
+import { uploadToDrive } from '@sorye/sdk/files';
+import { JsonDocument } from '@sorye/sdk/react/document-reading';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  buildOcrObject,
   type OcrAnalysis,
   type OcrMatrix,
   type OcrPageLayout,
@@ -134,6 +138,7 @@ function revokePreviewUrls(scans: PageScan[]): void {
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadedFileRef = useRef<File | null>(null);
+  const driveFileIdRef = useRef<string | null>(null);
   const modalRef = useRef<HTMLDialogElement>(null);
   const pageScansRef = useRef<PageScan[]>([]);
   const jobRef = useRef(0);
@@ -147,8 +152,6 @@ export default function App() {
   const [scanPageCount, setScanPageCount] = useState(0);
   const [displayPages, setDisplayPages] = useState<OcrPageLayoutView[]>([]);
   const [ready, setReady] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<number | null>(null);
   const [sending, setSending] = useState(false);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -160,6 +163,7 @@ export default function App() {
   }, [pageScans]);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('handoff')) return;
     const savedId = sessionStorage.getItem('sorye.ocr.reading');
     if (!savedId) return;
     let cancelled = false;
@@ -193,9 +197,6 @@ export default function App() {
     return () => {
       revokePreviewUrls(pageScansRef.current);
       clearPdfCache();
-      if (copyTimerRef.current != null) {
-        window.clearTimeout(copyTimerRef.current);
-      }
     };
   }, []);
 
@@ -223,63 +224,16 @@ export default function App() {
     return sum / pageScans.length;
   }, [pageScans]);
 
-  const consumable = useMemo(() => {
-    if (!ready || pageScans.length === 0) return null;
+  const consumable = useMemo(() => ready ? {
+    fileName: pageScans[0]?.result.source.fileName ?? 'document.pdf',
+    pages: pageScans.map((scan) => ({
+      page: scan.page,
+      text: scan.result.rawText,
+      rows: (displayPages.find((page) => page.page === scan.page)?.layout ?? layoutFromResult(scan.result)).matrix,
+    })),
+  } : null, [ready, pageScans, displayPages]);
 
-    const pages = pageScans.map((scan) => {
-      const layout =
-        displayPages.find((page) => page.page === scan.page)?.layout ??
-        layoutFromResult(scan.result);
-      return {
-        page: scan.page,
-        meanConfidence: scan.result.meanConfidence,
-        rawText: scan.result.rawText,
-        layout,
-        matrix: layout.matrix,
-        rows: layout.rows.length,
-        cols: layout.cols,
-        object: buildOcrObject(layout.matrix),
-      };
-    });
-
-    if (pages.length === 1) {
-      const scan = pageScans[0]!;
-      const page = pages[0]!;
-      return {
-        id: scan.result.id,
-        createdAt: scan.result.createdAt,
-        source: scan.result.source,
-        meanConfidence: scan.result.meanConfidence,
-        rawText: scan.result.rawText,
-        layout: page.layout,
-        matrix: page.matrix,
-        rows: page.rows,
-        cols: page.cols,
-        object: page.object,
-      };
-    }
-
-    return {
-      id: pageScans[0]!.result.id,
-      createdAt: pageScans[0]!.result.createdAt,
-      source: {
-        ...pageScans[0]!.result.source,
-        pdfPage: undefined,
-      },
-      meanConfidence,
-      pageCount: pages.length,
-      pages,
-      layout: {
-        rows: pages.flatMap((p) => p.layout.rows),
-        cols: Math.max(0, ...pages.map((p) => p.layout.cols)),
-        columnWidths: pages[0]?.layout.columnWidths ?? [],
-        medianFontSize: pages[0]?.layout.medianFontSize ?? 12,
-        matrix: pages.flatMap((p) => p.layout.matrix),
-      },
-    };
-  }, [ready, pageScans, displayPages, meanConfidence]);
-
-  const runScan = useCallback(async (file: File) => {
+  const runScan = useCallback(async (file: File, driveFileId?: string) => {
     const jobId = ++jobRef.current;
     setError(null);
     setBusy(true);
@@ -290,7 +244,6 @@ export default function App() {
     });
     setDisplayPages([]);
     setReady(false);
-    setCopied(false);
     setSendStatus(null);
     setAnalysis(null);
     setAnalysisError(null);
@@ -302,8 +255,13 @@ export default function App() {
     clearPdfCache();
 
     uploadedFileRef.current = file;
+    driveFileIdRef.current = driveFileId ?? null;
 
     try {
+      if (!driveFileIdRef.current) {
+        const saved = await uploadToDrive(file, 'ocr', hubApiPath('/api/files'));
+        driveFileIdRef.current = saved.id;
+      }
       const pageCount = await getPdfPageCount(file);
       setScanPageCount(pageCount);
       const scans: PageScan[] = [];
@@ -384,16 +342,57 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const handoffId = new URLSearchParams(window.location.search).get('handoff');
+    if (!handoffId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        setBusy(true);
+        const response = await fetch(hubApiPath(`/api/handoffs?id=${encodeURIComponent(handoffId)}`), {
+          credentials: 'include', signal: controller.signal,
+        });
+        const { handoff, error: message } = await response.json();
+        if (!response.ok) throw new Error(message || 'Could not open file');
+        if (handoff.targetAppId !== 'ocr' || handoff.kind !== 'workspace-file' ||
+            typeof handoff.payload?.fileId !== 'string') throw new Error('Invalid OCR file handoff');
+        const fileId = handoff.payload.fileId;
+        const fileResponse = await fetch(hubApiPath(`/api/files/${encodeURIComponent(fileId)}`), {
+          credentials: 'include', signal: controller.signal,
+        });
+        if (!fileResponse.ok) throw new Error('This file is no longer available in Drive');
+        const blob = await fileResponse.blob();
+        const disposition = fileResponse.headers.get('Content-Disposition') || '';
+        const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+        const file = new File([blob], encodedName ? decodeURIComponent(encodedName) : handoff.title, { type: blob.type });
+        if (!isAcceptedUpload(file)) throw new Error('Only PDF documents are supported');
+        if (controller.signal.aborted) return;
+        await runScan(file, fileId);
+        if (controller.signal.aborted) return;
+        await fetch(hubApiPath('/api/handoffs'), {
+          method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: handoffId, consume: true }),
+        });
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError(err instanceof Error ? err.message : 'Could not open file');
+          setBusy(false);
+        }
+      }
+    })();
+    return () => { controller.abort(); };
+  }, [runScan]);
+
   const processFile = useCallback(
     (file: File | null) => {
-      if (!file) return;
+      if (!file || busy || analyzing) return;
       if (!isAcceptedUpload(file)) {
         setError('Only PDF documents are supported.');
         return;
       }
       void runScan(file);
     },
-    [runScan],
+    [runScan, busy, analyzing],
   );
 
   function viewPdfPage(next: number) {
@@ -480,20 +479,6 @@ export default function App() {
     }
   }
 
-  async function copyJson() {
-    if (!consumable) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(consumable, null, 2));
-      setCopied(true);
-      if (copyTimerRef.current != null) {
-        window.clearTimeout(copyTimerRef.current);
-      }
-      copyTimerRef.current = window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setError('Could not copy JSON');
-    }
-  }
-
   async function analyzeWithQwen() {
     const file = uploadedFileRef.current;
     if (!file || analyzing) return;
@@ -502,7 +487,8 @@ export default function App() {
     setAnalysis(null);
     try {
       const body = new FormData();
-      body.append('file', file, file.name);
+      if (!driveFileIdRef.current) throw new Error('Save this PDF to Drive before analyzing it');
+      body.append('fileId', driveFileIdRef.current);
       const res = await fetch(hubApiPath('/api/ocr/analyze'), {
         method: 'POST',
         credentials: 'include',
@@ -538,18 +524,6 @@ export default function App() {
     }
   }
 
-  function downloadJson() {
-    if (!consumable) return;
-    const blob = new Blob([JSON.stringify(consumable, null, 2)], {
-      type: 'application/json',
-    });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${pageScans[0]?.result.id ?? 'ocr'}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
   function closePreview() {
     modalRef.current?.close();
   }
@@ -573,17 +547,18 @@ export default function App() {
     <div className="ocr-app">
       <header className="ocr-header">
         <div>
-          <h1>OCR</h1>
-          <p>
-            Upload a PDF (English and German). The layout matrix stays in the
-            browser. Analyze with Qwen sends the file to Hub, which reads each
-            page as the visible lines and asks a local Qwen3 8B model for pattern
-            JSON. Stored lines keep the page text, including spaces. A figure
-            with no text is marked [IMAGE].
-          </p>
+          <p className="ocr-eyebrow">DOCUMENT WORKSPACE</p>
+          <h1>Turn documents into useful data</h1>
+          <p>Extract your PDF, review its tables, and explore an AI-assisted reading with a complete transcript.</p>
         </div>
         <span className="ocr-badge">PDF only · EN + DE</span>
       </header>
+
+      <ol className="ocr-workflow" role="list" aria-label="Document workflow">
+        <li aria-current={!ready ? 'step' : undefined}><span>01</span><div><strong>Upload</strong><small>Choose a PDF</small></div></li>
+        <li aria-current={ready && !analysis ? 'step' : undefined}><span>02</span><div><strong>Review</strong><small>Check extracted tables</small></div></li>
+        <li aria-current={analysis ? 'step' : undefined}><span>03</span><div><strong>Understand</strong><small>Read, inspect, export</small></div></li>
+      </ol>
 
       <section className="ocr-upload" aria-label="Upload">
         <input
@@ -602,16 +577,16 @@ export default function App() {
             void processFile(e.dataTransfer.files?.[0] ?? null);
           }}
         >
-          <p>Drop a PDF here, or pick a file</p>
+          <div className="ocr-upload-mark" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" /></svg>
+          </div>
+          <h2>{result?.source.fileName || 'Start with a document'}</h2>
+          <p>Drop your PDF here, or browse your files. Uploads are saved in Drive / OCR.</p>
+          <a href={hubApiPath('/apps/files')}>Browse Drive</a>
           <div className="ocr-actions">
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={busy}
-              onClick={() => fileRef.current?.click()}
-            >
-              Upload PDF
-            </button>
+            <Button variant="primary" size="lg" disabled={busy || analyzing} onClick={() => fileRef.current?.click()}>
+              {ready ? 'Choose another PDF' : 'Upload PDF'}
+            </Button>
           </div>
         </div>
 
@@ -676,14 +651,9 @@ export default function App() {
               >
                 Show matrix
               </button>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={analyzing}
-                onClick={() => void analyzeWithQwen()}
-              >
-                {analyzing ? 'Asking Qwen…' : 'Analyze with Qwen'}
-              </button>
+              <Button variant="primary" loading={analyzing} disabled={analyzing} onClick={() => void analyzeWithQwen()}>
+                {analyzing ? 'Reading document…' : 'Analyze with Qwen'}
+              </Button>
               <button
                 type="button"
                 className="btn-ghost"
@@ -716,7 +686,7 @@ export default function App() {
         {error ? <p className="ocr-error">{error}</p> : null}
       </section>
 
-      <div className="ocr-layout">
+      {pageScans.length > 0 ? <div className="ocr-layout">
         <aside className="ocr-preview-panel">
           <h2>Source</h2>
           {previewUrl ? (
@@ -749,30 +719,7 @@ export default function App() {
         <section className="ocr-table-panel" aria-label="Layout matrix">
           <div className="ocr-table-head">
             <h2>Layout matrix</h2>
-            {ready ? (
-              <div className="ocr-actions">
-                <button type="button" className="btn-ghost" onClick={showInUi}>
-                  Show matrix
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  disabled={sending}
-                  onClick={() => void sendToProtocolio()}
-                >
-                  {sending ? 'Sending…' : 'Send to Protocolio'}
-                </button>
-                <button type="button" className="btn-ghost" onClick={exportCsv}>
-                  Export as CSV
-                </button>
-                <button type="button" className="btn-ghost" onClick={() => void copyJson()}>
-                  {copied ? 'Copied' : 'Copy JSON'}
-                </button>
-                <button type="button" className="btn-ghost" onClick={downloadJson}>
-                  Download
-                </button>
-              </div>
-            ) : null}
+            <span className="ocr-muted">{displayPages.length} pages · {totalRowCount} rows</span>
           </div>
 
           {pageScans.length === 0 ? (
@@ -788,10 +735,10 @@ export default function App() {
             <DocumentPagesPreview pages={displayPages} />
           )}
         </section>
-      </div>
+      </div> : null}
 
       {analysis && analysis.status !== 'extracting' ? (
-        <ReadingView analysis={analysis} />
+        <ReadingView key={analysis.id} analysis={analysis} />
       ) : null}
       {analysis?.status === 'extracting' ? (
         <p className="ocr-send-status" role="status">
@@ -804,22 +751,8 @@ export default function App() {
       {analysisError ? <p className="ocr-error">{analysisError}</p> : null}
 
       {consumable ? (
-        <section className="ocr-json-panel" aria-label="Consumable object">
-          <div className="ocr-table-head">
-            <h2>Consumable object</h2>
-            {totalCellCount > 0 ? (
-              <span className="ocr-muted">
-                {totalRowCount} row{totalRowCount === 1 ? '' : 's'} ·{' '}
-                {totalCellCount} cell{totalCellCount === 1 ? '' : 's'}
-                {displayPages.length > 1
-                  ? ` · ${displayPages.length} pages`
-                  : ''}
-              </span>
-            ) : null}
-          </div>
-          <pre>
-            <code>{JSON.stringify(consumable, null, 2)}</code>
-          </pre>
+        <section className="ocr-extraction-export">
+          <JsonDocument value={consumable} fileName={consumable.fileName.replace(/\.pdf$/i, '') + '-extracted'} label="extracted JSON" />
         </section>
       ) : null}
 

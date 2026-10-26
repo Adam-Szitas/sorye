@@ -15,6 +15,29 @@ import {
 } from '@sorye/types';
 import { assertSafeWebhookUrl } from '@/lib/security';
 import { jsonDataFile } from '@/lib/store/json-file';
+import { createHandoff } from '@/lib/handoffs';
+import { getWorkspaceFile, FileAccessError } from '@/lib/files';
+import { fileOpenAppIds } from '@sorye/types';
+
+/** Explicit user-directed delivery is independent of optional notification routes. */
+export async function relayFileToApp(workspaceId: string, fileId: string, targetAppId: string) {
+  const file = await getWorkspaceFile(workspaceId, fileId);
+  if (!fileOpenAppIds(file.mime).includes(targetAppId)) {
+    throw new FileAccessError('This app cannot open this file type', 400);
+  }
+  const handoff = await createHandoff(workspaceId, {
+    sourceAppId: 'files', targetAppId, kind: 'workspace-file',
+    title: file.displayName, payload: { fileId: file.id },
+  });
+  await appendRelayMessage(workspaceId, {
+    id: `msg-${randomUUID().slice(0, 8)}`, sourceAppId: 'files',
+    title: `Open ${file.displayName}`, body: `Drive → ${targetAppId}`,
+    eventName: 'sorye.files.open_requested', createdAt: handoff.createdAt,
+    deliveries: [{ channelId: targetAppId, channelKind: 'app', status: 'sent',
+      detail: `File handoff ${handoff.id} delivered to ${targetAppId}`, sentAt: handoff.createdAt }],
+  });
+  return handoff;
+}
 import { ensureEventsChannel, postSystemMessage } from '@/lib/store/messenger';
 
 type RelayStore = Record<string, RelayConfig>;

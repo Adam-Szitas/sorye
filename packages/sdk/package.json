@@ -8,6 +8,7 @@
     "./dist/register.js"
   ],
   "exports": {
+    "./files": "./src/files.ts",
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
@@ -20,7 +21,8 @@
       "types": "./src/react/index.ts",
       "import": "./src/react/index.ts"
     },
-    "./tokens.css": "./src/styles/tokens.css"
+    "./tokens.css": "./src/styles/tokens.css",
+    "./react/document-reading": "./src/react/document-reading.tsx"
   },
   "scripts": {
     "dev": "vite --port 3002",
