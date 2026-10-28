@@ -168,6 +168,7 @@ export function createKernelHost(options: KernelHostOptions = {}): KernelHost {
 }
 
 export { startKernelSync };
+export { startVisibleRefresh, type VisibleRefresh } from './refresh';
 
 function write<T>(field: Signal<T>, next: T) {
   if (!Object.is(field.peek(), next)) field.value = next;

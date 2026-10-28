@@ -29,7 +29,7 @@ function scrubEvent<T extends Sentry.Event>(event: T): T {
   return event;
 }
 
-Sentry.init({
+if (process.env.NEXT_PUBLIC_SENTRY_DSN) Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   environment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
   release: process.env.NEXT_PUBLIC_SENTRY_RELEASE || undefined,

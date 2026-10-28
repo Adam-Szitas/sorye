@@ -7,6 +7,8 @@ A subscription-based app platform monorepo. The **Hub** is your workspace OS —
 | Doc | Contents |
 |-----|----------|
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Core platform design — Hub, MF, events, storage |
+| [docs/APP-BEHAVIOR-TREE.md](./docs/APP-BEHAVIOR-TREE.md) | Static visual map of app behavior, data flow, and state ownership |
+| [docs/APP-BEHAVIOR-TREE.html](./docs/APP-BEHAVIOR-TREE.html) | Openable local visual reference with handler and persistence details |
 | [docs/SECURITY.md](./docs/SECURITY.md) | Threat model and mitigations |
 | [docs/apps/APPS.md](./docs/apps/APPS.md) | Every app in detail + communication patterns |
 

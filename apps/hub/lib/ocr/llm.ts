@@ -1,24 +1,23 @@
-import { getEnv } from '@/lib/env';
 import { assertSafeLlmBaseUrl } from '@/lib/security';
 import { OCR_PATTERN_SYSTEM_PROMPT } from './pattern';
+import { getLlmControlSettings, logLlmActivity } from '../llm-control';
 
 const LLM_TIMEOUT_MS = 90_000;
-const CONTEXT_TOKENS = 8192;
-const OUTPUT_TOKENS = 1800;
 const MAX_INPUT_BYTES = 6000;
+const MAX_MODEL_RESPONSE_BYTES = 256 * 1024;
 /** How long Ollama may keep weights resident if the process dies mid-request. */
 const OLLAMA_KEEP_ALIVE = '30s';
 let modelUsed = false;
+const activeRequests = new Set<AbortController>();
 
 export class LlmUnavailableError extends Error {}
 
 function configuration() {
-  const env = getEnv();
-  if (!['ollama', 'vllm'].includes(env.OCR_LLM_PROVIDER ?? '') ||
-      !env.OCR_LLM_BASE_URL || !env.OCR_LLM_MODEL) {
-    throw new LlmUnavailableError('LLM skipped: set OCR_LLM_PROVIDER, OCR_LLM_BASE_URL and OCR_LLM_MODEL in the Hub environment.');
+  const settings = getLlmControlSettings();
+  if (!settings.baseUrl || !settings.model) {
+    throw new LlmUnavailableError('LLM skipped: configure the local provider, server URL, and model in Dashboard → LLM & GPU.');
   }
-  return { provider: env.OCR_LLM_PROVIDER, base: assertSafeLlmBaseUrl(env.OCR_LLM_BASE_URL), model: env.OCR_LLM_MODEL.trim() };
+  return { provider: settings.provider, base: assertSafeLlmBaseUrl(settings.baseUrl), model: settings.model.trim() };
 }
 
 /** Probe the running server without loading weights or sending document text. */
@@ -39,8 +38,11 @@ export async function assertLlmAvailable(parentSignal?: AbortSignal): Promise<vo
       provider === 'ollama' ? (entry?.name === expected || entry?.model === expected) : entry?.id === model)) {
       throw new Error('Configured model is unavailable');
     }
+    logLlmActivity({ type: 'engine_probe', provider, model, status: 'ok', detail: 'Configured model is available.' });
   } catch (err) {
     if (err instanceof LlmUnavailableError) throw err;
+    const settings = getLlmControlSettings();
+    logLlmActivity({ type: 'engine_probe', provider: settings.provider, model: settings.model, status: 'error', detail: 'Configured model server or model is unavailable.' });
     throw new LlmUnavailableError('LLM skipped: the configured model server must be running and list the configured model. Extracted rows are retained.');
   }
 }
@@ -60,7 +62,7 @@ export function llmModelName(): string {
 /** OpenAI-compatible chat route on the Qwen/Qwen3-8B container. */
 export function llmChatUrl(): string {
   const { base } = configuration();
-  return new URL(getEnv().OCR_LLM_PROVIDER === 'ollama' ? '/api/chat' : '/v1/chat/completions', base).toString();
+  return new URL(getLlmControlSettings().provider === 'ollama' ? '/api/chat' : '/v1/chat/completions', base).toString();
 }
 
 function stripThink(text: string): string {
@@ -95,7 +97,7 @@ function classifyFailure(status: number, body: string): string {
 }
 
 function startHint(): string {
-  return getEnv().OCR_LLM_PROVIDER === 'ollama'
+  return getLlmControlSettings().provider === 'ollama'
     ? 'Start: docker compose --profile qwen-local up -d qwen-local; then docker exec sorye-qwen-local ollama pull qwen3:8b'
     : 'Start: docker compose --profile qwen up -d qwen3';
 }
@@ -111,6 +113,29 @@ async function postChat(url: string, body: Record<string, unknown>, signal: Abor
   });
 }
 
+async function readBoundedText(response: Response, limit = MAX_MODEL_RESPONSE_BYTES): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        throw new Error('Qwen response exceeds the safe size limit.');
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function messageContent(payload: unknown): string {
   if (!payload || typeof payload !== 'object') return '';
   const choices = (payload as { choices?: unknown }).choices;
@@ -120,7 +145,8 @@ function messageContent(payload: unknown): string {
 }
 
 /** Ask the local Qwen/Qwen3-8B server for one JSON object. */
-export async function completeJson(user: string, parentSignal?: AbortSignal): Promise<unknown> {
+async function completeJsonRequest(user: string, parentSignal?: AbortSignal): Promise<unknown> {
+  if (getLlmControlSettings().paused) throw new LlmUnavailableError('LLM inference is paused by a platform administrator.');
   if (Buffer.byteLength(user) + Buffer.byteLength(OCR_PATTERN_SYSTEM_PROMPT) > MAX_INPUT_BYTES) {
     throw new Error('OCR model input exceeds the safe context budget.');
   }
@@ -129,7 +155,8 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
     : AbortSignal.timeout(LLM_TIMEOUT_MS);
   signal.throwIfAborted();
   await assertLlmAvailable(signal);
-  const ollama = getEnv().OCR_LLM_PROVIDER === 'ollama';
+  const settings = getLlmControlSettings();
+  const ollama = settings.provider === 'ollama';
   const url = llmChatUrl();
   const model = llmModelName();
   const messages = [
@@ -138,12 +165,12 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
   ];
   const body: Record<string, unknown> = ollama ? {
     model, messages, stream: false, think: false, format: 'json', keep_alive: OLLAMA_KEEP_ALIVE,
-    options: { temperature: 0.1, num_ctx: CONTEXT_TOKENS, num_predict: OUTPUT_TOKENS, num_batch: 128 },
+    options: { temperature: 0.1, num_ctx: settings.contextLength, num_predict: settings.maxOutputTokens, num_batch: 128 },
   } : {
     model,
     messages,
     temperature: 0.1,
-    max_tokens: OUTPUT_TOKENS,
+    max_tokens: settings.maxOutputTokens,
     stream: false,
     response_format: { type: 'json_object' },
     chat_template_kwargs: { enable_thinking: false },
@@ -154,13 +181,13 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
     modelUsed = true;
     response = await postChat(url, body, signal);
     if (!ollama && response.status === 400) {
-      const preview = (await response.clone().text()).slice(0, 400);
+      const preview = (await readBoundedText(response.clone(), 4096)).slice(0, 400);
       if (/response_format|chat_template|enable_thinking|extra/i.test(preview)) {
         response = await postChat(url, {
           model,
           messages,
           temperature: 0.1,
-          max_tokens: OUTPUT_TOKENS,
+          max_tokens: settings.maxOutputTokens,
           stream: false,
           chat_template_kwargs: { enable_thinking: false },
         }, signal);
@@ -180,12 +207,18 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
   }
 
   if (!response.ok) {
-    const errorBody = (await response.text()).slice(0, 500);
+    const errorBody = (await readBoundedText(response, 4096)).slice(0, 500);
     console.error('[ocr] qwen status', response.status);
     throw new LlmUnavailableError(classifyFailure(response.status, errorBody));
   }
 
-  const payload = (await response.json()) as unknown;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(await readBoundedText(response));
+  } catch (err) {
+    if (err instanceof Error && /safe size limit/.test(err.message)) throw err;
+    throw new Error('Qwen returned an invalid response.');
+  }
   if (!payload || typeof payload !== 'object') throw new Error('Qwen returned an invalid response.');
   const native = payload as { message?: { content?: unknown }; done_reason?: string; choices?: Array<{ finish_reason?: string }> };
   if (native.done_reason === 'length' || native.choices?.[0]?.finish_reason === 'length') {
@@ -204,6 +237,37 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
   }
 }
 
+/** Wrap every inference in a tracked abort controller and metadata-only audit events. */
+export async function completeJson(user: string, parentSignal?: AbortSignal): Promise<unknown> {
+  const settings = getLlmControlSettings();
+  const started = Date.now();
+  const inputBytes = Buffer.byteLength(user) + Buffer.byteLength(OCR_PATTERN_SYSTEM_PROMPT);
+  logLlmActivity({ type: 'request_start', provider: settings.provider, model: settings.model, inputBytes, status: 'ok' });
+  const controller = new AbortController();
+  activeRequests.add(controller);
+  try {
+    const signal = parentSignal
+      ? AbortSignal.any([parentSignal, controller.signal])
+      : controller.signal;
+    const result = await completeJsonRequest(user, signal);
+    logLlmActivity({
+      type: 'request_success', provider: settings.provider, model: settings.model,
+      durationMs: Date.now() - started, inputBytes,
+      outputBytes: Buffer.byteLength(JSON.stringify(result)), status: 'ok',
+    });
+    return result;
+  } catch (err) {
+    logLlmActivity({
+      type: 'request_failure', provider: settings.provider, model: settings.model,
+      durationMs: Date.now() - started, inputBytes, status: 'error',
+      detail: err instanceof LlmUnavailableError ? 'Provider unavailable or inference paused.' : 'Inference failed; source rows remain available.',
+    });
+    throw err;
+  } finally {
+    activeRequests.delete(controller);
+  }
+}
+
 /**
  * Drop Ollama's resident weights. vLLM keeps the model for the life of its
  * container, so this is a no-op for that provider.
@@ -211,7 +275,7 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
 export async function releaseLoadedModel(): Promise<void> {
   if (!modelUsed) return;
   modelUsed = false;
-  if (getEnv().OCR_LLM_PROVIDER !== 'ollama') return;
+  if (getLlmControlSettings().provider !== 'ollama') return;
   try {
     const { base } = configuration();
     await fetch(new URL('/api/generate', base).toString(), {
@@ -224,5 +288,31 @@ export async function releaseLoadedModel(): Promise<void> {
     });
   } catch (err) {
     console.error('[ocr] qwen unload', err instanceof Error ? err.message : err);
+  }
+}
+
+/** Pause active Ollama generations and unload the configured model runner. */
+export async function stopLlmRuntime(): Promise<{ unloaded: boolean; detail: string }> {
+  for (const controller of activeRequests) controller.abort();
+  modelUsed = false;
+  const settings = getLlmControlSettings();
+  if (settings.provider !== 'ollama') {
+    const detail = 'Inference is paused, but vLLM stays loaded until its service is stopped by its operator.';
+    logLlmActivity({ type: 'model_unload', provider: settings.provider, model: settings.model, status: 'blocked', detail });
+    return { unloaded: false, detail };
+  }
+  try {
+    const { base, model } = configuration();
+    const response = await fetch(new URL('/api/generate', base), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, keep_alive: 0 }),
+      signal: AbortSignal.timeout(10_000), cache: 'no-store', redirect: 'error',
+    });
+    if (!response.ok) throw new Error('Ollama refused the unload request.');
+    logLlmActivity({ type: 'model_unload', provider: settings.provider, model, status: 'ok', detail: 'Configured Ollama model runner was asked to unload.' });
+    return { unloaded: true, detail: 'Configured Ollama model runner was asked to unload from GPU memory.' };
+  } catch {
+    logLlmActivity({ type: 'model_unload', provider: settings.provider, model: settings.model, status: 'error', detail: 'Model unload request failed.' });
+    return { unloaded: false, detail: 'Could not unload the model. Check provider connectivity and model status.' };
   }
 }

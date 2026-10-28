@@ -9,6 +9,7 @@ import {
   type NotificationSnapshot,
   type WorkspaceNotificationItem,
 } from '@sorye/types';
+import { startVisibleRefresh, type VisibleRefresh } from '@sorye/platform/host';
 import {
   createContext,
   useCallback,
@@ -77,7 +78,7 @@ export function NotificationProvider({
   // Bumped on workspace switch/unmount so in-flight responses for the old
   // workspace are discarded instead of clobbering the new one.
   const generation = useRef(0);
-  const inFlight = useRef(false);
+  const refreshController = useRef<VisibleRefresh | null>(null);
   const lastSignature = useRef('');
   const onNavigateRef = useRef(onNavigateToApp);
   onNavigateRef.current = onNavigateToApp;
@@ -153,22 +154,8 @@ export function NotificationProvider({
   );
 
   const refresh = useCallback(async () => {
-    if (!workspaceId) return;
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const gen = generation.current;
-    try {
-      const res = await fetch('/api/notifications', { credentials: 'include' });
-      if (!res.ok) return;
-      const data = (await res.json()) as NotificationSnapshot;
-      if (gen !== generation.current) return;
-      ingestSnapshot(data, seeded.current ? 'live' : 'seed');
-    } catch {
-      // ignore
-    } finally {
-      inFlight.current = false;
-    }
-  }, [workspaceId, ingestSnapshot]);
+    await refreshController.current?.refresh();
+  }, []);
 
   useEffect(() => {
     generation.current += 1;
@@ -181,55 +168,27 @@ export function NotificationProvider({
     if (!workspaceId) return;
 
     const gen = generation.current;
-    void (async () => {
-      try {
-        const res = await fetch('/api/notifications', { credentials: 'include' });
-        if (!res.ok) return;
-        const data = (await res.json()) as NotificationSnapshot;
-        if (gen !== generation.current) return;
-        ingestSnapshot(data, 'seed');
-      } catch {
-        // ignore
-      }
-    })();
+    const controller = startVisibleRefresh(async (signal) => {
+      const res = await fetch('/api/notifications', {
+        credentials: 'include', signal, cache: 'no-store', priority: 'low',
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as NotificationSnapshot;
+      if (gen !== generation.current || signal.aborted) return;
+      ingestSnapshot(data, seeded.current ? 'live' : 'seed');
+    }, {
+      intervalMs: 60_000,
+      events: [HUB_NOTIFY_EVENT],
+      channels: [RELAY_BROADCAST_CHANNEL, NOTIFICATION_BROADCAST_CHANNEL],
+    });
+    refreshController.current = controller;
 
     return () => {
       generation.current += 1;
+      controller.dispose();
+      if (refreshController.current === controller) refreshController.current = null;
     };
   }, [workspaceId, ingestSnapshot]);
-
-  useEffect(() => {
-    if (!workspaceId) return;
-
-    const bump = () => {
-      void refresh();
-    };
-
-    window.addEventListener(HUB_NOTIFY_EVENT, bump);
-
-    let relayChannel: BroadcastChannel | null = null;
-    let notifChannel: BroadcastChannel | null = null;
-    try {
-      relayChannel = new BroadcastChannel(RELAY_BROADCAST_CHANNEL);
-      relayChannel.onmessage = bump;
-      notifChannel = new BroadcastChannel(NOTIFICATION_BROADCAST_CHANNEL);
-      notifChannel.onmessage = bump;
-    } catch {
-      // ignore
-    }
-
-    // Events + BroadcastChannel already refresh immediately. The interval is
-    // a safety net (other-tab messenger unread, missed events) — keep it slow
-    // so the shell does not re-render on a 2.5s heartbeat.
-    const timer = window.setInterval(bump, 15_000);
-
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener(HUB_NOTIFY_EVENT, bump);
-      relayChannel?.close();
-      notifChannel?.close();
-    };
-  }, [workspaceId, refresh]);
 
   const markRead = useCallback(
     async (notificationIds: string[]) => {
@@ -321,7 +280,7 @@ export function NotificationProvider({
       },
       centerOpen,
       toasts,
-      openCenter: () => setCenterOpen(true),
+      openCenter: () => { setCenterOpen(true); void refresh(); },
       closeCenter: () => setCenterOpen(false),
       refresh,
       markRead,

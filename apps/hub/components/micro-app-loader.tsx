@@ -23,19 +23,18 @@ function ensureHub() {
   hubInitialized = true;
 }
 
-function ensureRemote(config: MicroFrontendConfig) {
+function ensureRemote(remoteName: string, entry: string) {
   ensureHub();
-  const entry = resolveRemoteEntry(config);
-  if (registeredEntries.get(config.remoteName) === entry) return;
+  if (registeredEntries.get(remoteName) === entry) return;
 
   registerRemotes([
     {
-      name: config.remoteName,
+      name: remoteName,
       entry,
       type: 'module',
     },
   ]);
-  registeredEntries.set(config.remoteName, entry);
+  registeredEntries.set(remoteName, entry);
 }
 
 function resolveMount(mod: unknown): RemoteMount | null {
@@ -87,7 +86,7 @@ function MicroAppMount({ config, appId, framework = 'react' }: MicroAppLoaderPro
       setMountFn(null);
 
       try {
-        ensureRemote(config);
+        ensureRemote(remoteName, remoteEntry);
         const moduleId = `${remoteName}/${exposedModule.replace(/^\.\//, '')}`;
         const mod = await loadRemote<unknown>(moduleId);
         const resolved = resolveMount(mod);
@@ -119,7 +118,7 @@ function MicroAppMount({ config, appId, framework = 'react' }: MicroAppLoaderPro
     };
     // Primitive identity — a new `config` object with the same fields must
     // not remount a live remote.
-  }, [remoteName, exposedModule, remoteEntry, config]);
+  }, [remoteName, exposedModule, remoteEntry]);
 
   useEffect(() => {
     if (!mountFn || !mountTarget || !host) return;

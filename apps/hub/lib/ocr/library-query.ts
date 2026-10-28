@@ -1,5 +1,6 @@
 import {
   alignRecordsToRows,
+  normalizeOcrTable,
   ocrReadingText,
   type OcrAiPage,
   type OcrAmountFilter,
@@ -112,6 +113,17 @@ function valuesFor(
         if (keyEquals(key, target.key)) found.push({ where: 'records', key, value, record });
       }
     }
+    const positional = /^c(\d+)$/i.exec(target.key);
+    if (positional) {
+      const column = Number(positional[1]);
+      for (const row of pattern.normalizedRows ?? pattern.matrixRows ?? []) {
+        const value = row.cells[column] ?? '';
+        if (value) found.push({
+          where: 'records', key: target.key, value,
+          record: Object.fromEntries(row.cells.map((cell, index) => [`c${index}`, cell])),
+        });
+      }
+    }
   }
   return found;
 }
@@ -125,6 +137,7 @@ function containsCode(value: string, code: string): boolean {
 }
 
 function patternHasCode(pattern: OcrPatternDocument, code: string): boolean {
+  if (pattern.pdfTypeId && containsCode(pattern.pdfTypeId, code)) return true;
   for (const value of Object.values(pattern.fields)) {
     if (containsCode(value, code)) return true;
   }
@@ -132,6 +145,9 @@ function patternHasCode(pattern: OcrPatternDocument, code: string): boolean {
     for (const value of Object.values(record)) {
       if (containsCode(value, code)) return true;
     }
+  }
+  for (const row of pattern.normalizedRows ?? pattern.matrixRows ?? []) {
+    if (row.cells.some((value) => containsCode(value, code))) return true;
   }
   return false;
 }
@@ -147,7 +163,7 @@ function project(
   source: OcrLibrarySource,
   query: OcrLibraryQuery,
 ): OcrLibraryHit | null {
-  const pattern = source.pattern ?? {
+  let pattern = source.pattern ?? {
     documentKind: 'unknown',
     summary: '',
     patterns: [],
@@ -155,7 +171,13 @@ function project(
     fields: {},
     math: [],
     images: [],
+    matrixRows: [],
+    unclearFindings: [],
   };
+  if (pattern.records.length === 0 && source.pages?.length) {
+    const table = normalizeOcrTable(source.pages, pattern);
+    pattern = { ...pattern, pdfTypeId: table.pdfTypeId, normalizedRows: table.rows, normalizedColumns: table.columns };
+  }
   if (query.name && !source.fileName.toLowerCase().includes(query.name.toLowerCase())) return null;
   for (const notation of query.notations ?? []) {
     if (!hasNotation(pattern, notation)) return null;
@@ -166,7 +188,12 @@ function project(
   }
 
   let fields = { ...pattern.fields };
-  let records = pattern.records.map((record) => ({ ...record }));
+  const matrixRecords = (pattern.normalizedRows ?? pattern.matrixRows ?? []).map((row) =>
+    Object.fromEntries(row.cells.map((cell, index) => [`c${index}`, cell])),
+  );
+  let records = pattern.records.length > 0
+    ? pattern.records.map((record) => ({ ...record }))
+    : matrixRecords;
   if (query.scope === 'fields') {
     const amountFilters = query.amounts ?? [];
     const wanted = new Set<string>();
@@ -191,7 +218,7 @@ function project(
         }),
       ),
     );
-    records = pattern.records.filter((record) => {
+    records = (pattern.records.length > 0 ? pattern.records : matrixRecords).filter((record) => {
       if (query.code && !Object.values(record).some((value) => containsCode(value, query.code!))) return false;
       return amountFilters.every((filter) => {
         const key = notationKeys(filter.notation).key;
@@ -201,7 +228,7 @@ function project(
         return amount != null && compareAmount(amount, filter.op, filter.value);
       });
     }).map(pick);
-  } else if (source.pages && source.pages.length > 0) {
+  } else if (pattern.records.length > 0 && source.pages && source.pages.length > 0) {
     records = alignRecordsToRows(records, source.pages);
   }
 

@@ -70,6 +70,7 @@ A Vite app on its own port may call Hub `/api/*` with `credentials: 'include'` w
 | `GET`/`PUT /api/calendar` | Workspace from session; event count/title/date caps |
 | `PATCH /api/relay` | Webhook URL safety on channel save |
 | `POST /api/ocr/analyze` | Session workspace; PDF magic-byte + 64 MB + 500 page caps; rate limit on new uploads; PDF bytes are not stored; `OCR_LLM_BASE_URL` is server env only and allowlisted (`localhost`, `127.0.0.1`, `::1`, `qwen3`, `host.docker.internal`) so it cannot be aimed at a metadata address; pattern JSON size cap. `POST /api/ocr/analyses/{id}/continue` resumes the same workspace row and does not count as a new upload. |
+| `GET/PATCH /api/admin/llm`, `POST /api/admin/llm/action` | Platform-admin session only, verified server-side with `isPlatformAdmin`; provider URL passes the existing local-host allowlist; settings and request payloads are bounded; actions pause/abort OCR work and may unload only the configured Ollama model. No shell command or arbitrary PID kill is exposed. Activity logs omit prompt, PDF, and model response content. |
 | `GET /api/ocr/analyses` | Session workspace; list/get never cross workspaces. `POST /api/ocr/analyses/query` searches the latest 50 rows in that workspace (UTC dates, names, JSON keys, codes, amounts) and does not return page transcripts. `PATCH /api/ocr/analyses/{id}` renames a row in the same workspace; the name is stripped of control characters and capped at 180 characters. |
 
 ### Other hardening

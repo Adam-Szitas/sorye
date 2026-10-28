@@ -1,9 +1,10 @@
 import type { OcrAiPage } from '@sorye/types';
-import { formatRowForModel } from './pattern';
+import { formatRowForModel, OCR_PATTERN_SYSTEM_PROMPT } from './pattern';
 
 // UTF-8 bytes conservatively bound token usage, including non-Latin text.
 // Leaves room for instructions and output in the explicit 8K context.
-export const MAX_TRANSCRIPT_BYTES = 4_000;
+// Keep the complete system + user prompt under the LLM's byte budget.
+export const MAX_TRANSCRIPT_BYTES = 6_000 - Buffer.byteLength(OCR_PATTERN_SYSTEM_PROMPT) - 1;
 
 /** Split only model input; the stored rows stay whole and unchanged. */
 export function chunkRowPages(pages: OcrAiPage[]): string[] {

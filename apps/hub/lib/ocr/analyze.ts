@@ -1,13 +1,15 @@
 import type { OcrAiPage, OcrAnalysisStatus, OcrPatternDocument } from '@sorye/types';
 import { completeJson, llmModelName, assertLlmAvailable, LlmUnavailableError } from './llm';
-import { assertGpuHeadroom } from './gpu-guard';
+import { assertGpuHeadroom, GpuCapacityError } from './gpu-guard';
 import { chunkRowPages, splitChunk } from './chunks';
 import { buildVector, completenessWarning } from './vector';
+import { getLlmControlSettings } from '../llm-control';
 import {
   emptyPattern,
   mergePatterns,
   normalizePattern,
   supplementFromRows,
+  OCR_NORMALIZATION_VERSION,
 } from './pattern';
 
 /**
@@ -55,6 +57,9 @@ async function readSlice(
   depth: number,
 ): Promise<OcrPatternDocument> {
   try {
+    // Recheck before each inference call because other workloads can consume
+    // VRAM while this document is being processed.
+    await assertGpuHeadroom();
     return normalizePattern(await completeJson(text, signal));
   } catch (err) {
     if (!isOutputLimit(err)) throw err;
@@ -75,7 +80,7 @@ async function readSliceWithRetry(
     try {
       return await readSlice(text, signal, 0);
     } catch (err) {
-      if (isCancelled(err, signal) || err instanceof LlmUnavailableError) throw err;
+      if (isCancelled(err, signal) || err instanceof LlmUnavailableError || err instanceof GpuCapacityError) throw err;
       last = err;
     }
   }
@@ -98,9 +103,22 @@ export async function analyzeRowPages(
   signal?: AbortSignal,
   options: AnalyzeOptions = {},
 ): Promise<OcrLlmResult> {
+  // Chunk boundaries change with prompt/input revisions. Never resume an old
+  // cursor against a different chunk list, which would silently skip data.
+  if (options.prior && options.prior.normalizationVersion !== OCR_NORMALIZATION_VERSION) {
+    options = { ...options, start: 0, missed: 0, prior: null };
+  }
   let model = 'none';
   try {
     model = llmModelName();
+    if (getLlmControlSettings().paused) {
+      return {
+        model, status: 'rows_only',
+        pattern: supplementFromRows(options.prior ?? emptyPattern(), pages),
+        error: 'LLM inference is paused by a platform administrator. Extracted rows are retained.',
+        cursor: { next: options.start ?? 0, total: chunkRowPages(pages).length, missed: options.missed ?? 0 },
+      };
+    }
     if (hasInk(pages)) {
       await assertLlmAvailable(signal);
       await assertGpuHeadroom();
@@ -144,7 +162,7 @@ export async function analyzeRowPages(
       parts.push(await readSliceWithRetry(chunks[index]!, signal));
       index += 1;
     } catch (err) {
-      if (err instanceof LlmUnavailableError) {
+      if (err instanceof LlmUnavailableError || err instanceof GpuCapacityError) {
         return {
           model, status: 'rows_only',
           pattern: supplementFromRows(parts.length ? mergePatterns(parts) : emptyPattern(), pages),
@@ -163,14 +181,6 @@ export async function analyzeRowPages(
     parts.length > 0 ? mergePatterns(parts) : emptyPattern(),
     pages,
   );
-  if (done) {
-    const lead = pattern.summary.trim();
-    pattern.summary = (lead
-      ? `${lead} All ${pages.length} pages were read.`
-      : `All ${pages.length} pages were read.`
-    ).slice(0, 2_000);
-  }
-
   let error: string | null = null;
   if (done && missed > 0) {
     error = `Qwen could not read ${missed} section${missed === 1 ? '' : 's'}. The other sections and every extracted row are stored.`;

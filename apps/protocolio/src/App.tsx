@@ -33,6 +33,34 @@ import {
 
 type EditorMode = 'visual' | 'json';
 type Panel = 'builder' | 'json';
+const DRAFT_STORAGE_KEY = 'sorye:protocolio:draft:v1';
+
+interface SavedDraft {
+  version: 1;
+  template: PdfTemplate;
+  panel: Panel;
+  mode: EditorMode;
+  jsonText: string;
+}
+
+function readSavedDraft(): SavedDraft | null {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<SavedDraft>;
+    if (
+      value.version !== 1 ||
+      !value.template ||
+      !Array.isArray(value.template.blocks) ||
+      (value.panel !== 'builder' && value.panel !== 'json') ||
+      (value.mode !== 'visual' && value.mode !== 'json') ||
+      typeof value.jsonText !== 'string'
+    ) return null;
+    return value as SavedDraft;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
   const [panel, setPanel] = useState<Panel>('builder');
@@ -47,6 +75,8 @@ export default function App() {
   const [jsonEditorKey, setJsonEditorKey] = useState(0);
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const [bridgeStatus, setBridgeStatus] = useState<string | null>(null);
+  const [jsonText, setJsonText] = useState('');
+  const [draftReady, setDraftReady] = useState(false);
   const handledHandoffRef = useRef<string | null>(null);
 
   const refreshBuilder = useCallback(() => {
@@ -66,6 +96,7 @@ export default function App() {
       TBS.loadTemplate(template);
       refreshBuilder();
       setJsonParsed(template);
+      setJsonText(JSON.stringify(template, null, 2));
       setJsonEditorKey((k) => k + 1);
       setParseError(undefined);
       setPanel('builder');
@@ -118,9 +149,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    TBS.loadTemplate(minimalPreset);
+    const saved = readSavedDraft();
+    const template = saved?.template ?? minimalPreset;
+    TBS.loadTemplate(template);
+    if (saved) {
+      setPanel(saved.panel);
+      setMode(saved.mode);
+      setJsonParsed(template);
+      setJsonText(saved.jsonText);
+    } else {
+      setJsonParsed(minimalPreset);
+      setJsonText(JSON.stringify(minimalPreset, null, 2));
+    }
     refreshBuilder();
+    setDraftReady(true);
   }, [refreshBuilder]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const template = mode === 'json' && jsonParsed ? jsonParsed : TBS.build();
+    try {
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+        version: 1,
+        template,
+        panel,
+        mode,
+        jsonText,
+      } satisfies SavedDraft));
+    } catch {
+      // Storage can be disabled or full; the live editor remains usable.
+    }
+  }, [draftReady, builderVersion, panel, mode, jsonParsed, jsonText]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,6 +228,7 @@ export default function App() {
     if (newMode === 'json') {
       const next = blocks.length > 0 ? TBS.build() : jsonParsed;
       setJsonParsed(next);
+      if (next) setJsonText(JSON.stringify(next, null, 2));
       setJsonEditorKey((k) => k + 1);
       setParseError(undefined);
     } else if (jsonParsed) {
@@ -185,6 +245,7 @@ export default function App() {
   }
 
   function handleJsonChange(template: PdfTemplate | null, _raw: string) {
+    setJsonText(_raw);
     if (template) {
       setJsonParsed(template);
       setParseError(undefined);
@@ -214,6 +275,7 @@ export default function App() {
     TBS.loadTemplate(template);
     refreshBuilder();
     setJsonParsed(template);
+    setJsonText(JSON.stringify(template, null, 2));
     setJsonEditorKey((k) => k + 1);
     setParseError(undefined);
   }
@@ -341,9 +403,7 @@ export default function App() {
           <JsonEditor
             key={jsonEditorKey}
             mode="json"
-            initialJson={
-              jsonParsed ? JSON.stringify(jsonParsed, null, 2) : builderJson
-            }
+            initialJson={jsonText || (jsonParsed ? JSON.stringify(jsonParsed, null, 2) : builderJson)}
             onTemplateChange={handleJsonChange}
             parseError={parseError}
           />

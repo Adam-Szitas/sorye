@@ -190,6 +190,9 @@ importers:
       imapflow:
         specifier: ^2.1.0
         version: 2.1.0
+      import-in-the-middle:
+        specifier: 3.5.1
+        version: 3.5.1
       mailparser:
         specifier: ^3.9.29
         version: 3.9.29
@@ -214,6 +217,9 @@ importers:
       react-dom:
         specifier: 19.2.7
         version: 19.2.7(react@19.2.7)
+      require-in-the-middle:
+        specifier: 8.0.1
+        version: 8.0.1
       swr:
         specifier: ^2.3.3
         version: 2.4.2(react@19.2.7)

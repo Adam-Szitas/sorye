@@ -360,6 +360,38 @@ function splitsFromOccupancy(
   return splits;
 }
 
+/**
+ * Fallback for long calculation rows whose word widths make the occupancy
+ * histogram look solid. Repeated left edges still reveal the document's
+ * stable columns (identifier, description, result) across separate rows.
+ */
+function splitsFromRepeatedStarts(
+  lines: OcrWordBox[][],
+  pageWidth: number,
+  medianFontSize: number,
+): number[] {
+  // Keep long description/calculation runs here. The 42% spanning-word
+  // heuristic used by occupancy-based detection incorrectly discards them,
+  // even when they begin at a stable table column and leave a large gutter
+  // before right-aligned results. Only near-full-page runs are headings.
+  const compactLines = lines.map((line) =>
+    line.filter((word) => word.x1 - word.x0 <= pageWidth * 0.78),
+  );
+  const threshold = Math.max(12, medianFontSize * 1.25);
+  const starts = compactLines.flatMap((line) => line.map((word) => word.x0));
+  const centers = cluster1D(starts, threshold);
+  const minHits = Math.max(3, Math.ceil(compactLines.length * 0.1));
+  const anchors = centers.filter((center) => {
+    let hits = 0;
+    for (const line of compactLines) {
+      if (line.some((word) => Math.abs(word.x0 - center) <= threshold)) hits += 1;
+    }
+    return hits >= minHits;
+  });
+  if (anchors.length < 3) return [];
+  return anchors.slice(0, -1).map((anchor, index) => (anchor + anchors[index + 1]!) / 2);
+}
+
 function dropGhostBands(
   bands: ColumnBand[],
   words: OcrWordBox[],
@@ -426,6 +458,10 @@ function detectColumnBands(
 
   const lines = wordsToLines(words);
   let splits = splitsFromLineGaps(lines, width, medianFontSize);
+  if (splits.length < 2) {
+    const alignedSplits = splitsFromRepeatedStarts(lines, width, medianFontSize);
+    if (alignedSplits.length >= 2) splits = alignedSplits;
+  }
   if (splits.length === 0) {
     splits = splitsFromOccupancy(words, width, medianFontSize);
   }

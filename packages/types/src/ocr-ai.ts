@@ -1,4 +1,6 @@
 /** Row transcript sent to Qwen, plus the pattern JSON stored afterwards. */
+import { normalizeOcrTable } from './ocr-table';
+export { normalizeOcrTable, ocrSourceTableCells, ocrPositionId, OCR_TABLE_COLUMNS } from './ocr-table';
 
 export const OCR_IMAGE_MARKER = '[IMAGE]';
 export const OCR_MATH_OPEN = '[MATH]';
@@ -334,18 +336,64 @@ export interface OcrPatternHit {
   rowIndexes: number[];
 }
 
+/** A table row classified by the model, retaining the source location. */
+export interface OcrMatrixRow {
+  page: number;
+  row: number;
+  id: string;
+  cells: string[];
+}
+
+export interface OcrUnclearFinding {
+  page: number;
+  finding: string;
+}
+
+/** One Node-extracted source row, fully represented in the AI-normalized table. */
+export interface OcrNormalizedRow {
+  page: number;
+  row: number;
+  id: string | null;
+  cells: string[];
+  /** True when source values supplied or repaired the three normalized cells. */
+  sourceFallback?: boolean;
+}
+
+/** Canonical matching for schedule IDs such as `01.11.05 A` and `1.11.5A`. */
+export function normalizeOcrMatrixId(raw: string): string {
+  const match = /^\s*(\d+(?:\.\d+)+)\s*\.?\s*([a-z])?\s*$/i.exec(raw);
+  if (!match) return `raw:${raw.trim().replace(/\s+/g, ' ').toUpperCase()}`;
+  const address = match[1]!
+    .split('.')
+    .map((part) => part.replace(/^0+(?=\d)/, ''))
+    .join('.');
+  return `${address}${match[2]?.toUpperCase() ?? ''}`;
+}
+
 /**
  * Structured reading of a row transcript.
  * Math spans are copied verbatim — a later pass will interpret them.
  */
 export interface OcrPatternDocument {
   documentKind: string;
+  /** Printed document type, e.g. 7.RH-TOP27-TOP23; separate from the stored PDF ID. */
+  pdfTypeId?: string | null;
+  /** Server-owned prompt/input version, used to safely resume chunked inference. */
+  normalizationVersion?: number;
   summary: string;
   patterns: OcrPatternHit[];
   records: Array<Record<string, string>>;
   fields: Record<string, string>;
   math: Array<{ page: number; row: number; text: string }>;
   images: Array<{ page: number; row: number; marker: string }>;
+  /** Identifiers and matrix cells extracted by the model, aligned to page rows. */
+  matrixRows?: OcrMatrixRow[];
+  /** Meaningful body rows across all pages; headers and footers are excluded. */
+  normalizedRows?: OcrNormalizedRow[];
+  /** Shared AI column labels, in the same order as normalizedRows[].cells. */
+  normalizedColumns?: string[];
+  /** Only uncertainty, missing values, or ambiguous reading issues by page. */
+  unclearFindings?: OcrUnclearFinding[];
 }
 
 export type OcrAnalysisStatus = 'extracting' | 'ready' | 'rows_only';
@@ -418,21 +466,24 @@ export interface OcrAnalysis {
   createdAt: string;
 }
 
-/** Content-only export: the visible aligned records plus the complete, unmodified transcript. */
+/** Content-only export: structured rows and findings, without a text transcript. */
 export function buildOcrReadingDocument(analysis: OcrAnalysis) {
   const pattern = analysis.pattern;
+  // Also repairs older saved readings without another inference or upload.
+  const table = normalizeOcrTable(analysis.pages, pattern);
   return {
+    id: analysis.id,
     fileName: analysis.fileName,
+    pdfTypeId: table.pdfTypeId,
     status: analysis.status,
     ...(analysis.error ? { warning: analysis.error } : {}),
     documentKind: pattern?.documentKind ?? 'Document',
-    summary: pattern?.summary ?? '',
-    fields: { ...pattern?.fields },
-    records: alignRecordsToRows(pattern?.records ?? [], analysis.pages),
-    patterns: (pattern?.patterns ?? []).map(({ name, description, repeats, page, rowIndexes }) =>
-      ({ name, description, repeats, page, rowIndexes: [...rowIndexes] })),
-    math: (pattern?.math ?? []).map(({ page, row, text }) => ({ page, row, text })),
-    images: (pattern?.images ?? []).map(({ page, row, marker }) => ({ page, row, marker })),
-    transcript: analysis.pages.map(({ page, rows }) => ({ page, rows: [...rows] })),
+    normalizedData: {
+      columns: table.columns,
+      rows: table.rows.map(({ page, row, id, cells, sourceFallback }) => ({
+        page, row, id, cells: [...cells], ...(sourceFallback ? { sourceFallback: true } : {}),
+      })),
+    },
+    unclearFindings: (pattern?.unclearFindings ?? []).map(({ page, finding }) => ({ page, finding })),
   };
 }

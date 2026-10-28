@@ -20,9 +20,11 @@ import {
 import { EmbedGuide } from './embed-guide';
 import { DatabaseGuide } from './database-guide';
 import { EventsGuide } from './events-guide';
+import { LlmControl } from './LlmControl';
+import { PackageMap } from './PackageMap';
 import './styles.css';
 
-type DashTab = 'connect' | 'database' | 'events' | 'overview';
+type DashTab = 'connect' | 'database' | 'events' | 'overview' | 'llm' | 'package';
 
 interface MetricCard {
   label: string;
@@ -180,6 +182,8 @@ export default function App() {
       </header>
 
       <nav className="dashboard-tabs" aria-label="Dashboard sections">
+        {session?.user.isAdmin ? <button type="button" className={tab === 'llm' ? 'active' : undefined} onClick={() => setTab('llm')}>LLM &amp; GPU</button> : null}
+        <button type="button" className={tab === 'package' ? 'active' : undefined} onClick={() => setTab('package')}>My package map</button>
         <button
           type="button"
           className={tab === 'connect' ? 'active' : undefined}
@@ -224,7 +228,11 @@ export default function App() {
         </div>
       ) : null}
 
-      {!loading && !error && session && snapshots ? (
+      {!loading && !error && session && tab === 'package' ? (
+        <PackageMap session={session} />
+      ) : !loading && !error && session && tab === 'llm' && session.user.isAdmin ? (
+        <LlmControl />
+      ) : !loading && !error && session && snapshots ? (
         tab === 'connect' ? (
           <EmbedGuide
             session={session}

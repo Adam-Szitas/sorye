@@ -113,21 +113,31 @@ export async function extractPdfTextLayer(
       continue;
     }
 
-    const [, , , , e, f] = transform;
-    const [vx, vy] = viewport.convertToViewportPoint(e!, f!);
-    const fontSize =
-      Math.hypot(transform[2] ?? 0, transform[3] ?? 0) * viewport.scale ||
-      Math.abs(transform[0] ?? 10) * viewport.scale ||
-      12;
-    const width = Math.max(
-      (item.width ?? 0) * viewport.scale,
-      str.length * fontSize * 0.45,
+    const [a, b, c, d, e, f] = transform as [number, number, number, number, number, number];
+    const advanceLength = Math.hypot(a, b) || 1;
+    const verticalLength = Math.hypot(c, d) || 1;
+    const widthInPageUnits = Math.max(0, item.width ?? 0);
+    const heightInPageUnits = Math.max(item.height ?? 0, Math.hypot(c, d));
+    const origin = viewport.convertToViewportPoint(e, f);
+    const advance = viewport.convertToViewportPoint(
+      e + (a / advanceLength) * widthInPageUnits,
+      f + (b / advanceLength) * widthInPageUnits,
     );
-    const height = Math.max((item.height ?? 0) * viewport.scale, fontSize);
-    const x0 = vx;
-    const y1 = vy;
-    const y0 = y1 - height;
-    const x1 = x0 + width;
+    const vertical = viewport.convertToViewportPoint(
+      e + (c / verticalLength) * heightInPageUnits,
+      f + (d / verticalLength) * heightInPageUnits,
+    );
+    const farCorner = viewport.convertToViewportPoint(
+      e + (a / advanceLength) * widthInPageUnits + (c / verticalLength) * heightInPageUnits,
+      f + (b / advanceLength) * widthInPageUnits + (d / verticalLength) * heightInPageUnits,
+    );
+    const xs = [origin[0], advance[0], vertical[0], farCorner[0]];
+    const ys = [origin[1], advance[1], vertical[1], farCorner[1]];
+    const x0 = Math.min(...xs);
+    const y0 = Math.min(...ys);
+    const x1 = Math.max(...xs);
+    const y1 = Math.max(...ys);
+    const fontSize = Math.hypot(c, d) * viewport.scale || Math.abs(a) * viewport.scale || 12;
     const fontName = item.fontName;
 
     words.push({

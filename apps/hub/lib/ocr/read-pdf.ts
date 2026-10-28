@@ -177,28 +177,40 @@ function runsOnPage(
     if (!item || !transform || transform.length < 6) continue;
     if (!str.replace(/\s/g, '')) continue;
 
+    const [a, b, c, d, e, f] = transform as [number, number, number, number, number, number];
     const fontSize =
-      Math.hypot(transform[2] ?? 0, transform[3] ?? 0) ||
-      Math.abs(transform[0] ?? 0) ||
+      Math.hypot(c, d) ||
+      Math.hypot(a, b) ||
       Math.max(item.height ?? 0, 12);
-    const originX = transform[4] ?? 0;
-    const originY = transform[5] ?? 0;
-    const [vx, vy] = viewport.convertToViewportPoint(originX, originY);
-    const [vx2] = viewport.convertToViewportPoint(
-      originX + (item.width ?? 0),
-      originY,
+    const advanceLength = Math.hypot(a, b) || 1;
+    const verticalLength = Math.hypot(c, d) || 1;
+    const widthInPageUnits = Math.max(0, item.width ?? 0);
+    const heightInPageUnits = Math.max(item.height ?? 0, Math.hypot(c, d));
+    const origin = viewport.convertToViewportPoint(e, f);
+    const advance = viewport.convertToViewportPoint(
+      e + (a / advanceLength) * widthInPageUnits,
+      f + (b / advanceLength) * widthInPageUnits,
     );
-    const height = Math.max(fontSize, item.height ?? 0, 1);
-    const width = Math.max(
-      Math.abs(vx2 - vx),
-      fontSize * 0.45 * Math.max(1, str.trim().length),
+    const vertical = viewport.convertToViewportPoint(
+      e + (c / verticalLength) * heightInPageUnits,
+      f + (d / verticalLength) * heightInPageUnits,
     );
+    const farCorner = viewport.convertToViewportPoint(
+      e + (a / advanceLength) * widthInPageUnits + (c / verticalLength) * heightInPageUnits,
+      f + (b / advanceLength) * widthInPageUnits + (d / verticalLength) * heightInPageUnits,
+    );
+    const xs = [origin[0], advance[0], vertical[0], farCorner[0]];
+    const ys = [origin[1], advance[1], vertical[1], farCorner[1]];
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    const width = Math.max(0.5, Math.max(...xs) - x);
+    const height = Math.max(1, Math.max(...ys) - y);
     const fontFamily = item.fontName ? styles?.[item.fontName]?.fontFamily : undefined;
     const fontName = [item.fontName, fontFamily].filter(Boolean).join(' ');
     runs.push({
       text: str,
-      x: vx,
-      y: vy - height,
+      x,
+      y,
       width,
       height,
       fontName: fontName || undefined,

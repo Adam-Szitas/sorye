@@ -7,7 +7,7 @@ import { HubNativeAppBody } from '@/components/hub-native-app';
 import { AppUsageGuide } from '@/components/app-usage-guide';
 import { shouldShowUsageGuide } from '@/lib/usage-guide';
 import { isHubNativeApp, type AppCatalogEntry } from '@sorye/types';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 export type PaneSide = 'left' | 'right';
 
@@ -120,6 +120,25 @@ export function AppWorkspace({
   onSwap,
   onMove,
 }: AppWorkspaceProps) {
+  // Keep every app opened in this desk mounted for the lifetime of the Hub
+  // session. Replacing a pane then hides its previous app instead of tearing
+  // down its React tree and losing unsaved editor/form state.
+  const [visitedApps, setVisitedApps] = useState<AppCatalogEntry[]>([]);
+  useEffect(() => {
+    setVisitedApps((previous) => {
+      const next = [...previous];
+      for (const app of [left, right]) {
+        if (app && !next.some((entry) => entry.id === app.id)) next.push(app);
+      }
+      return next;
+    });
+  }, [left, right]);
+  const mountedApps = useMemo(() => {
+    const byId = new Map(visitedApps.map((app) => [app.id, app]));
+    if (left) byId.set(left.id, left);
+    if (right) byId.set(right.id, right);
+    return [...byId.values()];
+  }, [visitedApps, left, right]);
   const [ratio, setRatio] = useState(0.5);
   const dragging = useRef(false);
   const liveRatio = useRef(0.5);
@@ -185,63 +204,64 @@ export function AppWorkspace({
           both ? '' : ''
         }`}
       >
-        {left ? (
-          // key={app.id} lets React move a pane's subtree on swap/move
-          // instead of unmounting and remounting the federation remote.
-          <div
-            key={left.id}
-            ref={leftWrapRef}
-            className="flex min-h-0 min-w-0 flex-1 flex-col max-md:min-h-[40dvh]"
-            style={both ? { flex: `${ratio} 1 0%` } : undefined}
-          >
-            <AppPane
-              side="left"
-              app={left}
-              focused={focus === 'left' || aloneSide === 'left'}
-              alone={!both}
-              onFocus={() => onFocus('left')}
-              onClose={() => onClose('left')}
-              onExpand={() => onExpand('left')}
-              onMove={() => onMove('left')}
-            />
-          </div>
-        ) : null}
+        {mountedApps
+          .sort((a, b) => {
+            const rank = (entry: AppCatalogEntry) =>
+              entry.id === left?.id ? 0 : entry.id === right?.id ? 1 : 2;
+            return rank(a) - rank(b);
+          })
+          .map((app) => {
+            const side: PaneSide = left?.id === app.id ? 'left' : 'right';
+            const active = left?.id === app.id || right?.id === app.id;
+            const appIsLeft = left?.id === app.id;
+            return (
+              <Fragment key={app.id}>
+                {/* Keep this subtree mounted while another app uses the pane. */}
+                <div
+                  ref={
+                    active && appIsLeft
+                      ? leftWrapRef
+                      : active
+                        ? rightWrapRef
+                        : undefined
+                  }
+                  className={`flex min-h-0 min-w-0 flex-col max-md:min-h-[40dvh] ${active ? 'flex-1' : 'hidden'}`}
+                  style={
+                    active && both
+                      ? { flex: appIsLeft ? `${ratio} 1 0%` : `${1 - ratio} 1 0%` }
+                      : undefined
+                  }
+                  aria-hidden={!active}
+                >
+                  <AppPane
+                    side={side}
+                    app={app}
+                    focused={active && (focus === side || aloneSide === side)}
+                    alone={!both || !active}
+                    onFocus={() => onFocus(side)}
+                    onClose={() => active && onClose(side)}
+                    onExpand={() => active && onExpand(side)}
+                    onMove={() => active && onMove(side)}
+                  />
+                </div>
+                {appIsLeft && both ? (
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize panes"
+                    className="app-workspace-splitter group relative hidden cursor-col-resize items-stretch justify-center md:flex md:w-2.5"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      dragging.current = true;
+                    }}
+                  >
+                    <span className="my-auto h-16 w-1 rounded-full bg-white/20 transition group-hover:bg-[var(--color-accent)]" />
+                  </div>
+                ) : null}
+              </Fragment>
+            );
+          })}
 
-        {both ? (
-          <div
-            key="splitter"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize panes"
-            className="app-workspace-splitter group relative hidden cursor-col-resize items-stretch justify-center md:flex md:w-2.5"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              dragging.current = true;
-            }}
-          >
-            <span className="my-auto h-16 w-1 rounded-full bg-white/20 transition group-hover:bg-[var(--color-accent)]" />
-          </div>
-        ) : null}
-
-        {right ? (
-          <div
-            key={right.id}
-            ref={rightWrapRef}
-            className="flex min-h-0 min-w-0 flex-1 flex-col max-md:min-h-[40dvh]"
-            style={both ? { flex: `${1 - ratio} 1 0%` } : undefined}
-          >
-            <AppPane
-              side="right"
-              app={right}
-              focused={focus === 'right' || aloneSide === 'right'}
-              alone={!both}
-              onFocus={() => onFocus('right')}
-              onClose={() => onClose('right')}
-              onExpand={() => onExpand('right')}
-              onMove={() => onMove('right')}
-            />
-          </div>
-        ) : null}
       </div>
     </div>
   );

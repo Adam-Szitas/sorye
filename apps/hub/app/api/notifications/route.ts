@@ -6,19 +6,21 @@ import {
 } from '@/lib/notifications';
 import type { NotificationCenterSettings } from '@sorye/types';
 import { NextResponse } from 'next/server';
+import { ServerTimings } from '@/lib/server-timing';
 
 export async function GET() {
-  const session = await ensureHubUser();
+  const timings = new ServerTimings();
+  const session = await timings.measure('session', () => ensureHubUser(timings));
   if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: timings.headers() });
   }
 
-  const snapshot = await getNotificationSnapshot({
+  const snapshot = await timings.measure('notifications', () => getNotificationSnapshot({
     workspaceId: session.workspace.id,
     userId: session.user.id,
-  });
+  }));
 
-  return NextResponse.json(snapshot);
+  return NextResponse.json(snapshot, { headers: { ...timings.headers(), 'Cache-Control': 'private, no-store' } });
 }
 
 export async function PATCH(req: Request) {
@@ -72,3 +74,4 @@ export async function POST(req: Request) {
 
   return NextResponse.json(snapshot);
 }
+

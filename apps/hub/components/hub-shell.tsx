@@ -573,12 +573,10 @@ function HubShellLoaded({
           />
         )}
 
-        {workspaceOpen ? (
-          // Kept mounted (hidden) while picker/connections/launcher are open
-          // so Module Federation remotes keep their in-app state.
-          <div
+        {/* Keep apps mounted after panes close so reopening restores live state. */}
+        <div
             className={`min-h-0 flex-1 flex-col gap-3 ${
-              panel === 'workspace' ? 'flex' : 'hidden'
+              workspaceOpen && panel === 'workspace' ? 'flex' : 'hidden'
             }`}
           >
             <div className="flex flex-wrap items-center gap-2">
@@ -639,8 +637,7 @@ function HubShellLoaded({
               onSwap={swapPanes}
               onMove={movePane}
             />
-          </div>
-        ) : null}
+        </div>
 
         {panel === 'picker' && (
           <AppPicker

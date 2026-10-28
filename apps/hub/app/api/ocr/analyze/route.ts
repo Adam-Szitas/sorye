@@ -52,6 +52,11 @@ export async function POST(req: Request) {
     );
   }
 
+  const contentLength = Number(req.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_OCR_PDF_BYTES + 1_000_000) {
+    return NextResponse.json({ error: 'Upload is too large' }, { status: 413 });
+  }
+
   const release = acquireOcrSlot();
   if (!release) {
     return NextResponse.json(

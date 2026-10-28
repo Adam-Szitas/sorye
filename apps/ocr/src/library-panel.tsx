@@ -258,7 +258,7 @@ export function LibraryPanel() {
                   </table>
                 </div>
               ) : null}
-              <a className="ocr-library-open" href={hubApiPath(`/apps/ocr/reading/${hit.id}`)} target="_blank" rel="noopener">Open reading & transcript →</a>
+              <a className="ocr-library-open" href={hubApiPath(`/apps/ocr/reading/${hit.id}`)} target="_blank" rel="noopener">Open matrix and findings →</a>
               {hit.recordCount > hit.records.length ? (
                 <p className="ocr-muted">Showing {hit.records.length} of {hit.recordCount} rows.</p>
               ) : null}

@@ -14,6 +14,7 @@ import {
 import { getAdminEmails } from '@/lib/env';
 import { EMBED_COOKIE, verifyEmbedToken } from '@/lib/embed-token';
 import { cookies, headers } from 'next/headers';
+import type { ServerTimings } from './server-timing';
 
 async function sessionFromEmbedCookie() {
   const jar = await cookies();
@@ -24,8 +25,9 @@ async function sessionFromEmbedCookie() {
   return getHubSessionForWorkspace(payload.uid, payload.ws);
 }
 
-export async function ensureHubUser() {
-  const embedSession = await sessionFromEmbedCookie();
+export async function ensureHubUser(timings?: ServerTimings) {
+  const measure = <T>(name: string, task: () => Promise<T>) => timings ? timings.measure(name, task) : task();
+  const embedSession = await measure('embed', sessionFromEmbedCookie);
   const hdrs = await headers();
   const referer = hdrs.get('referer') ?? '';
   const fromEmbed = referer.includes('/embed/');
@@ -36,31 +38,31 @@ export async function ensureHubUser() {
     return embedSession;
   }
 
-  const session = await auth();
+  const session = await measure('auth', () => auth());
   if (
     session?.user?.id &&
     session.user.email &&
     session.user.id !== DEV_BYPASS_USER_ID
   ) {
     const admins = getAdminEmails();
-    const email = session.user.email.toLowerCase();
+    const { id, email, name, image } = session.user;
 
-    await getOrCreateUser({
-      id: session.user.id,
-      email: session.user.email,
-      displayName: session.user.name ?? session.user.email,
-      image: session.user.image ?? undefined,
-      isAdmin: admins.has(email),
-    });
+    await measure('profile', () => getOrCreateUser({
+      id,
+      email,
+      displayName: name ?? email,
+      image: image ?? undefined,
+      isAdmin: admins.has(email.toLowerCase()),
+    }));
 
-    return getHubSession(session.user.id);
+    return measure('hub_session', () => getHubSession(id));
   }
 
   if (isAuthDevBypass()) {
     for (const email of getDevBypassLookupEmails()) {
-      const existing = await getUserByEmail(email);
+      const existing = await measure('dev_identity', () => getUserByEmail(email));
       if (existing) {
-        return getHubSession(existing.id);
+        return measure('hub_session', () => getHubSession(existing.id));
       }
     }
 

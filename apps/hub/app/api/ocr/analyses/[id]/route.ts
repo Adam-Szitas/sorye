@@ -1,12 +1,13 @@
 import { ensureHubUser } from '@/lib/ensure-user';
 import { getOcrAnalysis, renameOcrAnalysis } from '@/lib/store/ocr-analyses';
+import { emptyPattern, supplementFromRows } from '@/lib/ocr/pattern';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const session = await ensureHubUser();
@@ -26,7 +27,18 @@ export async function GET(
   if (!result.analysis) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-  return NextResponse.json({ analysis: result.analysis }, { headers: { 'Cache-Control': 'private, no-store' } });
+  const analysis = {
+    ...result.analysis,
+    pattern: supplementFromRows(result.analysis.pattern ?? emptyPattern(), result.analysis.pages),
+  };
+  if (new URL(req.url).searchParams.get('view') === 'matrix') {
+    const { id: analysisId, fileName, status, pattern, error } = analysis;
+    return NextResponse.json(
+      { analysis: { id: analysisId, fileName, status, pattern, error } },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
+  }
+  return NextResponse.json({ analysis }, { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 export async function PATCH(

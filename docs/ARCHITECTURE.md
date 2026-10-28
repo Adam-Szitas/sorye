@@ -4,6 +4,8 @@ This document describes how the Sorye platform is structured for developers and 
 
 The same flows are drawn on the public **Architecture** page at `/architecture` (no sign-in). This file is the source of truth for paths, APIs, and what is live versus still a container to add.
 
+For the compact, static user-flow and app-integration map, see [APP-BEHAVIOR-TREE.html](./APP-BEHAVIOR-TREE.html) or its [Markdown version](./APP-BEHAVIOR-TREE.md). Keep both in sync with changes to app behavior.
+
 ## Mental model
 
 Sorye is a **workspace OS**: users sign in once, pick apps from a catalog, and run them inside a shared shell. Apps are mostly **Module Federation remotes** loaded by the **Hub** (Next.js). Shared contracts live in **`@sorye/types`**. Cross-app behavior uses **workspace events**, **Relay routing**, **handoffs**, and **notifications** — all orchestrated by Hub APIs.

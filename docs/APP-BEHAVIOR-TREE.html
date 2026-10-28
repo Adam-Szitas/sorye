@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Sorye App Behavior Tree</title>
+  <style>
+    :root { color-scheme: light; --ink:#172033; --muted:#53627a; --line:#cbd5e1; --paper:#f4f7fb; --panel:#fff; --blue:#e8f1ff; --blue-line:#4675b8; --violet:#f0eaff; --violet-line:#7856b3; --green:#e8f7ef; --green-line:#39835a; --amber:#fff4dc; --amber-line:#b17719; --red:#fff0ef; --red-line:#b65c50; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    main { width:min(1500px,100%); margin:auto; padding:32px clamp(16px,3vw,44px) 60px; }
+    h1 { margin:0 0 8px; font-size:clamp(28px,4vw,42px); line-height:1.12; letter-spacing:-.03em; }
+    h2 { margin:36px 0 8px; font-size:24px; letter-spacing:-.02em; }
+    h3 { margin:24px 0 8px; font-size:18px; }
+    p { max-width:1000px; margin:8px 0 14px; color:var(--muted); }
+    .lead { font-size:17px; }
+    .notice { margin:20px 0 26px; padding:14px 18px; border-left:4px solid var(--blue-line); border-radius:8px; background:#fff; }
+    .notice p { margin:0; }
+    .diagram { margin:18px 0 28px; padding:12px; overflow-x:auto; border:1px solid #dbe3ef; border-radius:14px; background:var(--panel); box-shadow:0 5px 18px #1720330a; }
+    svg { display:block; width:100%; height:auto; min-width:1200px; }
+    svg text { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; fill:var(--ink); }
+    .node rect { stroke-width:1.6; rx:12; }
+    .node text { text-anchor:middle; font-size:14px; font-weight:650; }
+    .node .sub { font-size:11px; font-weight:450; fill:var(--muted); }
+    .hub rect { fill:var(--blue); stroke:var(--blue-line); }
+    .remote rect { fill:var(--violet); stroke:var(--violet-line); }
+    .store rect { fill:var(--green); stroke:var(--green-line); }
+    .feature rect { fill:var(--amber); stroke:var(--amber-line); }
+    .pressure rect { fill:var(--red); stroke:var(--red-line); }
+    .edge { fill:none; stroke:#64748b; stroke-width:1.8; marker-end:url(#arrow); }
+    svg[viewBox="0 0 1380 410"] .edge { marker-end:url(#arrow2); }
+    svg[viewBox="0 0 1500 590"] .edge { marker-end:url(#arrow3); }
+    .edge-label { font-size:10.5px; fill:#475569; paint-order:stroke; stroke:white; stroke-width:4px; stroke-linejoin:round; }
+    .zone { fill:#f8fafc; stroke:#d6deea; stroke-dasharray:6 5; stroke-width:1.2; rx:16; }
+    .zone-title { font-size:12px; font-weight:750; fill:#52627a; letter-spacing:.06em; }
+    .table-wrap { overflow-x:auto; border:1px solid #dbe3ef; border-radius:12px; background:white; }
+    table { width:100%; border-collapse:collapse; min-width:850px; }
+    th,td { padding:10px 12px; border-bottom:1px solid #e5eaf1; text-align:left; vertical-align:top; }
+    th { position:static; background:#edf2f8; color:#25334a; font-size:12px; letter-spacing:.04em; text-transform:uppercase; }
+    tr:last-child td { border-bottom:0; }
+    td:first-child { width:62px; color:#334e78; font-weight:750; white-space:nowrap; }
+    code { overflow-wrap:anywhere; color:#263c5c; font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .legend { display:flex; flex-wrap:wrap; gap:8px 18px; margin:12px 2px; color:var(--muted); font-size:13px; }
+    .swatch { display:inline-block; width:12px; height:12px; margin-right:6px; border:1px solid; border-radius:4px; vertical-align:-2px; }
+    footer { margin-top:36px; padding-top:16px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+    @media print { body { background:white; } main { width:auto; padding:0; } .diagram,.table-wrap { box-shadow:none; break-inside:avoid; } h2,h3 { break-after:avoid; } svg { min-width:0; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Sorye app behavior tree</h1>
+    <p class="lead">Static reference for how a user moves through the Hub, how apps reach their handlers, where data is stored, and how OCR hands a matrix to Protocolio.</p>
+    <div class="notice"><p><strong>How to read it:</strong> arrows name the route or action that connects nodes. Node IDs match the handler index below each diagram. The diagrams are static SVG; this file has no scripts, controls, or external dependencies.</p></div>
+  </header>
+
+  <section aria-labelledby="launch-title">
+    <h2 id="launch-title">1. Open an app and retain its state</h2>
+    <p>Hub resolves identity and workspace before showing the catalog. Apps can be Hub-native, Module Federation remotes, or external iframe apps. Pane state and app-private state have different owners and lifetimes. Background state reads pause in hidden/offline tabs: notifications update on events with a 60-second safety refresh; standalone workspace state refreshes on focus/reconnect with a five-minute safety refresh. Event bursts are coalesced and requests do not overlap. Qwen analysis uses separate analyze/continue requests.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1380 470" role="img" aria-labelledby="launch-svg-title launch-svg-desc">
+        <title id="launch-svg-title">Hub app launch and state flow</title>
+        <desc id="launch-svg-desc">User session enters the Hub, resolves a workspace, selects an app, and the Hub mounts the correct app type. Pane state is saved in session storage. App state stays in the mounted app or in its explicit persistence store.</desc>
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>
+        <rect class="zone" x="18" y="34" width="1340" height="205"/><text class="zone-title" x="36" y="57">IDENTITY AND APP MOUNT</text>
+        <rect class="zone" x="18" y="260" width="1340" height="184"/><text class="zone-title" x="36" y="283">PANE LIFETIME AND APP STATE</text>
+
+        <path class="edge" d="M150 133H185"/><text class="edge-label" x="154" y="122">browser</text>
+        <path class="edge" d="M325 133H360"/><text class="edge-label" x="328" y="122">Auth.js</text>
+        <path class="edge" d="M500 133H535"/><text class="edge-label" x="501" y="122">session</text>
+        <path class="edge" d="M675 133H710"/><text class="edge-label" x="675" y="122">render shell</text>
+        <path class="edge" d="M850 133H885"/><text class="edge-label" x="848" y="122">select</text>
+        <path class="edge" d="M1025 133H1056V88H1080"/><text class="edge-label" x="1032" y="103">native</text>
+        <path class="edge" d="M1025 133H1080"/><text class="edge-label" x="1032" y="125">remote</text>
+        <path class="edge" d="M1025 133H1056V180H1080"/><text class="edge-label" x="1032" y="169">external</text>
+        <path class="edge" d="M1220 88H1246V133H1260"/>
+        <path class="edge" d="M1220 133H1260"/>
+        <path class="edge" d="M1220 180H1246V133H1260"/>
+
+        <path class="edge" d="M605 164V323H635"/><text class="edge-label" x="612" y="250">pane selection</text>
+        <path class="edge" d="M1260 157V323H1220"/><text class="edge-label" x="1268" y="246">private UI state</text>
+        <path class="edge" d="M1220 323H1180"/><text class="edge-label" x="1181" y="312">in memory</text>
+        <path class="edge" d="M1130 354V370"/><text class="edge-label" x="1140" y="366">explicit save</text>
+        <path class="edge" d="M1040 323H1005"/><text class="edge-label" x="1004" y="312">pane switch</text>
+        <path class="edge" d="M850 323H810"/><text class="edge-label" x="814" y="312">same session</text>
+        <path class="edge" d="M1040 365H1005V398H810"/><text class="edge-label" x="890" y="390">reload / reopen</text>
+
+        <g class="node hub"><rect x="30" y="103" width="120" height="60"/><text x="90" y="128">N01 · Person</text><text class="sub" x="90" y="147">browser</text></g>
+        <g class="node hub"><rect x="185" y="103" width="140" height="60"/><text x="255" y="128">N02 · Auth</text><text class="sub" x="255" y="147">Auth.js + ensureHubUser</text></g>
+        <g class="node hub"><rect x="360" y="103" width="140" height="60"/><text x="430" y="128">N03 · Workspace</text><text class="sub" x="430" y="147">server-derived scope</text></g>
+        <g class="node hub"><rect x="535" y="103" width="140" height="60"/><text x="605" y="128">N04 · Hub shell</text><text class="sub" x="605" y="147">hub-shell.tsx</text></g>
+        <g class="node hub"><rect x="710" y="103" width="140" height="60"/><text x="780" y="128">N05 · Catalog</text><text class="sub" x="780" y="147">launcher / app picker</text></g>
+        <g class="node feature"><rect x="885" y="103" width="140" height="60"/><text x="955" y="128">N06 · Resolver</text><text class="sub" x="955" y="147">APP_CATALOG entry</text></g>
+        <g class="node remote"><rect x="1080" y="62" width="140" height="52"/><text x="1150" y="84">N07 · Hub-native</text><text class="sub" x="1150" y="102">render in Hub</text></g>
+        <g class="node remote"><rect x="1080" y="119" width="140" height="52"/><text x="1150" y="141">N08 · MF remote</text><text class="sub" x="1150" y="159">load remoteEntry</text></g>
+        <g class="node remote"><rect x="1080" y="176" width="140" height="52"/><text x="1150" y="198">N09 · External</text><text class="sub" x="1150" y="216">iframe</text></g>
+        <g class="node hub"><rect x="1260" y="103" width="90" height="60"/><text x="1305" y="128">N10 · App</text><text class="sub" x="1305" y="147">UI</text></g>
+
+        <g class="node hub"><rect x="635" y="294" width="175" height="60"/><text x="722" y="319">N11 · Pane state</text><text class="sub" x="722" y="338">sessionStorage</text></g>
+        <g class="node store"><rect x="850" y="294" width="190" height="60"/><text x="945" y="319">N12 · Visited apps</text><text class="sub" x="945" y="338">stay mounted in Hub session</text></g>
+        <g class="node remote"><rect x="1040" y="294" width="180" height="60"/><text x="1130" y="319">N13 · App-private state</text><text class="sub" x="1130" y="338">React memory + app saves</text></g>
+        <g class="node store"><rect x="1040" y="370" width="180" height="52"/><text x="1130" y="392">N14 · Persisted state</text><text class="sub" x="1130" y="410">localStorage / Hub API</text></g>
+        <g class="node feature"><rect x="635" y="370" width="175" height="52"/><text x="722" y="392">N15 · Return state</text><text class="sub" x="722" y="410">only where saved</text></g>
+      </svg>
+    </div>
+    <div class="legend"><span><i class="swatch" style="background:var(--blue);border-color:var(--blue-line)"></i>Hub or request boundary</span><span><i class="swatch" style="background:var(--violet);border-color:var(--violet-line)"></i>App surface</span><span><i class="swatch" style="background:var(--green);border-color:var(--green-line)"></i>Persistence</span><span><i class="swatch" style="background:var(--amber);border-color:var(--amber-line)"></i>Routing or action</span></div>
+    <h3>Node handlers and state</h3>
+    <div class="table-wrap"><table><thead><tr><th>Node</th><th>Handler / source</th><th>What it does and how it connects</th><th>State</th></tr></thead><tbody>
+      <tr><td>N01</td><td>Browser entry point</td><td>User opens the Hub or a supported standalone remote.</td><td>Browser tab and session cookie.</td></tr>
+      <tr><td>N02</td><td><code>apps/hub/middleware.ts</code><br><code>apps/hub/lib/ensure-user.ts</code></td><td>Auth.js session is resolved; local bypass is development-only. Route handlers call <code>ensureHubUser()</code>.</td><td>Authenticated user identity.</td></tr>
+      <tr><td>N03</td><td><code>GET /api/workspace</code><br><code>apps/hub/app/api/workspace/route.ts</code></td><td>Hub loads active workspace and available apps. APIs derive workspace scope from this server session.</td><td>User/workspace records in the configured store.</td></tr>
+      <tr><td>N04</td><td><code>apps/hub/components/hub-shell.tsx</code><br><code>apps/hub/lib/use-notifications.tsx</code></td><td>Owns launcher, panes, dock, notifications and kernel host. The shell pushes shared state to embedded remotes. Notification events trigger one coalesced refresh, backed by a 60-second visible-page safety check.</td><td>Pane key: <code>sorye:hub:panes</code> in sessionStorage. Hidden/offline notification reads pause.</td></tr>
+      <tr><td>N05</td><td><code>apps/hub/components/app-launcher.tsx</code><br><code>apps/hub/components/app-catalog.tsx</code></td><td>Shows apps allowed by the workspace plan and admin rules; requests open/manage actions from the shell.</td><td>Installed app IDs from workspace.</td></tr>
+      <tr><td>N06</td><td><code>packages/types/src/apps.ts</code><br><code>apps/hub/components/hub-native-app.tsx</code></td><td>Catalog metadata selects the native component, federated remote, or iframe host.</td><td>App identity from catalog.</td></tr>
+      <tr><td>N07</td><td><code>apps/hub/components/hub-native-app.tsx</code></td><td>Catalog, Reports, Storefront, Site, Mail, and Drive render in the Hub bundle.</td><td>App-specific component state / Hub APIs.</td></tr>
+      <tr><td>N08</td><td><code>apps/hub/components/micro-app-loader.tsx</code></td><td>Resolves remoteEntry and loads the remote's <code>./mount</code> module.</td><td>Remote module cache in the browser runtime.</td></tr>
+      <tr><td>N09</td><td><code>apps/hub/components/external-app-frame.tsx</code></td><td>Hosts configured external apps in an iframe.</td><td>External app owns its internal state.</td></tr>
+      <tr><td>N10</td><td><code>apps/&lt;app&gt;/src/mount.tsx</code><br><code>packages/platform/src/connect.ts</code><br><code>packages/platform/src/sync.ts</code><br><code>packages/platform/src/refresh.ts</code></td><td>Remote receives a per-app kernel client. Full-page/standalone mounts refresh workspace state every five minutes and notifications every minute, plus focus/reconnect/events. Notification events refresh only notifications. Reads coalesce, time out after 15 seconds and abort on unmount; hidden/offline tabs pause.</td><td>Private app state stays private. Timer/subscription lifetime follows the mounted kernel boundary.</td></tr>
+      <tr><td>N11</td><td><code>apps/hub/components/hub-shell.tsx</code></td><td>Saves/restores selected panes and layout for the current browser tab.</td><td><code>sessionStorage['sorye:hub:panes']</code>.</td></tr>
+      <tr><td>N12</td><td><code>apps/hub/components/app-workspace.tsx</code></td><td>Visited apps are hidden when replaced in a pane but remain mounted during the Hub session.</td><td>React tree memory until Hub session/page ends.</td></tr>
+      <tr><td>N13</td><td>Each app's own component tree and handlers</td><td>Temporary editor, selection, and progress state stays with its app; kernel does not inspect private fields.</td><td>In-memory while mounted.</td></tr>
+      <tr><td>N14</td><td>App-specific persistence handlers</td><td>OCR comparison key <code>sorye:ocr:comparison:v1</code>, reading ID <code>sorye.ocr.reading</code>; Protocolio draft key <code>sorye:protocolio:draft:v1</code>.</td><td>OCR comparison and Protocolio draft use localStorage; OCR current reading and Hub panes use sessionStorage. Durable shared records use Hub APIs.</td></tr>
+      <tr><td>N15</td><td>App startup restore functions</td><td>Each app reads its own saved record on mount. Full reload restoration is limited to values explicitly saved by that app.</td><td>No global snapshot of every app.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section aria-labelledby="shared-title">
+    <h2 id="shared-title">2. App requests, events, and handoffs</h2>
+    <p>Apps use authenticated Hub APIs for shared data. The kernel gives each remote a constrained client. Hub validates input and workspace scope before a service/store handles it.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1380 410" role="img" aria-labelledby="shared-svg-title shared-svg-desc">
+        <title id="shared-svg-title">Shared API, event, and handoff flow</title>
+        <desc id="shared-svg-desc">Apps call Hub APIs or emit an event or handoff through the platform kernel. Hub authenticates, derives workspace scope, validates requests, writes through stores, and routes events and handoffs.</desc>
+        <defs><marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>
+        <rect class="zone" x="20" y="26" width="1340" height="174"/><text class="zone-title" x="38" y="49">APP REQUESTS INTO HUB</text>
+        <rect class="zone" x="20" y="220" width="1340" height="166"/><text class="zone-title" x="38" y="243">HUB ROUTING AND RESULTS</text>
+        <g class="node remote"><rect x="40" y="90" width="150" height="66"/><text x="115" y="117">S01 · App</text><text class="sub" x="115" y="137">native / remote</text></g>
+        <g class="node hub"><rect x="245" y="48" width="180" height="60"/><text x="335" y="73">S02 · Platform kernel</text><text class="sub" x="335" y="92">kernel.emit / navigate</text></g>
+        <g class="node hub"><rect x="245" y="124" width="180" height="60"/><text x="335" y="149">S03 · API request</text><text class="sub" x="335" y="168">credentials: include</text></g>
+        <g class="node feature"><rect x="480" y="48" width="165" height="60"/><text x="562" y="73">S04 · Event route</text><text class="sub" x="562" y="92">POST /api/events</text></g>
+        <g class="node feature"><rect x="480" y="124" width="165" height="60"/><text x="562" y="149">S05 · Handoff route</text><text class="sub" x="562" y="168">POST /api/handoffs</text></g>
+        <g class="node hub"><rect x="700" y="90" width="165" height="66"/><text x="782" y="117">S06 · API guard</text><text class="sub" x="782" y="137">auth + validation</text></g>
+        <g class="node hub"><rect x="920" y="90" width="165" height="66"/><text x="1002" y="117">S07 · Workspace scope</text><text class="sub" x="1002" y="137">server session only</text></g>
+        <g class="node store"><rect x="1140" y="90" width="190" height="66"/><text x="1235" y="117">S08 · Service / store</text><text class="sub" x="1235" y="137">JSON, Postgres, files</text></g>
+        <path class="edge" d="M190 110H220V78H245"/><text class="edge-label" x="192" y="68">emit</text>
+        <path class="edge" d="M190 135H245"/><text class="edge-label" x="196" y="151">fetch</text>
+        <path class="edge" d="M425 78H480"/><text class="edge-label" x="431" y="68">event intent</text>
+        <path class="edge" d="M425 154H480"/><text class="edge-label" x="430" y="145">handoff intent</text>
+        <path class="edge" d="M645 78H670V110H700"/>
+        <path class="edge" d="M645 154H670V135H700"/>
+        <path class="edge" d="M865 123H920"/><text class="edge-label" x="866" y="112">ensureHubUser()</text>
+        <path class="edge" d="M1085 123H1140"/><text class="edge-label" x="1088" y="112">validated request</text>
+        <path class="edge" d="M1235 156V268H1080V265"/><text class="edge-label" x="1242" y="215">persist / query</text>
+        <path class="edge" d="M990 295H950"/><text class="edge-label" x="954" y="284">event record</text>
+        <path class="edge" d="M790 295H750"/><text class="edge-label" x="752" y="284">delivery</text>
+        <path class="edge" d="M870 325V350H1175V325"/><text class="edge-label" x="985" y="344">notification</text>
+        <path class="edge" d="M990 315H980V365H430V325"/><text class="edge-label" x="610" y="359">target polling</text>
+        <path class="edge" d="M1235 156V195H115V156"/><text class="edge-label" x="580" y="191">response to requesting app</text>
+
+        <g class="node store"><rect x="990" y="265" width="180" height="60"/><text x="1080" y="290">S09 · Event / handoff store</text><text class="sub" x="1080" y="309">workspace scoped</text></g>
+        <g class="node feature"><rect x="790" y="265" width="160" height="60"/><text x="870" y="290">S10 · Relay</text><text class="sub" x="870" y="309">feature-gated events</text></g>
+        <g class="node remote"><rect x="590" y="265" width="160" height="60"/><text x="670" y="290">S11 · Destinations</text><text class="sub" x="670" y="309">Messenger / webhook</text></g>
+        <g class="node remote"><rect x="350" y="265" width="160" height="60"/><text x="430" y="290">S12 · Target app</text><text class="sub" x="430" y="309">polls unconsumed data</text></g>
+        <g class="node hub"><rect x="1175" y="265" width="165" height="60"/><text x="1257" y="290">S13 · Notification</text><text class="sub" x="1257" y="309">badge / toast refresh</text></g>
+      </svg>
+    </div>
+    <h3>Node handlers and routes</h3>
+    <div class="table-wrap"><table><thead><tr><th>Node</th><th>Handler / source</th><th>Connection and responsibility</th></tr></thead><tbody>
+      <tr><td>S01</td><td>App API clients, e.g. <code>apps/ocr/src/hub-origin.ts</code></td><td>Calls Hub with session credentials; source app identity is supplied by its mounted kernel where relevant.</td></tr>
+      <tr><td>S02</td><td><code>packages/platform/src/connect.ts</code><br><code>packages/platform/src/host.ts</code></td><td>Hub creates per-app kernel clients. <code>kernel.emit</code> sends typed event/handoff requests; <code>kernel.navigate</code> asks the shell to open an app.</td></tr>
+      <tr><td>S03</td><td>Hub API routes under <code>apps/hub/app/api/</code></td><td>Feature APIs such as workspace, files, OCR, Tasks, and Calendar validate and call their service/store directly.</td></tr>
+      <tr><td>S04</td><td><code>apps/hub/app/api/events/route.ts</code></td><td>GET/PATCH read and set event settings. POST validates the event name and payload and checks the workspace event setting.</td></tr>
+      <tr><td>S05</td><td><code>apps/hub/app/api/handoffs/route.ts</code></td><td>POST creates a typed, size-limited workspace handoff. GET filters by target app and unconsumed status. PATCH marks it consumed.</td></tr>
+      <tr><td>S06</td><td><code>apps/hub/lib/ensure-user.ts</code> plus each route's validation</td><td>Authenticates; rejects invalid or excessive input; checks app/admin permissions where required.</td></tr>
+      <tr><td>S07</td><td><code>ensureHubUser()</code> result</td><td>Workspace ID comes from the server session, never the request body.</td></tr>
+      <tr><td>S08</td><td><code>apps/hub/lib/store/</code>, feature services</td><td>Reads/writes through the configured JSON or Postgres driver; Drive file bytes have workspace-scoped file handlers.</td></tr>
+      <tr><td>S09</td><td><code>apps/hub/lib/events.ts</code>, <code>apps/hub/lib/handoffs.ts</code></td><td>Stores event records and structured app handoffs, each scoped to the session workspace.</td></tr>
+      <tr><td>S10</td><td><code>apps/hub/lib/relay.ts</code></td><td>Routes enabled events to supported destinations. Email/WhatsApp integrations may be queued rather than delivered.</td></tr>
+      <tr><td>S11</td><td><code>apps/hub/lib/relay.ts</code>, <code>apps/hub/lib/notifications.ts</code></td><td>Live routes include Messenger <code>#events</code>, allowed HTTPS webhooks, and Hub notifications.</td></tr>
+      <tr><td>S12</td><td>Target app poller, e.g. <code>apps/protocolio/src/handoff.ts</code></td><td>Fetches unconsumed payloads for its target ID, validates the payload schema, then acknowledges use.</td></tr>
+      <tr><td>S13</td><td><code>apps/hub/lib/notifications.ts</code><br><code>apps/hub/components/use-notifications.tsx</code></td><td>Records notices and refreshes Hub badges/toasts through shell notification signals.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section aria-labelledby="ocr-title">
+    <h2 id="ocr-title">3. OCR matrices, Node analysis, and Protocolio</h2>
+    <p>OCR has two reading paths: a browser matrix path for review/comparison/export and a Node PDF.js path that normalizes meaningful body rows into one continuous three-column table. Filename, stored ID and PDF type identify the document; unclear findings follow the data. The browser sends a selected matrix to Protocolio through a workspace handoff.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1500 590" role="img" aria-labelledby="ocr-svg-title ocr-svg-desc">
+        <title id="ocr-svg-title">OCR and Protocolio behavior flow</title>
+        <desc id="ocr-svg-desc">The browser path extracts and compares PDF matrices and sends selected values through a handoff to Protocolio. The Node path stores raw rows, checks GPU capacity and asks Qwen for meaningful body data. Shared normalization removes page furniture, validates every data cell and restores missing values in three columns. One continuous table and matching JSON show all body data, followed by unclear findings.</desc>
+        <defs><marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>
+        <rect class="zone" x="20" y="25" width="1460" height="190"/><text class="zone-title" x="38" y="48">OCR BROWSER MATRIX PATH</text>
+        <rect class="zone" x="20" y="235" width="1460" height="188"/><text class="zone-title" x="38" y="258">OPTIONAL HUB / NODE PDF ANALYSIS</text>
+        <rect class="zone" x="20" y="443" width="1460" height="124"/><text class="zone-title" x="38" y="466">CROSS-APP TEMPLATE HANDOFF</text>
+
+        <g class="node remote"><rect x="40" y="94" width="150" height="66"/><text x="115" y="121">O01 · PDF selection</text><text class="sub" x="115" y="141">one or more files</text></g>
+        <g class="node feature"><rect x="235" y="94" width="170" height="66"/><text x="320" y="121">O02 · Browser reader</text><text class="sub" x="320" y="141">PDF.js / OCR engine</text></g>
+        <g class="node remote"><rect x="450" y="94" width="160" height="66"/><text x="530" y="121">O03 · Matrix review</text><text class="sub" x="530" y="141">edit / select tables</text></g>
+        <g class="node feature"><rect x="655" y="60" width="170" height="60"/><text x="740" y="85">O04 · ID normalize</text><text class="sub" x="740" y="104">01.11.05 A = 1.11.5A</text></g>
+        <g class="node feature"><rect x="655" y="132" width="170" height="60"/><text x="740" y="157">O05 · Compare PDFs</text><text class="sub" x="740" y="176">align matching IDs</text></g>
+        <g class="node remote"><rect x="875" y="94" width="165" height="66"/><text x="957" y="121">O06 · Matrix result</text><text class="sub" x="957" y="141">unclear findings</text></g>
+        <g class="node feature"><rect x="1100" y="48" width="150" height="58"/><text x="1175" y="73">O07 · CSV export</text><text class="sub" x="1175" y="92">selected values</text></g>
+        <g class="node hub"><rect x="1100" y="132" width="150" height="58"/><text x="1175" y="157">O08 · Node analysis</text><text class="sub" x="1175" y="176">optional action</text></g>
+        <path class="edge" d="M190 127H235"/><text class="edge-label" x="195" y="116">select file</text>
+        <path class="edge" d="M405 127H450"/><text class="edge-label" x="408" y="116">rows / columns</text>
+        <path class="edge" d="M610 110H635V90H655"/>
+        <path class="edge" d="M610 144H655"/><text class="edge-label" x="612" y="134">select sources</text>
+        <path class="edge" d="M740 120V132"/><text class="edge-label" x="746" y="129">canonical IDs</text>
+        <path class="edge" d="M825 162H875"/><text class="edge-label" x="826" y="151">merge</text>
+        <path class="edge" d="M1040 110H1070V77H1100"/><text class="edge-label" x="1045" y="71">download</text>
+        <path class="edge" d="M1040 144H1070V161H1100"/><text class="edge-label" x="1043" y="180">source PDF</text>
+
+        <g class="node remote"><rect x="40" y="296" width="150" height="66"/><text x="115" y="323">O09 · PDF bytes</text><text class="sub" x="115" y="343">upload or Drive file</text></g>
+        <g class="node hub"><rect x="230" y="296" width="180" height="66"/><text x="320" y="323">O10 · Analyze route</text><text class="sub" x="320" y="343">POST /api/ocr/analyze</text></g>
+        <g class="node hub"><rect x="455" y="296" width="175" height="66"/><text x="542" y="323">O11 · Upload limits</text><text class="sub" x="542" y="343">auth / size / signature</text></g>
+        <g class="node feature"><rect x="675" y="296" width="175" height="66"/><text x="762" y="323">O12 · Node PDF.js</text><text class="sub" x="762" y="343">pages → source rows</text></g>
+        <g class="node store"><rect x="895" y="296" width="180" height="66"/><text x="985" y="323">O13 · Save analysis</text><text class="sub" x="985" y="343">workspace-scoped rows</text></g>
+        <g class="node feature"><rect x="1120" y="276" width="160" height="62"/><text x="1200" y="301">O14 · GPU guard</text><text class="sub" x="1200" y="320">before each inference</text></g>
+        <g class="node remote"><rect x="1320" y="260" width="140" height="62"/><text x="1390" y="285">O15 · Qwen</text><text class="sub" x="1390" y="304">bounded chunks</text></g>
+        <g class="node feature"><rect x="1320" y="340" width="140" height="62"/><text x="1390" y="365">O16 · Normalize</text><text class="sub" x="1390" y="384">3 columns + type</text></g>
+        <g class="node pressure"><rect x="1120" y="350" width="160" height="52"/><text x="1200" y="372">O17 · rows_only</text><text class="sub" x="1200" y="390">keep extracted rows</text></g>
+        <path class="edge" d="M1250 190V232H115V296"/><text class="edge-label" x="260" y="226">upload bytes</text>
+        <path class="edge" d="M190 329H230"/><text class="edge-label" x="192" y="318">multipart / fileId</text>
+        <path class="edge" d="M410 329H455"/><text class="edge-label" x="414" y="318">authorized request</text>
+        <path class="edge" d="M630 329H675"/><text class="edge-label" x="633" y="318">accepted PDF</text>
+        <path class="edge" d="M850 329H895"/><text class="edge-label" x="851" y="318">extracted pages</text>
+        <path class="edge" d="M1075 329H1120"/><text class="edge-label" x="1076" y="318">saved rows</text>
+        <path class="edge" d="M1280 307H1320"/><text class="edge-label" x="1283" y="296">headroom</text>
+        <path class="edge" d="M1390 322V340"/><text class="edge-label" x="1396" y="336">JSON output</text>
+        <path class="edge" d="M1200 338V350"/><text class="edge-label" x="1208" y="348">low memory / error</text>
+        <path class="edge" d="M1390 402V414H985V362"/><text class="edge-label" x="1110" y="412">update same analysis</text>
+
+        <g class="node remote"><rect x="70" y="482" width="180" height="60"/><text x="160" y="507">O18 · Send matrix</text><text class="sub" x="160" y="526">source app: OCR</text></g>
+        <g class="node hub"><rect x="340" y="482" width="190" height="60"/><text x="435" y="507">O19 · Handoff API</text><text class="sub" x="435" y="526">POST /api/handoffs</text></g>
+        <g class="node store"><rect x="620" y="482" width="190" height="60"/><text x="715" y="507">O20 · Handoff store</text><text class="sub" x="715" y="526">target: protocolio</text></g>
+        <g class="node remote"><rect x="900" y="482" width="190" height="60"/><text x="995" y="507">O21 · Protocolio</text><text class="sub" x="995" y="526">poll / validate / load</text></g>
+        <g class="node store"><rect x="1180" y="482" width="230" height="60"/><text x="1295" y="507">O22 · Template draft</text><text class="sub" x="1295" y="526">localStorage + PDF service</text></g>
+        <path class="edge" d="M610 160H635V473H160V482"/><text class="edge-label" x="260" y="468">selected matrix</text>
+        <path class="edge" d="M250 512H340"/><text class="edge-label" x="270" y="501">typed payload</text>
+        <path class="edge" d="M530 512H620"/><text class="edge-label" x="546" y="501">workspace scoped</text>
+        <path class="edge" d="M810 512H900"/><text class="edge-label" x="824" y="501">poll unconsumed</text>
+        <path class="edge" d="M1090 512H1180"/><text class="edge-label" x="1096" y="501">load PDF template</text>
+      </svg>
+    </div>
+    <h3>Node handlers and data path</h3>
+    <div class="table-wrap"><table><thead><tr><th>Node</th><th>Handler / source</th><th>What happens at this node</th></tr></thead><tbody>
+      <tr><td>O01</td><td><code>apps/ocr/src/App.tsx</code></td><td>Accepts multiple PDFs and owns selection/progress UI.</td></tr>
+      <tr><td>O02</td><td><code>apps/ocr/src/prepare-file.ts</code><br><code>apps/ocr/src/ocr-engine.ts</code><br><code>apps/ocr/src/layout-matrix.ts</code></td><td>Prepares the file and builds browser-side row/column matrices from PDF/image content.</td></tr>
+      <tr><td>O03</td><td><code>apps/ocr/src/item-tables.tsx</code>, OCR review components</td><td>Renders extracted rows, columns, review/edit controls, and per-document choices.</td></tr>
+      <tr><td>O04</td><td><code>packages/types/src/ocr-ai.ts: normalizeOcrMatrixId</code></td><td>Canonicalizes dotted numeric address components and optional letter suffix for cross-document matching.</td></tr>
+      <tr><td>O05</td><td><code>apps/ocr/src/combined-reading.tsx</code><br><code>apps/ocr/src/App.tsx</code></td><td>Combines selected matrices and aligns rows whose normalized addresses match.</td></tr>
+      <tr><td>O06</td><td><code>apps/ocr/src/combined-reading.tsx</code><br><code>apps/ocr/src/reading-view.tsx</code><br><code>apps/hub/components/ocr-reading.tsx</code><br><code>packages/types/src/ocr-ai.ts: buildOcrReadingDocument</code></td><td>One continuous three-column body table with filename, stored ID and PDF type; empty cells display a dash. Findings follow the table. JSON uses the same data and retains source references. Older readings are projected on open. Comparisons include each position's continuation calculations and totals across pages.</td></tr>
+      <tr><td>O07</td><td><code>apps/ocr/src/export-csv.ts</code></td><td>Exports selected/reviewed matrix values as CSV.</td></tr>
+      <tr><td>O08</td><td>Analyze action in <code>apps/ocr/src/App.tsx</code></td><td>Starts the separate server-side text-analysis path for the source PDF.</td></tr>
+      <tr><td>O09</td><td>Browser File / Hub Drive file</td><td>Raw PDF bytes reach Hub as multipart <code>file</code> or workspace-scoped <code>fileId</code>.</td></tr>
+      <tr><td>O10</td><td><code>apps/hub/app/api/ocr/analyze/route.ts: POST</code></td><td>Limits declared request size, acquires one OCR slot, parses upload, validates PDF signature, size and pages, then calls the reader.</td></tr>
+      <tr><td>O11</td><td><code>apps/hub/lib/security-limits.ts</code><br><code>apps/hub/lib/ocr/admission.ts</code></td><td>Uses server auth/workspace, byte/page caps, a process-wide single slot, rate limits, and input validation.</td></tr>
+      <tr><td>O12</td><td><code>apps/hub/lib/ocr/read-pdf.ts</code><br><code>apps/hub/lib/ocr/rows.ts</code></td><td>Node PDF.js extracts visible page text into ordered source rows, keeping page boundaries and row structure.</td></tr>
+      <tr><td>O13</td><td><code>apps/hub/lib/store/ocr-analyses*.ts</code><br><code>apps/hub/lib/ocr/store-batch.ts</code></td><td>Saves analysis rows under the session workspace; subsequent inference updates that record.</td></tr>
+      <tr><td>O14</td><td><code>apps/hub/lib/ocr/gpu-guard.ts</code><br><code>apps/hub/lib/ocr/analyze.ts</code></td><td>Checks NVIDIA telemetry and headroom before each model inference; pressure returns a saved rows-only result.</td></tr>
+      <tr><td>O15</td><td><code>apps/hub/lib/ocr/llm.ts</code></td><td>Calls configured local Ollama/vLLM endpoint with bounded inputs, output tokens, timeout, and response bytes.</td></tr>
+      <tr><td>O16</td><td><code>apps/hub/lib/ocr/pattern.ts</code><br><code>packages/types/src/ocr-table.ts</code><br><code>GET /api/ocr/analyses/[id]</code></td><td>Normalizes position/variable, description/calculation and period/result. Removes recognizable letterhead, repeated headings, signatures and page numbers from the presentation. Preserves every body note, formula and total; verifies all cells against the raw source and repairs omissions in three columns. GET applies the same rules to saved readings.</td></tr>
+      <tr><td>O17</td><td><code>apps/hub/lib/ocr/analyze.ts</code></td><td>If model configuration or GPU capacity is unavailable, retain raw source rows and construct the same body table with <code>rows_only</code> status. Obsolete prompt versions restart inference so a stale chunk cursor cannot skip rows.</td></tr>
+      <tr><td>O18</td><td><code>apps/ocr/src/to-pdf-template.ts</code><br><code>apps/ocr/src/send-to-protocolio.ts</code></td><td>Converts the selected browser matrix into a typed PDF-template handoff.</td></tr>
+      <tr><td>O19</td><td><code>apps/hub/app/api/handoffs/route.ts: POST</code></td><td>Authenticates, validates the payload and writes a handoff scoped to the session workspace.</td></tr>
+      <tr><td>O20</td><td><code>apps/hub/lib/handoffs.ts</code></td><td>Stores the payload until its target reads it; target consumption is acknowledged.</td></tr>
+      <tr><td>O21</td><td><code>apps/protocolio/src/handoff.ts</code><br><code>apps/protocolio/src/App.tsx</code></td><td>Polls <code>GET /api/handoffs?targetAppId=protocolio&amp;unconsumed=1</code>, validates the template and loads it into the editor.</td></tr>
+      <tr><td>O22</td><td><code>apps/protocolio/src/App.tsx</code><br><code>apps/protocolio/src/services/templateBuilderService.ts</code></td><td>Saves the editor draft to localStorage and generates the final PDF via the configured Protocolio service/Hub bridge.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section aria-labelledby="dashboard-package-title">
+    <h2 id="dashboard-package-title">4. Dashboard package map and LLM controls</h2>
+    <p>The member view derives app nodes from the signed-in workspace subscription and enabled app IDs. The separate LLM &amp; GPU controls are only shown to platform administrators and are enforced again by Hub routes.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1260 330" role="img" aria-labelledby="dash-svg-title dash-svg-desc">
+        <title id="dash-svg-title">Dashboard package and LLM runtime flows</title>
+        <desc id="dash-svg-desc">Workspace session and subscription produce a package map of enabled app nodes. Platform administrators use protected Hub APIs to view telemetry, configure bounded LLM settings, pause requests, and request an Ollama model unload.</desc>
+        <defs><marker id="arrowDash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#64748b"/></marker></defs>
+        <g class="node hub"><rect x="35" y="52" width="180" height="60"/><text x="125" y="77">D01 · Workspace session</text><text class="sub" x="125" y="96">plan + selected app IDs</text></g>
+        <g class="node feature"><rect x="300" y="52" width="180" height="60"/><text x="390" y="77">D02 · My package map</text><text class="sub" x="390" y="96">Dashboard remote</text></g>
+        <g class="node remote"><rect x="565" y="52" width="180" height="60"/><text x="655" y="77">D03 · Enabled app nodes</text><text class="sub" x="655" y="96">package-visible only</text></g>
+        <path class="edge" marker-end="url(#arrowDash)" d="M215 82H300"/><path class="edge" marker-end="url(#arrowDash)" d="M480 82H565"/>
+        <g class="node hub"><rect x="35" y="205" width="180" height="60"/><text x="125" y="230">D04 · Platform admin</text><text class="sub" x="125" y="249">Hub session role</text></g>
+        <g class="node feature"><rect x="300" y="205" width="180" height="60"/><text x="390" y="230">D05 · LLM &amp; GPU tab</text><text class="sub" x="390" y="249">Dashboard controls</text></g>
+        <g class="node hub"><rect x="565" y="165" width="200" height="60"/><text x="665" y="190">D06 · Admin APIs</text><text class="sub" x="665" y="209">GET/PATCH + action</text></g>
+        <g class="node feature"><rect x="855" y="135" width="180" height="60"/><text x="945" y="160">D07 · GPU + engine</text><text class="sub" x="945" y="179">telemetry + audit log</text></g>
+        <g class="node feature"><rect x="855" y="225" width="180" height="60"/><text x="945" y="250">D08 · Guard + pause</text><text class="sub" x="945" y="269">Ollama unload request</text></g>
+        <path class="edge" marker-end="url(#arrowDash)" d="M215 235H300"/><path class="edge" marker-end="url(#arrowDash)" d="M480 235H565"/><path class="edge" marker-end="url(#arrowDash)" d="M765 185H855"/><path class="edge" marker-end="url(#arrowDash)" d="M765 205H805V255H855"/>
+      </svg>
+    </div>
+    <h3>Dashboard node handlers</h3>
+    <div class="table-wrap"><table><thead><tr><th>Node</th><th>Handler / source</th><th>Connection and responsibility</th></tr></thead><tbody>
+      <tr><td>D01</td><td><code>HubSession.workspace</code></td><td>Trusted session supplies subscription and selected app IDs; browser cannot choose another workspace.</td></tr>
+      <tr><td>D02–D03</td><td><code>apps/dashboard/src/PackageMap.tsx</code></td><td>Shows always-available and selected package apps as links. Admin-only and presentation-only nodes are filtered by role/type.</td></tr>
+      <tr><td>D04–D05</td><td><code>apps/dashboard/src/App.tsx</code><br><code>apps/dashboard/src/LlmControl.tsx</code></td><td>Displays package map to members; LLM controls appear only for platform administrators.</td></tr>
+      <tr><td>D06</td><td><code>apps/hub/app/api/admin/llm/route.ts</code><br><code>apps/hub/app/api/admin/llm/action/route.ts</code></td><td>Both routes authenticate and enforce <code>isPlatformAdmin</code>. Settings validate bounds and safe local provider URLs.</td></tr>
+      <tr><td>D07</td><td><code>apps/hub/lib/llm-control.ts</code><br><code>apps/hub/lib/ocr/gpu-guard.ts</code></td><td>Persists bounded settings and exposes GPU/provider status plus recent metadata-only activity (no prompts or PDF text).</td></tr>
+      <tr><td>D08</td><td><code>apps/hub/lib/ocr/llm.ts</code></td><td>Pauses new requests, aborts active requests, and requests unload of the configured Ollama model. Does not kill unrelated processes; vLLM service stop stays with its operator.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <footer>
+    <strong>Source of truth:</strong> <code>docs/APP-BEHAVIOR-TREE.md</code> contains the concise Mermaid version. Keep both files in sync when behavior changes, as required by the repository-root <code>AGENTS.md</code>. Last checked against source on 2026-10-27.
+  </footer>
+</main>
+</body>
+</html>

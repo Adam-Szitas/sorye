@@ -30,8 +30,11 @@ import { emitWorkspaceEvent } from './emit-event';
 import { hubApiPath } from './hub-origin';
 import { ReadingView } from './reading-view';
 import { LibraryPanel } from './library-panel';
+import { CombinedReading, type ComparisonAnalysis, type ComparisonDocument } from './combined-reading';
 import { downloadCsv, layoutsToCsv } from './export-csv';
 import './styles.css';
+
+const COMPARISON_STORAGE_KEY = 'sorye:ocr:comparison:v1';
 
 async function followAnalysis(
   start: OcrAnalysis,
@@ -137,6 +140,7 @@ function revokePreviewUrls(scans: PageScan[]): void {
 
 export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
+  const compareFilesRef = useRef<HTMLInputElement>(null);
   const uploadedFileRef = useRef<File | null>(null);
   const driveFileIdRef = useRef<string | null>(null);
   const modalRef = useRef<HTMLDialogElement>(null);
@@ -157,10 +161,65 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<OcrAnalysis | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
+  const [comparisonBusy, setComparisonBusy] = useState(false);
+  const [comparisonProgress, setComparisonProgress] = useState('');
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [comparisonRestored, setComparisonRestored] = useState(false);
 
   useEffect(() => {
     pageScansRef.current = pageScans;
   }, [pageScans]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let saved: { ids?: unknown; selectedIds?: unknown } = {};
+      try {
+        saved = JSON.parse(localStorage.getItem(COMPARISON_STORAGE_KEY) ?? '{}');
+      } catch {
+        // Ignore an invalid comparison list and let the user start a new one.
+      }
+      const ids = Array.isArray(saved.ids)
+        ? saved.ids.filter((id): id is string => typeof id === 'string').slice(-10)
+        : [];
+      const selectedIds = new Set(
+        Array.isArray(saved.selectedIds)
+          ? saved.selectedIds.filter((id): id is string => typeof id === 'string')
+          : ids,
+      );
+      const restored = await Promise.all(ids.map(async (id) => {
+        try {
+          const response = await fetch(hubApiPath(`/api/ocr/analyses/${encodeURIComponent(id)}?view=matrix`), {
+            credentials: 'include',
+          });
+          if (!response.ok) return null;
+          const data = (await response.json()) as { analysis?: ComparisonAnalysis };
+          if (!data.analysis || data.analysis.status === 'extracting') return null;
+          return { analysis: data.analysis, selected: selectedIds.has(id) };
+        } catch {
+          return null;
+        }
+      }));
+      if (!cancelled) {
+        setComparisonDocuments(restored.filter((item): item is ComparisonDocument => item !== null));
+        setComparisonRestored(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!comparisonRestored) return;
+    try {
+      localStorage.setItem(COMPARISON_STORAGE_KEY, JSON.stringify({
+        ids: comparisonDocuments.slice(-10).map((item) => item.analysis.id),
+        selectedIds: comparisonDocuments.filter((item) => item.selected).slice(-10).map((item) => item.analysis.id),
+      }));
+    } catch {
+      // Comparisons remain usable if browser storage is unavailable.
+    }
+  }, [comparisonDocuments, comparisonRestored]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has('handoff')) return;
@@ -228,7 +287,6 @@ export default function App() {
     fileName: pageScans[0]?.result.source.fileName ?? 'document.pdf',
     pages: pageScans.map((scan) => ({
       page: scan.page,
-      text: scan.result.rawText,
       rows: (displayPages.find((page) => page.page === scan.page)?.layout ?? layoutFromResult(scan.result)).matrix,
     })),
   } : null, [ready, pageScans, displayPages]);
@@ -385,14 +443,14 @@ export default function App() {
 
   const processFile = useCallback(
     (file: File | null) => {
-      if (!file || busy || analyzing) return;
+      if (!file || busy || analyzing || comparisonBusy) return;
       if (!isAcceptedUpload(file)) {
         setError('Only PDF documents are supported.');
         return;
       }
       void runScan(file);
     },
-    [runScan, busy, analyzing],
+    [runScan, busy, analyzing, comparisonBusy],
   );
 
   function viewPdfPage(next: number) {
@@ -481,7 +539,7 @@ export default function App() {
 
   async function analyzeWithQwen() {
     const file = uploadedFileRef.current;
-    if (!file || analyzing) return;
+    if (!file || analyzing || comparisonBusy) return;
     setAnalyzing(true);
     setAnalysisError(null);
     setAnalysis(null);
@@ -524,6 +582,67 @@ export default function App() {
     }
   }
 
+  async function analyzeComparisonFiles(files: FileList | File[]) {
+    const pdfs = Array.from(files).filter(isAcceptedUpload);
+    if (pdfs.length === 0) {
+      setComparisonError('Choose one or more PDF files.');
+      return;
+    }
+    setComparisonBusy(true);
+    setComparisonError(null);
+    const errors: string[] = [];
+    try {
+      for (let index = 0; index < pdfs.length; index += 1) {
+        const file = pdfs[index]!;
+        setComparisonProgress(`Saving and analyzing ${index + 1} of ${pdfs.length}: ${file.name}`);
+        try {
+          const saved = await uploadToDrive(file, 'ocr', hubApiPath('/api/files'));
+          const body = new FormData();
+          body.append('fileId', saved.id);
+          const response = await fetch(hubApiPath('/api/ocr/analyze'), {
+            method: 'POST',
+            credentials: 'include',
+            body,
+          });
+          const data = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            analysis?: OcrAnalysis;
+          };
+          if (!response.ok || !data.analysis) {
+            throw new Error(data.error || `Analysis failed (${response.status})`);
+          }
+          const complete = await followAnalysis(data.analysis, () => {});
+          setComparisonDocuments((previous) => [
+            ...previous.filter((item) => item.analysis.id !== complete.id),
+            {
+              analysis: {
+                id: complete.id,
+                fileName: complete.fileName,
+                status: complete.status,
+                pattern: complete.pattern,
+                error: complete.error,
+              },
+              selected: true,
+            },
+          ]);
+        } catch (err) {
+          errors.push(`${file.name}: ${err instanceof Error ? err.message : 'Analysis failed'}`);
+        }
+      }
+      if (errors.length > 0) setComparisonError(errors.join(' · '));
+    } finally {
+      setComparisonBusy(false);
+      setComparisonProgress('');
+      if (compareFilesRef.current) compareFilesRef.current.value = '';
+    }
+  }
+
+  function toggleComparisonDocument(analysisId: string) {
+    setComparisonDocuments((previous) => previous.map((item) =>
+      item.analysis.id === analysisId ? { ...item, selected: !item.selected } : item,
+    ));
+  }
+
   function closePreview() {
     modalRef.current?.close();
   }
@@ -549,7 +668,7 @@ export default function App() {
         <div>
           <p className="ocr-eyebrow">DOCUMENT WORKSPACE</p>
           <h1>Turn documents into useful data</h1>
-          <p>Extract your PDF, review its tables, and explore an AI-assisted reading with a complete transcript.</p>
+          <p>Extract PDF tables, compare schedules by address ID, and review unclear values by page.</p>
         </div>
         <span className="ocr-badge">PDF only · EN + DE</span>
       </header>
@@ -584,7 +703,7 @@ export default function App() {
           <p>Drop your PDF here, or browse your files. Uploads are saved in Drive / OCR.</p>
           <a href={hubApiPath('/apps/files')}>Browse Drive</a>
           <div className="ocr-actions">
-            <Button variant="primary" size="lg" disabled={busy || analyzing} onClick={() => fileRef.current?.click()}>
+            <Button variant="primary" size="lg" disabled={busy || analyzing || comparisonBusy} onClick={() => fileRef.current?.click()}>
               {ready ? 'Choose another PDF' : 'Upload PDF'}
             </Button>
           </div>
@@ -651,7 +770,7 @@ export default function App() {
               >
                 Show matrix
               </button>
-              <Button variant="primary" loading={analyzing} disabled={analyzing} onClick={() => void analyzeWithQwen()}>
+              <Button variant="primary" loading={analyzing} disabled={analyzing || comparisonBusy} onClick={() => void analyzeWithQwen()}>
                 {analyzing ? 'Reading document…' : 'Analyze with Qwen'}
               </Button>
               <button
@@ -685,6 +804,39 @@ export default function App() {
 
         {error ? <p className="ocr-error">{error}</p> : null}
       </section>
+
+      <section className="ocr-compare-upload" aria-labelledby="ocr-compare-upload-title">
+        <div>
+          <h2 id="ocr-compare-upload-title">Compare multiple PDFs</h2>
+          <p>Upload related schedules or revisions. Qwen identifies row address IDs, then matching rows are aligned into one table.</p>
+        </div>
+        <input
+          ref={compareFilesRef}
+          type="file"
+          accept="application/pdf,.pdf"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = event.currentTarget.files;
+            if (files?.length) void analyzeComparisonFiles(files);
+          }}
+        />
+        <Button
+          variant="primary"
+          disabled={!comparisonRestored || comparisonBusy || busy || analyzing}
+          loading={comparisonBusy}
+          onClick={() => compareFilesRef.current?.click()}
+        >
+          {comparisonBusy ? 'Analyzing PDFs…' : 'Upload PDFs to compare'}
+        </Button>
+        {comparisonProgress ? <p role="status">{comparisonProgress}</p> : null}
+        {comparisonError ? <p className="ocr-error" role="alert">{comparisonError}</p> : null}
+      </section>
+
+      <CombinedReading
+        documents={comparisonDocuments}
+        onToggle={toggleComparisonDocument}
+      />
 
       {pageScans.length > 0 ? <div className="ocr-layout">
         <aside className="ocr-preview-panel">
@@ -752,7 +904,7 @@ export default function App() {
 
       {consumable ? (
         <section className="ocr-extraction-export">
-          <JsonDocument value={consumable} fileName={consumable.fileName.replace(/\.pdf$/i, '') + '-extracted'} label="extracted JSON" />
+          <JsonDocument value={consumable} fileName={consumable.fileName.replace(/\.pdf$/i, '') + '-browser-matrix'} label="Browser matrix JSON" />
         </section>
       ) : null}
 

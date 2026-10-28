@@ -1,10 +1,12 @@
 # Agent guide — Sorye monorepo
 
-Quick orientation for AI coding agents. Read these in order:
+Quick orientation for AI coding agents. First read the repository-root `AGENTS.md`, then read these references in order:
 
 1. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Hub, Module Federation, events, relay, storage, Docker boot order. Public diagram: `/architecture`
 2. **[SECURITY.md](./SECURITY.md)** — Auth boundaries, SSRF, validation (`apps/hub/lib/security.ts`)
 3. **[apps/APPS.md](./apps/APPS.md)** — Every app, ports, files, communication
+
+Read the repository-root `AGENTS.md` first. The [static behavior tree](./APP-BEHAVIOR-TREE.html) shows the user and system flows and handlers; keep it and the [Markdown version](./APP-BEHAVIOR-TREE.md) updated in the same change whenever app behavior or integration edges change.
 
 ## Rules of thumb
 

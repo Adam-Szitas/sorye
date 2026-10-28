@@ -2,7 +2,7 @@ import { federation } from '@module-federation/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [
     react(),
     federation({
@@ -12,6 +12,9 @@ export default defineConfig({
         './mount': './src/mount.tsx',
       },
       shared: {},
+      // Hub consumes the mount contract directly. Generate declaration archives
+      // at build time rather than spawning a type worker for each dev file change.
+      dts: command === 'build',
     }),
   ],
   server: {
@@ -31,4 +34,4 @@ export default defineConfig({
     minify: false,
     cssCodeSplit: false,
   },
-});
+}));

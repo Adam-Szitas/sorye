@@ -6,8 +6,7 @@ import {
 } from '@sorye/types';
 import type { KernelHost } from './host';
 import { hubUrl } from './transport';
-
-const SYNC_INTERVAL_MS = 30_000;
+import { startVisibleRefresh } from './refresh';
 
 /**
  * Pull session and notification unread from Hub.
@@ -18,62 +17,35 @@ const SYNC_INTERVAL_MS = 30_000;
 export function startKernelSync(host: KernelHost, hubOrigin?: string): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  let stopped = false;
-
-  const pull = async () => {
-    if (stopped) return;
-    try {
-      const res = await fetch(hubUrl('/api/workspace', hubOrigin), {
-        credentials: 'include',
-      });
-      if (res.ok && !stopped) {
-        host.setSession((await res.json()) as HubSession);
-      }
-    } catch {
-      // Hub unreachable from this origin until VITE_HUB_ORIGIN / CORS is set.
+  const session = startVisibleRefresh(async (signal) => {
+    const res = await fetch(hubUrl('/api/workspace', hubOrigin), {
+      credentials: 'include', signal, cache: 'no-store', priority: 'low',
+    });
+    if (res.ok) {
+      const data = await res.json() as HubSession;
+      if (!signal.aborted) host.setSession(data);
+    } else if (res.status === 401 && !signal.aborted) {
+      host.setSession(null);
+      host.setNotificationUnread(null);
     }
-    if (stopped) return;
-    try {
-      const res = await fetch(hubUrl('/api/notifications', hubOrigin), {
-        credentials: 'include',
-      });
-      if (!res.ok || stopped) return;
-      const data = (await res.json()) as { unreadTotal?: unknown };
-      host.setNotificationUnread(
-        typeof data.unreadTotal === 'number' ? data.unreadTotal : null,
-      );
-    } catch {
-      // ignore
-    }
-  };
-
-  void pull();
-
-  const onNotify = () => {
-    void pull();
-  };
-  window.addEventListener(HUB_NOTIFY_EVENT, onNotify);
-
-  let notif: BroadcastChannel | null = null;
-  let relay: BroadcastChannel | null = null;
-  try {
-    notif = new BroadcastChannel(NOTIFICATION_BROADCAST_CHANNEL);
-    notif.onmessage = onNotify;
-    relay = new BroadcastChannel(RELAY_BROADCAST_CHANNEL);
-    relay.onmessage = onNotify;
-  } catch {
-    // ignore
-  }
-
-  const timer = window.setInterval(() => {
-    void pull();
-  }, SYNC_INTERVAL_MS);
+  }, { intervalMs: 300_000 });
+  const notifications = startVisibleRefresh(async (signal) => {
+    const res = await fetch(hubUrl('/api/notifications', hubOrigin), {
+      credentials: 'include', signal, cache: 'no-store', priority: 'low',
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as { unreadTotal?: unknown };
+    if (!signal.aborted) host.setNotificationUnread(
+      typeof data.unreadTotal === 'number' ? data.unreadTotal : null,
+    );
+  }, {
+    intervalMs: 60_000,
+    events: [HUB_NOTIFY_EVENT],
+    channels: [NOTIFICATION_BROADCAST_CHANNEL, RELAY_BROADCAST_CHANNEL],
+  });
 
   return () => {
-    stopped = true;
-    window.removeEventListener(HUB_NOTIFY_EVENT, onNotify);
-    notif?.close();
-    relay?.close();
-    window.clearInterval(timer);
+    session.dispose();
+    notifications.dispose();
   };
 }
