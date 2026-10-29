@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import postgres from 'postgres';
 import type { MessengerMessage } from '@sorye/types';
 import { paginateChannelMessages } from '../lib/store/messenger-list';
 import { readBoundedFormData, UploadLimitError, withUploadSlot } from '../lib/bounded-upload';
@@ -74,4 +75,34 @@ test('bounded multipart parser rejects a body over the cap without Content-Lengt
   await assert.rejects(readBoundedFormData(request, 100), (error: unknown) =>
     error instanceof UploadLimitError && error.status === 413,
   );
+});
+
+test('local PostgreSQL is reachable and has the Hub query schema', async (t) => {
+  const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ??
+    'postgresql://sorye:sorye@127.0.0.1:15432/sorye';
+  const sql = postgres(url, { max: 1, connect_timeout: 2 });
+  try {
+    const tables = await sql<{ table_name: string }[]>`
+      select table_name from information_schema.tables
+      where table_schema = 'public' and table_type = 'BASE TABLE'
+    `;
+    const names = new Set(tables.map((row) => row.table_name));
+    for (const required of ['messenger_messages', 'background_jobs', 'workspace_app_docs']) {
+      assert.ok(names.has(required), `missing schema table ${required}`);
+    }
+    const indexes = await sql<{ indexname: string }[]>`
+      select indexname from pg_indexes where schemaname = 'public'
+    `;
+    assert.ok(indexes.some((row) => row.indexname.includes('messenger') && row.indexname.includes('created')),
+      'expected a Messenger pagination index');
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error &&
+      ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'].includes(String(error.code))) {
+      t.skip('PostgreSQL is not running; start it with pnpm db:up to run this integration check');
+      return;
+    }
+    throw error;
+  } finally {
+    await sql.end({ timeout: 1 });
+  }
 });

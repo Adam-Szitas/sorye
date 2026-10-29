@@ -309,6 +309,12 @@
   </section>
 
   <p><strong>Canvas realtime:</strong> board saves and deletions publish a small PostgreSQL <code>LISTEN/NOTIFY</code> invalidation across Hub instances. Each authorized SSE connection reloads the durable board from its configured store. Presence is still process-local and is not yet shared across Hub instances.</p>
+  <section aria-labelledby="rodrigo-title">
+    <h2 id="rodrigo-title">Rodrigo capability boundary</h2>
+    <p>Authenticated browser &rarr; Hub <code>/api/backend/capabilities</code> &rarr; server-derived user and workspace &rarr; signed method/path/body assertion &rarr; independent Rodrigo Rust service &rarr; verified HTTP v1 capabilities.</p>
+    <p>Rodrigo reports <code>dataReady: false</code>. PostgreSQL, MongoDB, Redis and S3 adapters are not implemented. Document operations fail explicitly; existing app data still belongs to the current Hub stores. An unavailable or incompatible Rodrigo returns 503 through the capability endpoint without changing data ownership.</p>
+    <p>Rodrigo private metrics listener &rarr; Prometheus &rarr; authenticated Grafana UI. These services and their deployment configuration live in the separate Rodrigo repository. <a href="RODRIGO.md">Rodrigo contract and setup</a>.</p>
+  </section>
   <footer>
     <strong>Source of truth:</strong> <code>docs/APP-BEHAVIOR-TREE.md</code> contains the concise Mermaid version. Keep both files in sync when behavior changes, as required by the repository-root <code>AGENTS.md</code>. Last checked against source on 2026-10-28.
   </footer>

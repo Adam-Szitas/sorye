@@ -4,6 +4,10 @@ A subscription-based app platform monorepo. The **Hub** is your workspace OS —
 
 ## Documentation
 
+Rodrigo is the independent Rust backend repository at `D:\projects\rodrigo`. This repository keeps its Next.js integration and versioned API contract snapshot. See [Rodrigo integration](./docs/RODRIGO.md).
+
+Local optional Postgres setup and database endpoint switching: [docs/LOCAL-DATABASE.md](./docs/LOCAL-DATABASE.md).
+
 | Doc | Contents |
 |-----|----------|
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Core platform design — Hub, MF, events, storage |
@@ -44,22 +48,26 @@ sorye/
 | Environment | `STORE_DRIVER` | `DATABASE_URL` |
 |-------------|----------------|----------------|
 | Local quick start | `json` (default) | not needed — uses `apps/hub/.data/store.json` |
-| Local with Postgres | `postgres` | `postgresql://sorye:sorye@localhost:5432/sorye` |
+| Local with Docker Postgres | `postgres` | `postgresql://sorye:sorye@127.0.0.1:15432/sorye` |
 | Fly.io production | `postgres` | set via `fly secrets set DATABASE_URL=...` |
 
 ### Local Postgres
 
 ```bash
-pnpm db:up          # starts Postgres via docker compose
-pnpm db:push        # applies schema (Drizzle)
+pnpm db:up          # starts optional Postgres (persistent Docker volume)
+pnpm db:push        # applies schema (Drizzle) to DATABASE_URL
+pnpm db:status      # health/status
+pnpm db:down        # stops it; keeps its volume and data
 ```
 
 In `apps/hub/.env.local`:
 
 ```
 STORE_DRIVER=postgres
-DATABASE_URL=postgresql://sorye:sorye@localhost:5432/sorye
+DATABASE_URL=postgresql://sorye:sorye@127.0.0.1:15432/sorye
 ```
+
+Copy the example into `apps/hub/.env.local` if needed. To select a different PostgreSQL database, change `DATABASE_URL` and restart Hub. PostgreSQL is currently the only supported SQL engine; other engines require an adapter and schema/migration compatibility work.
 
 ### Fly.io Postgres
 

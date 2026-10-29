@@ -1,0 +1,626 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Rodrigo service contract",
+    "version": "1.0.0",
+    "description": "Next.js signs short-lived Ed25519 JWTs bound to HTTP method, exact path, SHA-256 body digest, user, workspace and operation scope. PostgreSQL, MongoDB, Redis and S3 are not implemented. Document routes return adapter_not_configured, never success. Public health readiness means HTTP service ready; dataReady is false."
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "liveness",
+        "responses": {
+          "200": {
+            "description": "Process alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "alive"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "readiness",
+        "responses": {
+          "200": {
+            "description": "HTTP ready; inspect dataReady independently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ready"
+                    },
+                    "dataReady": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "dataReady"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "operationId": "capabilities",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "capabilities:read",
+        "responses": {
+          "200": {
+            "description": "Available capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/documents/{kind}": {
+      "parameters": [
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "notes",
+              "calendar"
+            ]
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readDocument",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "documents:read",
+        "responses": {
+          "200": {
+            "description": "Document or null if absent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "document"
+                  ],
+                  "properties": {
+                    "document": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Document"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "writeDocument",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "documents:write",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteDocument"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Document or null if absent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "document"
+                  ],
+                  "properties": {
+                    "document": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Document"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Stable error code and server-generated request ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "hubAssertion": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "EdDSA JWT",
+        "description": "iss=sorye-hub, aud=rodrigo, sub, workspaceId, scope, method, path, bodySha256, iat, exp <= iat+30, jti UUID. kid selects trusted public key. TLS required across VMs. Assertions are bearer credentials until expiration; jti is not a distributed replay lock."
+      }
+    },
+    "schemas": {
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "service",
+          "dataReady",
+          "operations",
+          "adapters"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "1"
+          },
+          "service": {
+            "const": "rodrigo"
+          },
+          "dataReady": {
+            "type": "boolean"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "adapters": {
+            "type": "object",
+            "required": [
+              "postgresql",
+              "mongodb",
+              "redis",
+              "s3"
+            ],
+            "properties": {
+              "postgresql": {
+                "enum": [
+                  "not_implemented",
+                  "not_configured",
+                  "ready"
+                ]
+              },
+              "mongodb": {
+                "enum": [
+                  "not_implemented",
+                  "not_configured",
+                  "ready"
+                ]
+              },
+              "redis": {
+                "enum": [
+                  "not_implemented",
+                  "not_configured",
+                  "ready"
+                ]
+              },
+              "s3": {
+                "enum": [
+                  "not_implemented",
+                  "not_configured",
+                  "ready"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Document": {
+        "type": "object",
+        "required": [
+          "revision",
+          "payload"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "WriteDocument": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedRevision",
+          "payload"
+        ],
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "requestId"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

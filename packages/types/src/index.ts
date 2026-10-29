@@ -1,4 +1,5 @@
 export * from './subscription';
+export * from './rodrigo';
 export * from './workspace';
 export * from './apps';
 export * from './canvas';

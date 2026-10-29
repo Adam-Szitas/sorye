@@ -140,6 +140,24 @@ flowchart TD
 
 The package map derives its visible app nodes from the authenticated workspace session; it does not accept plan or workspace identifiers from the browser. GPU controls are platform-admin-only. Prompt and PDF content are excluded from the audit log. The free-VRAM setting is an admission reserve, not a hard allocator limit. Ollama model unload does not stop its daemon; vLLM requires the service operator to stop its service.
 
+## Rodrigo capability boundary
+
+```mermaid
+flowchart LR
+    Browser[Authenticated browser] --> Capability[Hub /api/backend/capabilities]
+    Capability --> Session[Hub derives user and workspace]
+    Session --> Assertion[Short-lived signed method/path/body assertion]
+    Assertion --> Rodrigo[Independent Rodrigo Rust service]
+    Rodrigo --> Verify[Verify signature, scope and request bounds]
+    Verify --> Status[HTTP v1 capabilities: dataReady false]
+    Rodrigo --> Metrics[Private metrics listener]
+    Metrics --> Prometheus[Prometheus]
+    Prometheus --> Grafana[Authenticated Grafana UI]
+    Rodrigo -.-> Planned[Document/cache/blob interfaces; adapters not implemented]
+```
+
+Rodrigo is a separate repository and service. The Hub capability endpoint returns 503 if Rodrigo is unavailable or incompatible; it does not switch data owners. PostgreSQL, MongoDB, Redis and S3 adapters remain unimplemented. Existing Tasks/Notes/Calendar and other domain flows still use the Hub stores described above. Local Docker monitoring belongs to the Rodrigo repository. See [RODRIGO.md](./RODRIGO.md).
+
 ## State ownership at a glance
 
 | State | Owner | Persistence / lifetime |

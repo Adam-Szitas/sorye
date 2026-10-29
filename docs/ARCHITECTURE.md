@@ -8,6 +8,8 @@ For the compact, static user-flow and app-integration map, see [APP-BEHAVIOR-TRE
 
 ## Mental model
 
+**Rodrigo service boundary:** the Rust backend is developed and released from the separate `D:\projects\rodrigo` repository. Sorye currently calls only its authenticated capability endpoint through `GET /api/backend/capabilities`; domain data remains in the existing Hub stores. Rodrigo's PostgreSQL, MongoDB, Redis and S3 interfaces are intentionally unimplemented in this stage. See [RODRIGO.md](./RODRIGO.md) for the versioned contract and setup.
+
 Sorye is a **workspace OS**: users sign in once, pick apps from a catalog, and run them inside a shared shell. Apps are mostly **Module Federation remotes** loaded by the **Hub** (Next.js). Shared contracts live in **`@sorye/types`**. Cross-app behavior uses **workspace events**, **Relay routing**, **handoffs**, and **notifications** — all orchestrated by Hub APIs.
 
 ```

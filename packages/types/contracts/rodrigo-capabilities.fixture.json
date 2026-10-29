@@ -1,0 +1,14 @@
+{
+  "contractVersion": "1",
+  "service": "rodrigo",
+  "dataReady": false,
+  "operations": [
+    "capabilities:read"
+  ],
+  "adapters": {
+    "postgresql": "not_implemented",
+    "mongodb": "not_implemented",
+    "redis": "not_implemented",
+    "s3": "not_implemented"
+  }
+}

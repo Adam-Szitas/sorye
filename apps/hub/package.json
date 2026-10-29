@@ -9,6 +9,7 @@
     "store:import-json": "tsx lib/tools/import-json-state.ts",
     "files:migrate-blobs": "tsx lib/tools/migrate-file-blobs.ts",
     "test:scalability": "tsx --test test/scalability.test.ts",
+    "test:rodrigo": "tsx --test test/rodrigo-contract.test.ts",
     "prebuild": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
     "build": "next build",
     "start": "next start",
