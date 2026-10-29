@@ -1,4 +1,4 @@
-import { bootstrapMessenger } from '@/lib/store/messenger';
+import { messengerReadSummary } from '@/lib/store/messenger-summary';
 import { jsonDataFile } from '@/lib/store/json-file';
 
 /** workspaceId → userId → channelId → last-read ISO timestamp */
@@ -12,7 +12,7 @@ const readStateFile = jsonDataFile<MessengerReadStore>(
   () => ({}),
 );
 
-const readStore = () => readStateFile.read();
+const readStore = (workspaceId: string) => readStateFile.read(workspaceId);
 
 function readMap(
   store: MessengerReadStore,
@@ -26,23 +26,9 @@ export async function countMessengerUnread(
   userId: string,
   workspaceId: string,
 ): Promise<number> {
-  const [bootstrap, store] = await Promise.all([
-    bootstrapMessenger(userId, workspaceId, { includeMessages: true }),
-    readStore(),
-  ]);
-  if (!bootstrap) return 0;
-
-  const lastReadByChannel = readMap(store, workspaceId, userId);
-  let unread = 0;
-
-  for (const message of bootstrap.messages) {
-    if (message.author.id === userId) continue;
-    const lastRead =
-      lastReadByChannel[message.channelId] ?? '1970-01-01T00:00:00.000Z';
-    if (message.createdAt > lastRead) unread += 1;
-  }
-
-  return unread;
+  const store = await readStore(workspaceId);
+  const summary = await messengerReadSummary(userId, workspaceId, readMap(store, workspaceId, userId));
+  return summary.reduce((total, channel) => total + channel.unread, 0);
 }
 
 export async function markMessengerRead(input: {
@@ -51,27 +37,23 @@ export async function markMessengerRead(input: {
   channelId?: string;
   through?: string;
 }): Promise<void> {
-  const bootstrap = await bootstrapMessenger(input.userId, input.workspaceId, {
-    includeMessages: true,
-  });
-  if (!bootstrap) return;
-
-  const stamp = input.through ?? new Date().toISOString();
-
-  // Latest message per channel in one pass (messages are pre-sorted asc).
-  const latestByChannel: Record<string, string> = {};
-  for (const m of bootstrap.messages) {
-    latestByChannel[m.channelId] = m.createdAt;
-  }
+  const summary = await messengerReadSummary(input.userId, input.workspaceId, {});
+  const latestByChannel = Object.fromEntries(summary.map(c => [c.channelId, new Date(c.latest).toISOString()]));
+  if (input.channelId && !(input.channelId in latestByChannel)) return;
+  const stamp = input.through ? new Date(input.through).toISOString() : new Date().toISOString();
 
   await readStateFile.update((store) => {
     const userMap = { ...readMap(store, input.workspaceId, input.userId) };
 
     if (input.channelId) {
-      userMap[input.channelId] = latestByChannel[input.channelId] ?? stamp;
+      const latest = latestByChannel[input.channelId]!;
+      const next = latest < stamp ? latest : stamp;
+      userMap[input.channelId] = next > (userMap[input.channelId] ?? '') ? next : userMap[input.channelId]!;
     } else {
-      for (const channel of bootstrap.channels) {
-        userMap[channel.id] = latestByChannel[channel.id] ?? stamp;
+      for (const channel of summary) {
+        const latest = latestByChannel[channel.channelId]!;
+        const next = latest < stamp ? latest : stamp;
+        if (next > (userMap[channel.channelId] ?? '')) userMap[channel.channelId] = next;
       }
     }
 
@@ -79,5 +61,5 @@ export async function markMessengerRead(input: {
       ...(store[input.workspaceId] ?? {}),
       [input.userId]: userMap,
     };
-  });
+  }, input.workspaceId);
 }

@@ -4,7 +4,7 @@ import {
   contentDisposition,
   deleteWorkspaceFile,
   FileAccessError,
-  readWorkspaceFileBytes,
+  streamWorkspaceFile,
   renameWorkspaceFile,
 } from '@/lib/files';
 import { FILE_DISPLAY_NAME_MAX } from '@sorye/types';
@@ -33,12 +33,11 @@ export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
   const wantInline = new URL(req.url).searchParams.get('inline') === '1';
   try {
-    const { file, bytes } = await readWorkspaceFileBytes(
+    const { file, body } = await streamWorkspaceFile(
       session.workspace.id,
       id,
     );
     const inline = wantInline && isInlinePreviewMime(file.mime);
-    const body = new Uint8Array(bytes);
     return new NextResponse(body, {
       headers: {
         'Content-Type': file.mime,
@@ -46,7 +45,7 @@ export async function GET(req: Request, { params }: Params) {
           file.displayName,
           inline ? 'inline' : 'attachment',
         ),
-        'Content-Length': String(bytes.length),
+        'Content-Length': String(file.size),
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store',
       },

@@ -232,8 +232,10 @@ function readablePdfError(err: unknown): Error {
 }
 
 /** Read every page as the visible lines. A figure with no text becomes `[IMAGE]`. */
-export async function readPdfAsRows(data: Uint8Array): Promise<OcrAiPage[]> {
+export async function readPdfAsRows(data: Uint8Array, signal?: AbortSignal): Promise<OcrAiPage[]> {
+  signal?.throwIfAborted();
   const pdfjs = await loadPdfjs();
+  signal?.throwIfAborted();
   let doc: PdfDocument;
   try {
     doc = await pdfjs.getDocument({
@@ -253,10 +255,14 @@ export async function readPdfAsRows(data: Uint8Array): Promise<OcrAiPage[]> {
     }
     const pages: OcrAiPage[] = [];
     for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+      signal?.throwIfAborted();
       const page = await doc.getPage(pageNumber);
+      signal?.throwIfAborted();
       const viewport = page.getViewport({ scale: 1 });
       const content = await page.getTextContent();
+      signal?.throwIfAborted();
       const operators = await page.getOperatorList();
+      signal?.throwIfAborted();
       const runs = runsOnPage(content.items, content.styles, viewport);
       const figures = figuresOnPage({
         fnArray: operators.fnArray,

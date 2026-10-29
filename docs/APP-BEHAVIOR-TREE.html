@@ -57,7 +57,7 @@
 
   <section aria-labelledby="launch-title">
     <h2 id="launch-title">1. Open an app and retain its state</h2>
-    <p>Hub resolves identity and workspace before showing the catalog. Apps can be Hub-native, Module Federation remotes, or external iframe apps. Pane state and app-private state have different owners and lifetimes. Background state reads pause in hidden/offline tabs: notifications update on events with a 60-second safety refresh; standalone workspace state refreshes on focus/reconnect with a five-minute safety refresh. Event bursts are coalesced and requests do not overlap. Qwen analysis uses separate analyze/continue requests.</p>
+    <p>Hub resolves identity and workspace before showing the catalog. Apps can be Hub-native, Module Federation remotes, or external iframe apps. Pane state and app-private state have different owners and lifetimes. Background state reads pause in hidden/offline tabs: notifications update on events with a 60-second safety refresh; standalone workspace state refreshes on focus/reconnect with a five-minute safety refresh. Event bursts are coalesced and requests do not overlap. In Postgres mode, OCR is submitted as a durable job and the app polls authorized progress; local JSON development retains the direct analyze/continue path.</p>
     <div class="diagram">
       <svg viewBox="0 0 1380 470" role="img" aria-labelledby="launch-svg-title launch-svg-desc">
         <title id="launch-svg-title">Hub app launch and state flow</title>
@@ -122,6 +122,7 @@
       <tr><td>N13</td><td>Each app's own component tree and handlers</td><td>Temporary editor, selection, and progress state stays with its app; kernel does not inspect private fields.</td><td>In-memory while mounted.</td></tr>
       <tr><td>N14</td><td>App-specific persistence handlers</td><td>OCR comparison key <code>sorye:ocr:comparison:v1</code>, reading ID <code>sorye.ocr.reading</code>; Protocolio draft key <code>sorye:protocolio:draft:v1</code>.</td><td>OCR comparison and Protocolio draft use localStorage; OCR current reading and Hub panes use sessionStorage. Durable shared records use Hub APIs.</td></tr>
       <tr><td>N15</td><td>App startup restore functions</td><td>Each app reads its own saved record on mount. Full reload restoration is limited to values explicitly saved by that app.</td><td>No global snapshot of every app.</td></tr>
+      <tr><td>N16</td><td>Tasks, Notes and Calendar conflict handlers</td><td>App-specific keys <code>sorye:tasks:conflict-draft:v1</code>, <code>sorye:notes:conflict-draft:v1</code>, and <code>sorye:calendar:conflict-draft:v1</code>.</td><td>Stale drafts are saved locally after HTTP 409; users can download them or discard them and reload the latest server document.</td></tr>
     </tbody></table></div>
   </section>
 
@@ -165,6 +166,7 @@
         <g class="node hub"><rect x="1175" y="265" width="165" height="60"/><text x="1257" y="290">S13 · Notification</text><text class="sub" x="1257" y="309">badge / toast refresh</text></g>
       </svg>
     </div>
+    <p>Tasks, Notes and Calendar attach an expected revision to whole-document saves. Hub updates only when that revision is current and returns HTTP 409 for a stale edit. The edited draft remains in the app and is saved under an app-specific browser key; users can download it or explicitly discard it and reload the latest server version. A stale draft is never silently written over a newer version.</p>
     <h3>Node handlers and routes</h3>
     <div class="table-wrap"><table><thead><tr><th>Node</th><th>Handler / source</th><th>Connection and responsibility</th></tr></thead><tbody>
       <tr><td>S01</td><td>App API clients, e.g. <code>apps/ocr/src/hub-origin.ts</code></td><td>Calls Hub with session credentials; source app identity is supplied by its mounted kernel where relevant.</td></tr>
@@ -174,22 +176,23 @@
       <tr><td>S05</td><td><code>apps/hub/app/api/handoffs/route.ts</code></td><td>POST creates a typed, size-limited workspace handoff. GET filters by target app and unconsumed status. PATCH marks it consumed.</td></tr>
       <tr><td>S06</td><td><code>apps/hub/lib/ensure-user.ts</code> plus each route's validation</td><td>Authenticates; rejects invalid or excessive input; checks app/admin permissions where required.</td></tr>
       <tr><td>S07</td><td><code>ensureHubUser()</code> result</td><td>Workspace ID comes from the server session, never the request body.</td></tr>
-      <tr><td>S08</td><td><code>apps/hub/lib/store/</code>, feature services</td><td>Reads/writes through the configured JSON or Postgres driver; Drive file bytes have workspace-scoped file handlers.</td></tr>
+      <tr><td>S08</td><td><code>apps/hub/lib/store/</code>, <code>apps/hub/lib/file-blobs.ts</code></td><td>Metadata uses the configured JSON or Postgres driver. Drive bytes stream from a workspace-scoped local development store or S3-compatible object store; production rejects local blob storage.</td></tr>
       <tr><td>S09</td><td><code>apps/hub/lib/events.ts</code>, <code>apps/hub/lib/handoffs.ts</code></td><td>Stores event records and structured app handoffs, each scoped to the session workspace.</td></tr>
       <tr><td>S10</td><td><code>apps/hub/lib/relay.ts</code></td><td>Routes enabled events to supported destinations. Email/WhatsApp integrations may be queued rather than delivered.</td></tr>
-      <tr><td>S11</td><td><code>apps/hub/lib/relay.ts</code>, <code>apps/hub/lib/notifications.ts</code></td><td>Live routes include Messenger <code>#events</code>, allowed HTTPS webhooks, and Hub notifications.</td></tr>
+      <tr><td>S11</td><td><code>apps/hub/lib/relay.ts</code>, <code>apps/hub/lib/notifications.ts</code>, <code>apps/hub/lib/workers/relay-worker.ts</code></td><td>Messenger <code>#events</code> is delivered inline. In Postgres mode webhook events are durably queued and sent by a separately supervised Relay worker; JSON development keeps inline delivery. Hub notifications remain in the event flow.</td></tr>
       <tr><td>S12</td><td>Target app poller, e.g. <code>apps/protocolio/src/handoff.ts</code></td><td>Fetches unconsumed payloads for its target ID, validates the payload schema, then acknowledges use.</td></tr>
+      <tr><td>S14</td><td><code>apps/hub/app/api/{tasks,notes,calendar}/route.ts</code><br><code>apps/{tasks,notes,calendar}/src/*-storage.ts</code></td><td>Returns the current document revision; stale compare-and-swap writes return 409. The app stores a recoverable browser draft and offers download or discard-and-reload actions.</td></tr>
       <tr><td>S13</td><td><code>apps/hub/lib/notifications.ts</code><br><code>apps/hub/components/use-notifications.tsx</code></td><td>Records notices and refreshes Hub badges/toasts through shell notification signals.</td></tr>
     </tbody></table></div>
   </section>
 
   <section aria-labelledby="ocr-title">
     <h2 id="ocr-title">3. OCR matrices, Node analysis, and Protocolio</h2>
-    <p>OCR has two reading paths: a browser matrix path for review/comparison/export and a Node PDF.js path that normalizes meaningful body rows into one continuous three-column table. Filename, stored ID and PDF type identify the document; unclear findings follow the data. The browser sends a selected matrix to Protocolio through a workspace handoff.</p>
+    <p>OCR has two reading paths: a browser matrix path for review/comparison/export and a Node PDF.js path that normalizes meaningful body rows into one continuous three-column table. In Postgres mode, Hub validates and queues the source file, a bounded worker processes it outside the interactive request, and the OCR app polls job progress. The worker writes the durable analysis; the authorized job response exposes progress and the completed analysis ID. Filename, stored ID and PDF type identify the document; unclear findings follow the data. The browser sends a selected matrix to Protocolio through a workspace handoff.</p>
     <div class="diagram">
       <svg viewBox="0 0 1500 590" role="img" aria-labelledby="ocr-svg-title ocr-svg-desc">
         <title id="ocr-svg-title">OCR and Protocolio behavior flow</title>
-        <desc id="ocr-svg-desc">The browser path extracts and compares PDF matrices and sends selected values through a handoff to Protocolio. The Node path stores raw rows, checks GPU capacity and asks Qwen for meaningful body data. Shared normalization removes page furniture, validates every data cell and restores missing values in three columns. One continuous table and matching JSON show all body data, followed by unclear findings.</desc>
+        <desc id="ocr-svg-desc">The browser path extracts and compares PDF matrices and sends selected values through a handoff to Protocolio. The Node path validates a PDF and, in Postgres mode, places a durable job for the separate OCR worker; the app polls authorized job progress. The worker stores raw rows, checks GPU capacity and asks Qwen for meaningful body data. Shared normalization removes page furniture, validates every data cell and restores missing values in three columns. One continuous table and matching JSON show all body data, followed by unclear findings.</desc>
         <defs><marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/></marker></defs>
         <rect class="zone" x="20" y="25" width="1460" height="190"/><text class="zone-title" x="38" y="48">OCR BROWSER MATRIX PATH</text>
         <rect class="zone" x="20" y="235" width="1460" height="188"/><text class="zone-title" x="38" y="258">OPTIONAL HUB / NODE PDF ANALYSIS</text>
@@ -244,6 +247,7 @@
         <path class="edge" d="M1090 512H1180"/><text class="edge-label" x="1096" y="501">load PDF template</text>
       </svg>
     </div>
+    <div class="notice"><p><strong>Production job path:</strong> <code>POST /api/ocr/analyze</code> returns a job ID. The Hub worker runs <code>pnpm --filter @sorye/hub worker:ocr</code>, renews its Postgres lease while processing and stores page rows before inference. The OCR app polls <code>GET /api/jobs/[id]</code> using its session; Hub verifies both workspace and submitting user. Local JSON mode continues to use the direct request path.</p></div>
     <h3>Node handlers and data path</h3>
     <div class="table-wrap"><table><thead><tr><th>Node</th><th>Handler / source</th><th>What happens at this node</th></tr></thead><tbody>
       <tr><td>O01</td><td><code>apps/ocr/src/App.tsx</code></td><td>Accepts multiple PDFs and owns selection/progress UI.</td></tr>
@@ -255,8 +259,8 @@
       <tr><td>O07</td><td><code>apps/ocr/src/export-csv.ts</code></td><td>Exports selected/reviewed matrix values as CSV.</td></tr>
       <tr><td>O08</td><td>Analyze action in <code>apps/ocr/src/App.tsx</code></td><td>Starts the separate server-side text-analysis path for the source PDF.</td></tr>
       <tr><td>O09</td><td>Browser File / Hub Drive file</td><td>Raw PDF bytes reach Hub as multipart <code>file</code> or workspace-scoped <code>fileId</code>.</td></tr>
-      <tr><td>O10</td><td><code>apps/hub/app/api/ocr/analyze/route.ts: POST</code></td><td>Limits declared request size, acquires one OCR slot, parses upload, validates PDF signature, size and pages, then calls the reader.</td></tr>
-      <tr><td>O11</td><td><code>apps/hub/lib/security-limits.ts</code><br><code>apps/hub/lib/ocr/admission.ts</code></td><td>Uses server auth/workspace, byte/page caps, a process-wide single slot, rate limits, and input validation.</td></tr>
+      <tr><td>O10</td><td><code>apps/hub/app/api/ocr/analyze/route.ts: POST</code><br><code>apps/hub/lib/ocr/submit.ts</code></td><td>Authenticates and bounds multipart input. Postgres mode stores/validates the source file and returns a durable idempotent job; JSON development mode keeps the direct request path.</td></tr>
+      <tr><td>O11</td><td><code>apps/hub/lib/security-limits.ts</code><br><code>apps/hub/lib/bounded-upload.ts</code><br><code>apps/hub/lib/jobs.ts</code></td><td>Uses session-derived workspace scope, byte/page caps and shared Postgres queue admission with per-workspace capacity limits. A 30-second database-backed worker heartbeat prevents accepting OCR uploads when no worker is live. The worker claim provides one active OCR job across Hub replicas.</td></tr>
       <tr><td>O12</td><td><code>apps/hub/lib/ocr/read-pdf.ts</code><br><code>apps/hub/lib/ocr/rows.ts</code></td><td>Node PDF.js extracts visible page text into ordered source rows, keeping page boundaries and row structure.</td></tr>
       <tr><td>O13</td><td><code>apps/hub/lib/store/ocr-analyses*.ts</code><br><code>apps/hub/lib/ocr/store-batch.ts</code></td><td>Saves analysis rows under the session workspace; subsequent inference updates that record.</td></tr>
       <tr><td>O14</td><td><code>apps/hub/lib/ocr/gpu-guard.ts</code><br><code>apps/hub/lib/ocr/analyze.ts</code></td><td>Checks NVIDIA telemetry and headroom before each model inference; pressure returns a saved rows-only result.</td></tr>
@@ -268,6 +272,8 @@
       <tr><td>O20</td><td><code>apps/hub/lib/handoffs.ts</code></td><td>Stores the payload until its target reads it; target consumption is acknowledged.</td></tr>
       <tr><td>O21</td><td><code>apps/protocolio/src/handoff.ts</code><br><code>apps/protocolio/src/App.tsx</code></td><td>Polls <code>GET /api/handoffs?targetAppId=protocolio&amp;unconsumed=1</code>, validates the template and loads it into the editor.</td></tr>
       <tr><td>O22</td><td><code>apps/protocolio/src/App.tsx</code><br><code>apps/protocolio/src/services/templateBuilderService.ts</code></td><td>Saves the editor draft to localStorage and generates the final PDF via the configured Protocolio service/Hub bridge.</td></tr>
+      <tr><td>O23</td><td><code>apps/hub/lib/workers/ocr-worker.ts</code><br><code>apps/hub/lib/jobs.ts</code></td><td>Separate worker claims a leased durable job, renews ownership, extracts PDF pages with cancellation checks, persists source rows, runs bounded inference and records completion/retry state.</td></tr>
+      <tr><td>O24</td><td><code>apps/hub/app/api/jobs/[id]/route.ts</code><br><code>apps/ocr/src/App.tsx</code></td><td>Hub checks the current user's workspace and job ownership. OCR polls status/progress and loads the saved analysis only after completion; it does not keep a long OCR request open. Submission returns 503 before reading the upload when the worker heartbeat is stale or absent.</td></tr>
     </tbody></table></div>
   </section>
 
@@ -302,8 +308,9 @@
     </tbody></table></div>
   </section>
 
+  <p><strong>Canvas realtime:</strong> board saves and deletions publish a small PostgreSQL <code>LISTEN/NOTIFY</code> invalidation across Hub instances. Each authorized SSE connection reloads the durable board from its configured store. Presence is still process-local and is not yet shared across Hub instances.</p>
   <footer>
-    <strong>Source of truth:</strong> <code>docs/APP-BEHAVIOR-TREE.md</code> contains the concise Mermaid version. Keep both files in sync when behavior changes, as required by the repository-root <code>AGENTS.md</code>. Last checked against source on 2026-10-27.
+    <strong>Source of truth:</strong> <code>docs/APP-BEHAVIOR-TREE.md</code> contains the concise Mermaid version. Keep both files in sync when behavior changes, as required by the repository-root <code>AGENTS.md</code>. Last checked against source on 2026-10-28.
   </footer>
 </main>
 </body>

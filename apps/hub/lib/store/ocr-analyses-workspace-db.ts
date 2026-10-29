@@ -10,7 +10,7 @@ import type {
 import { queryLibrary, utcDayRange } from '@/lib/ocr/library-query';
 import { flattenLines } from '@/lib/ocr/vector';
 import type { WorkspaceDb } from '@/lib/workspace-db';
-import { getHubSession } from './postgres-store';
+import { getHubSession, getHubSessionForWorkspace } from './postgres-store';
 import {
   insertOcrAnalysis,
   selectOcrAnalyses,
@@ -22,7 +22,7 @@ import {
 import type { OcrAnalysisList, OcrAnalysisRead } from './ocr-analyses-json';
 
 async function assertMember(userId: string, workspaceId: string) {
-  const session = await getHubSession(userId);
+  const session = await getHubSessionForWorkspace(userId, workspaceId);
   if (!session) return null;
   if (session.workspace.id !== workspaceId) return null;
   if (!session.workspace.memberIds.includes(userId)) return null;
@@ -33,9 +33,10 @@ export async function listOcrAnalyses(
   db: WorkspaceDb,
   userId: string,
   workspaceId: string,
+  offset = 0,
 ): Promise<OcrAnalysisList> {
   if (!(await assertMember(userId, workspaceId))) return { access: 'denied' };
-  const analyses = await selectOcrAnalyses(db, workspaceId);
+  const analyses = await selectOcrAnalyses(db, workspaceId, offset);
   return { access: 'ok', analyses };
 }
 
@@ -55,6 +56,7 @@ export async function createOcrAnalysis(
   userId: string,
   workspaceId: string,
   input: {
+    id?: string;
     fileName: string;
     model: string;
     status: OcrAnalysis['status'];
@@ -66,7 +68,7 @@ export async function createOcrAnalysis(
 ): Promise<OcrAnalysis | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
   const record: OcrAnalysis = {
-    id: `ocr-${randomUUID().slice(0, 12)}`,
+    id: input.id ?? `ocr-${randomUUID().slice(0, 12)}`,
     workspaceId,
     createdBy: userId,
     fileName: input.fileName,

@@ -17,6 +17,33 @@ export const subscriptionTierEnum = pgEnum('subscription_tier', [
   'enterprise',
 ]);
 
+/** Shared feature state. Scope is a server-derived workspace ID, or @global for platform state. */
+export const sharedState = pgTable('shared_state', {
+  namespace: text('namespace').notNull(),
+  scope: text('scope').notNull(),
+  payload: jsonb('payload').$type<unknown>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('shared_state_namespace_scope').on(table.namespace, table.scope)]);
+
+export const backgroundJobs = pgTable('background_jobs', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull(),
+  userId: text('user_id').notNull(),
+  kind: text('kind').notNull(),
+  status: text('status').notNull().default('queued'),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  result: jsonb('result').$type<Record<string, unknown>>(),
+  attempts: integer('attempts').notNull().default(0),
+  leaseOwner: text('lease_owner'),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  error: text('error'),
+}, (t) => [index('background_jobs_claim_idx').on(t.kind, t.status, t.availableAt),
+  index('background_jobs_workspace_idx').on(t.workspaceId, t.createdAt)]);
+
 export const subscriptionSourceEnum = pgEnum('subscription_source', [
   'admin',
   'stripe',
@@ -138,7 +165,7 @@ export const messengerChannels = pgTable('messenger_channels', {
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (table) => [index('messenger_channels_workspace_idx').on(table.workspaceId)]);
 
 export const messengerMessages = pgTable('messenger_messages', {
   id: text('id').primaryKey(),
@@ -160,7 +187,7 @@ export const messengerMessages = pgTable('messenger_messages', {
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (table) => [index('messenger_messages_channel_created_id_idx').on(table.channelId, table.createdAt, table.id)]);
 
 export const canvasBoards = pgTable('canvas_boards', {
   id: text('id').primaryKey(),

@@ -22,6 +22,7 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:push": "pnpm --filter @sorye/db db:push",
+    "store:import-json": "pnpm --filter @sorye/hub store:import-json",
     "db:studio": "pnpm --filter @sorye/db db:studio",
     "dev:sdk": "pnpm --filter @sorye/sdk dev",
     "test:e2e": "playwright test",

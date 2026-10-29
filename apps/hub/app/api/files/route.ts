@@ -1,3 +1,4 @@
+import { readBoundedFormData, withUploadSlot, UploadLimitError } from '@/lib/bounded-upload';
 import { ensureHubUser } from '@/lib/ensure-user';
 import { publishWorkspaceEvent } from '@/lib/events';
 import {
@@ -44,10 +45,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  try { return await withUploadSlot(() => uploadFile(req, session)); }
+  catch (err) {
+    if (err instanceof UploadLimitError) return NextResponse.json({ error: err.message }, { status: err.status, headers: { 'Retry-After': '3' } });
+    throw err;
+  }
+}
+
+async function uploadFile(req: Request, session: NonNullable<Awaited<ReturnType<typeof ensureHubUser>>>) {
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
+    form = await readBoundedFormData(req, FILE_MAX_BYTES + 1_000_000);
+  } catch (err) {
+    if (err instanceof UploadLimitError) throw err;
     return NextResponse.json({ error: 'Expected multipart form data' }, { status: 400 });
   }
 

@@ -510,7 +510,7 @@ Default **Sorye Mail** address (`{user-slug}@{workspace-slug}.mail.sorye`) is an
 
 ## Purpose
 
-Workspace file locker. Members upload, search, preview, list, rename, download, and delete files for **this workspace only**. Bytes live on Hub disk; the JSON store holds metadata (id, workspaceId, displayName, relative path, mime, size, timestamps). Rename updates `displayName` only — the on-disk uuid never changes. Search is a client-side filter of the fetched list (plain, `/regex/`, `type:pdf` / `type:image`). Open/preview is limited to raster images, PDF, and text — Office stays download-only.
+Workspace file locker. Members upload, search, preview, list, rename, download, and delete files for **this workspace only**. JSON/Postgres stores metadata; bytes use local `.data` storage in development or the configured S3-compatible object store in production (id, workspaceId, displayName, relative path, mime, size, timestamps). Rename updates `displayName` only — the generated uuid object key never changes. Search is a client-side filter of the fetched list (plain, `/regex/`, `type:pdf` / `type:image`). Open/preview is limited to raster images, PDF, and text — Office stays download-only.
 
 Connected cloud storage appears as named virtual folders here. Browsing, uploads, and downloads are proxied through Hub so provider credentials stay server-side; cloud objects remain in the provider bucket and are not copied into local Drive. Current providers are AWS S3 and Cloudflare R2.
 

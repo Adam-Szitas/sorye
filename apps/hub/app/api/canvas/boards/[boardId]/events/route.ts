@@ -35,6 +35,13 @@ export async function GET(req: Request, { params }: Params) {
   const stream = new ReadableStream({
     start(controller) {
       const send = (event: CanvasRealtimeEvent) => {
+        if (event.type === 'board-changed') {
+          void getCanvasBoard(session.user.id, session.workspace.id, boardId).then((latest) => {
+            if (latest) send({ type: 'board-updated', board: latest, byUserId: event.byUserId });
+            else send({ type: 'board-deleted', boardId, byUserId: event.byUserId });
+          }).catch(() => undefined);
+          return;
+        }
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
         );

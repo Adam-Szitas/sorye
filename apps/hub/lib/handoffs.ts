@@ -6,7 +6,7 @@ type HandoffStore = Record<string, AppHandoff[]>;
 
 const handoffsFile = jsonDataFile<HandoffStore>('handoffs.json', () => ({}));
 
-const readStore = () => handoffsFile.read();
+const readStore = (workspaceId: string) => handoffsFile.read(workspaceId);
 
 export async function createHandoff(
   workspaceId: string,
@@ -29,7 +29,7 @@ export async function createHandoff(
     list.unshift(handoff);
     // Keep last 40 handoffs per workspace.
     store[workspaceId] = list.slice(0, 40);
-  });
+  }, workspaceId);
   return handoff;
 }
 
@@ -37,7 +37,7 @@ export async function listHandoffs(
   workspaceId: string,
   opts?: { targetAppId?: string; unconsumedOnly?: boolean },
 ): Promise<AppHandoff[]> {
-  const store = await readStore();
+  const store = await readStore(workspaceId);
   let list = store[workspaceId] ?? [];
   if (opts?.targetAppId) {
     list = list.filter((h) => h.targetAppId === opts.targetAppId);
@@ -52,7 +52,7 @@ export async function getHandoff(
   workspaceId: string,
   handoffId: string,
 ): Promise<AppHandoff | null> {
-  const store = await readStore();
+  const store = await readStore(workspaceId);
   return (store[workspaceId] ?? []).find((h) => h.id === handoffId) ?? null;
 }
 
@@ -71,5 +71,5 @@ export async function consumeHandoff(
     list[idx] = next;
     store[workspaceId] = list;
     return next;
-  });
+  }, workspaceId);
 }

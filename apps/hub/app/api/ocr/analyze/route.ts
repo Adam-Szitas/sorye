@@ -1,3 +1,4 @@
+import { readBoundedFormData, UploadLimitError } from '@/lib/bounded-upload';
 import { ensureHubUser } from '@/lib/ensure-user';
 import { createWorkspaceFile, readWorkspaceFileBytes, FileAccessError } from '@/lib/files';
 import { analyzeRowPages } from '@/lib/ocr/analyze';
@@ -15,6 +16,8 @@ import {
 } from '@/lib/security-limits';
 import { createOcrAnalysis } from '@/lib/store/ocr-analyses';
 import { NextResponse } from 'next/server';
+import { getStoreDriver } from '@/lib/env';
+import { submitOcr } from '@/lib/ocr/submit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,6 +46,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  if (getStoreDriver() === 'postgres') return submitOcr(req, session);
   try {
     assertOcrAnalyzeRateLimit(session.workspace.id, session.user.id);
   } catch (err) {
@@ -82,8 +86,9 @@ async function analyzeUpload(
 ) {
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
+    form = await readBoundedFormData(req, MAX_OCR_PDF_BYTES + 1_000_000);
+  } catch (err) {
+    if (err instanceof UploadLimitError) return NextResponse.json({ error: err.message }, { status: err.status });
     return NextResponse.json({ error: 'Expected a PDF upload' }, { status: 400 });
   }
 

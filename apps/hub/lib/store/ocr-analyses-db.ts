@@ -2,6 +2,7 @@ import * as schema from '@sorye/db/schema';
 import {
   readablePattern,
   type OcrAnalysis,
+  type OcrAnalysisSummary,
   type OcrAiPage,
   type OcrAnalysisStatus,
   type OcrDocumentVector,
@@ -80,24 +81,8 @@ export async function insertOcrAnalysis(
     pattern: record.pattern as unknown as Record<string, unknown> | null,
     error: record.error,
     createdAt: new Date(record.createdAt),
-  });
+  }).onConflictDoNothing();
 
-  const extras = await db
-    .select({ id: schema.ocrAnalyses.id })
-    .from(schema.ocrAnalyses)
-    .where(eq(schema.ocrAnalyses.workspaceId, record.workspaceId))
-    .orderBy(desc(schema.ocrAnalyses.createdAt))
-    .offset(MAX_OCR_ANALYSES);
-  if (extras.length > 0) {
-    await db
-      .delete(schema.ocrAnalyses)
-      .where(
-        inArray(
-          schema.ocrAnalyses.id,
-          extras.map((row) => row.id),
-        ),
-      );
-  }
   return record;
 }
 
@@ -171,16 +156,15 @@ export async function renameOcrAnalysisRow(
 }
 
 export async function selectOcrAnalyses(
-  db: WorkspaceDb,
-  workspaceId: string,
-): Promise<OcrAnalysis[]> {
-  const rows = await db
-    .select()
-    .from(schema.ocrAnalyses)
-    .where(eq(schema.ocrAnalyses.workspaceId, workspaceId))
-    .orderBy(desc(schema.ocrAnalyses.createdAt))
-    .limit(20);
-  return rows.map(rowToAnalysis);
+  db: WorkspaceDb, workspaceId: string, offset = 0,
+): Promise<OcrAnalysisSummary[]> {
+  const rows = await db.select({
+    id: schema.ocrAnalyses.id, fileName: schema.ocrAnalyses.fileName,
+    model: schema.ocrAnalyses.model, status: schema.ocrAnalyses.status,
+    error: schema.ocrAnalyses.error, createdAt: schema.ocrAnalyses.createdAt,
+  }).from(schema.ocrAnalyses).where(eq(schema.ocrAnalyses.workspaceId, workspaceId))
+    .orderBy(desc(schema.ocrAnalyses.createdAt), desc(schema.ocrAnalyses.id)).limit(20).offset(offset);
+  return rows.map(row => ({ ...row, status: asStatus(row.status), createdAt: row.createdAt.toISOString() }));
 }
 
 export async function selectOcrAnalysis(

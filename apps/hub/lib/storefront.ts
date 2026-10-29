@@ -43,7 +43,7 @@ function cloneProduct(product: StorefrontProduct): StorefrontProduct {
 export async function listStorefrontProducts(
   workspaceId: string,
 ): Promise<StorefrontProduct[]> {
-  const snapshot = await productsFile.read();
+  const snapshot = await productsFile.read(workspaceId);
   const existing = snapshot[workspaceId];
   if (existing && existing.length > 0) {
     return existing.map(cloneProduct);
@@ -55,14 +55,14 @@ export async function listStorefrontProducts(
     const seeded = cloneStorefrontSeedProducts();
     store[workspaceId] = seeded;
     return seeded.map(cloneProduct);
-  });
+  }, workspaceId);
 }
 
 /** Public site cards — names/prices only. Does not persist seed or expose orders. */
 export async function listPublicStorefrontProducts(
   workspaceId: string,
 ): Promise<StorefrontProduct[]> {
-  const snapshot = await productsFile.read();
+  const snapshot = await productsFile.read(workspaceId);
   const existing = snapshot[workspaceId];
   if (existing && existing.length > 0) {
     return existing.map(cloneProduct);
@@ -122,14 +122,14 @@ export async function upsertStorefrontProduct(
 
     store[workspaceId] = list;
     return cloneProduct(next);
-  });
+  }, workspaceId);
 }
 
 export async function listStorefrontOrders(
   workspaceId: string,
   opts?: { userId?: string },
 ): Promise<StorefrontOrder[]> {
-  const store = await ordersFile.read();
+  const store = await ordersFile.read(workspaceId);
   let list = store[workspaceId] ?? [];
   if (opts?.userId) {
     list = list.filter((order) => order.userId === opts.userId);
@@ -204,7 +204,7 @@ export async function placeStorefrontOrder(input: {
     const list = store[input.workspaceId] ?? [];
     list.unshift(order);
     store[input.workspaceId] = list.slice(0, MAX_ORDERS);
-  });
+  }, input.workspaceId);
 
   return {
     ...order,

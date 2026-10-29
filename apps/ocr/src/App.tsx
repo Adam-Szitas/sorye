@@ -66,6 +66,60 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+async function submitAndFollowAnalysis(
+  body: FormData,
+  onAnalysisProgress?: (analysis: OcrAnalysis) => void,
+  onQueued?: (status: string) => void,
+  onJobCreated?: (jobId: string | null) => void,
+): Promise<OcrAnalysis> {
+  const response = await fetch(hubApiPath('/api/ocr/analyze'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+    body,
+  });
+  const submitted = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    analysis?: OcrAnalysis;
+    jobId?: string;
+  };
+  if (!response.ok) throw new Error(submitted.error || `Analysis failed (${response.status})`);
+  onJobCreated?.(submitted.jobId ?? null);
+  if (submitted.analysis) return followAnalysis(submitted.analysis, onAnalysisProgress ?? (() => {}));
+  if (!submitted.jobId) throw new Error(submitted.error || 'The analysis was not accepted');
+
+  const jobPath = hubApiPath(`/api/jobs/${encodeURIComponent(submitted.jobId)}`);
+  for (;;) {
+    const jobResponse = await fetch(jobPath, { credentials: 'include', cache: 'no-store' });
+    const job = (await jobResponse.json().catch(() => ({}))) as {
+      status?: string;
+      error?: string;
+      result?: { analysisId?: string; phase?: string; completed?: number; total?: number };
+    };
+    if (!jobResponse.ok) throw new Error(job.error || `Could not check analysis (${jobResponse.status})`);
+    if (job.status === 'failed' || job.status === 'cancelled') {
+      throw new Error(job.error || (job.status === 'cancelled' ? 'Analysis was cancelled' : 'Analysis failed'));
+    }
+    const progress = job.result;
+    if (job.status === 'running') {
+      onQueued?.(progress?.phase === 'analyzing' && progress.total
+        ? `Qwen is reading section ${Math.min((progress.completed ?? 0) + 1, progress.total)} of ${progress.total}.`
+        : progress?.phase === 'reading_pdf' ? 'Extracting rows from the PDF…' : 'Waiting for an OCR worker…');
+    } else {
+      onQueued?.('Waiting for an OCR worker…');
+    }
+    if (job.status === 'completed' && progress?.analysisId) {
+      const analysisResponse = await fetch(hubApiPath(`/api/ocr/analyses/${encodeURIComponent(progress.analysisId)}`), {
+        credentials: 'include', cache: 'no-store',
+      });
+      const data = (await analysisResponse.json().catch(() => ({}))) as { analysis?: OcrAnalysis; error?: string };
+      if (!analysisResponse.ok || !data.analysis) throw new Error(data.error || 'The analysis finished but could not be loaded');
+      return data.analysis;
+    }
+    await delay(1_500);
+  }
+}
+
 async function continueAnalysis(id: string, tries = 0): Promise<OcrAnalysis> {
   const res = await fetch(hubApiPath(`/api/ocr/analyses/${id}/continue`), {
     method: 'POST',
@@ -161,6 +215,8 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<OcrAnalysis | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState('');
+  const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
   const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
   const [comparisonBusy, setComparisonBusy] = useState(false);
   const [comparisonProgress, setComparisonProgress] = useState('');
@@ -547,19 +603,14 @@ export default function App() {
       const body = new FormData();
       if (!driveFileIdRef.current) throw new Error('Save this PDF to Drive before analyzing it');
       body.append('fileId', driveFileIdRef.current);
-      const res = await fetch(hubApiPath('/api/ocr/analyze'), {
-        method: 'POST',
-        credentials: 'include',
-        body,
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        analysis?: OcrAnalysis;
-      };
-      if (!res.ok || !data.analysis) {
-        throw new Error(data.error || `Analysis failed (${res.status})`);
-      }
-      const current = await followAnalysis(data.analysis, setAnalysis);
+      const current = await submitAndFollowAnalysis(body, (next) => {
+        setAnalysis(next);
+        const cursor = next.vector?.cursor;
+        setAnalysisProgress(cursor?.total
+          ? `Qwen is reading section ${Math.min(cursor.next + 1, cursor.total)} of ${cursor.total}.`
+          : 'Qwen is reading this document. A few pages usually take a minute.');
+      }, setAnalysisProgress, setAnalysisJobId);
+      setAnalysis(current);
       const summary =
         current.pattern?.summary ||
         current.error ||
@@ -568,7 +619,7 @@ export default function App() {
         title: `Qwen read ${file.name}`,
         summary,
         appId: 'ocr',
-        entityId: data.analysis.id,
+        entityId: current.id,
         meta: {
           model: current.model,
           status: current.status,
@@ -579,6 +630,21 @@ export default function App() {
       setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {
       setAnalyzing(false);
+      setAnalysisProgress('');
+      setAnalysisJobId(null);
+    }
+  }
+
+  async function cancelQueuedAnalysis() {
+    if (!analysisJobId) return;
+    try {
+      const response = await fetch(hubApiPath(`/api/jobs/${encodeURIComponent(analysisJobId)}`), {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Could not cancel the analysis');
+      setAnalysisProgress('Cancellation requested. Any extracted rows are retained.');
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : 'Could not cancel the analysis');
     }
   }
 
@@ -599,19 +665,9 @@ export default function App() {
           const saved = await uploadToDrive(file, 'ocr', hubApiPath('/api/files'));
           const body = new FormData();
           body.append('fileId', saved.id);
-          const response = await fetch(hubApiPath('/api/ocr/analyze'), {
-            method: 'POST',
-            credentials: 'include',
-            body,
+          const complete = await submitAndFollowAnalysis(body, undefined, (status) => {
+            setComparisonProgress(`Analyzing ${index + 1} of ${pdfs.length}: ${file.name} · ${status}`);
           });
-          const data = (await response.json().catch(() => ({}))) as {
-            error?: string;
-            analysis?: OcrAnalysis;
-          };
-          if (!response.ok || !data.analysis) {
-            throw new Error(data.error || `Analysis failed (${response.status})`);
-          }
-          const complete = await followAnalysis(data.analysis, () => {});
           setComparisonDocuments((previous) => [
             ...previous.filter((item) => item.analysis.id !== complete.id),
             {
@@ -793,11 +849,12 @@ export default function App() {
         ) : null}
 
         {analyzing ? (
-          <p className="ocr-send-status" role="status">
-            {analysis?.status === 'extracting' && analysis.vector?.cursor
+          <div className="ocr-send-status" role="status">
+            <span>{analysisProgress || (analysis?.status === 'extracting' && analysis.vector?.cursor
               ? `Qwen is reading section ${Math.min(analysis.vector.cursor.next + 1, analysis.vector.cursor.total)} of ${analysis.vector.cursor.total}.`
-              : 'Qwen is reading this document. A few pages usually take a minute.'}
-          </p>
+              : 'Qwen is reading this document. A few pages usually take a minute.')}</span>
+            {analysisJobId ? <button type="button" className="btn-ghost" onClick={() => void cancelQueuedAnalysis()}>Cancel analysis</button> : null}
+          </div>
         ) : null}
 
         {sendStatus ? <p className="ocr-send-status">{sendStatus}</p> : null}

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import {
   readablePattern,
   type OcrAnalysis,
+  type OcrAnalysisSummary,
   type OcrAiPage,
   type OcrDocumentVector,
   type OcrLibraryHit,
@@ -12,7 +13,7 @@ import { queryLibrary, type OcrLibrarySource } from '@/lib/ocr/library-query';
 import { buildVector, flattenLines } from '@/lib/ocr/vector';
 import { MAX_OCR_ANALYSES } from '@/lib/security-limits';
 import { jsonDataFile } from './json-file';
-import { getHubSession } from './json-store';
+import { getHubSession, getHubSessionForWorkspace } from './json-store';
 
 interface OcrAnalysisStore {
   analyses: OcrAnalysis[];
@@ -23,7 +24,7 @@ const storeFile = jsonDataFile<OcrAnalysisStore>('ocr-analyses.json', () => ({
 }));
 
 async function assertMember(userId: string, workspaceId: string) {
-  const session = await getHubSession(userId);
+  const session = await getHubSessionForWorkspace(userId, workspaceId);
   if (!session) return null;
   if (session.workspace.id !== workspaceId) return null;
   if (!session.workspace.memberIds.includes(userId)) return null;
@@ -57,18 +58,20 @@ export type OcrAnalysisRead =
 
 export type OcrAnalysisList =
   | { access: 'denied' }
-  | { access: 'ok'; analyses: OcrAnalysis[] };
+  | { access: 'ok'; analyses: OcrAnalysisSummary[] };
 
 export async function listOcrAnalyses(
   userId: string,
   workspaceId: string,
+  offset = 0,
 ): Promise<OcrAnalysisList> {
   if (!(await assertMember(userId, workspaceId))) return { access: 'denied' };
   const store = await storeFile.read();
   const analyses = store.analyses
     .filter((row) => row.workspaceId === workspaceId)
-    .slice(0, 20)
-    .map(present);
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+    .slice(offset, offset + 20)
+    .map(({ id, fileName, model, status, error, createdAt }) => ({ id, fileName, model, status, error, createdAt }));
   return { access: 'ok', analyses };
 }
 
@@ -90,6 +93,7 @@ export async function createOcrAnalysis(
   userId: string,
   workspaceId: string,
   input: {
+    id?: string;
     fileName: string;
     model: string;
     status: OcrAnalysis['status'];
@@ -101,7 +105,7 @@ export async function createOcrAnalysis(
 ): Promise<OcrAnalysis | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
   const record: OcrAnalysis = present({
-    id: `ocr-${randomUUID().slice(0, 12)}`,
+    id: input.id ?? `ocr-${randomUUID().slice(0, 12)}`,
     workspaceId,
     createdBy: userId,
     fileName: input.fileName,
@@ -116,11 +120,6 @@ export async function createOcrAnalysis(
   });
   return storeFile.update((store) => {
     store.analyses.unshift(record);
-    const mine = store.analyses.filter((row) => row.workspaceId === workspaceId);
-    if (mine.length > MAX_OCR_ANALYSES) {
-      const drop = new Set(mine.slice(MAX_OCR_ANALYSES).map((row) => row.id));
-      store.analyses = store.analyses.filter((row) => !drop.has(row.id));
-    }
     return record;
   });
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { loadNotes, saveNotes, type Note } from './notes-storage';
+import { createNotesStorage, type Note } from './notes-storage';
 import { emitWorkspaceEvent } from './emit-event';
 import './styles.css';
 
@@ -13,12 +13,15 @@ function formatWhen(iso: string): string {
 }
 
 export default function App() {
+  const storage = useMemo(() => createNotesStorage(), []);
+  const { loadNotes, saveNotes } = storage;
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>(
     'loading',
   );
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
   const emitTimer = useRef<number | null>(null);
   const persistTimer = useRef<number | null>(null);
   const pendingNotes = useRef<Note[] | null>(null);
@@ -44,7 +47,7 @@ export default function App() {
     return () => {
       if (persistTimer.current) window.clearTimeout(persistTimer.current);
       if (pendingNotes.current) {
-        void saveNotes(pendingNotes.current);
+        void saveNotes(pendingNotes.current).catch(() => undefined);
       }
     };
   }, []);
@@ -62,8 +65,11 @@ export default function App() {
       const payload = pendingNotes.current;
       if (!payload) return;
       void saveNotes(payload).then(
-        () => setSaveError(null),
-        () => setSaveError('Could not save notes to the workspace.'),
+        () => { setSaveError(null); setConflictDraftAvailable(false); },
+        (err: unknown) => {
+          setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+          if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
+        },
       );
     };
     if (persistTimer.current) window.clearTimeout(persistTimer.current);
@@ -72,7 +78,31 @@ export default function App() {
       return;
     }
     persistTimer.current = window.setTimeout(flush, 500);
-  }, []);
+  }, [storage]);
+
+  const downloadConflictDraft = () => {
+    const draft = storage.readConflictDraft();
+    if (!draft) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'sorye-notes-conflict-draft.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const discardDraftAndReload = async () => {
+    try {
+      const latest = await loadNotes();
+      storage.clearConflictDraft();
+      setNotes(latest);
+      setActiveId(latest[0]?.id ?? null);
+      setConflictDraftAvailable(false);
+      setSaveError(null);
+    } catch {
+      setSaveError('Could not reload the latest notes. Your draft is still available in this browser.');
+    }
+  };
 
   const scheduleNoteEvent = useCallback((note: Note) => {
     if (emitTimer.current) window.clearTimeout(emitTimer.current);
@@ -140,9 +170,13 @@ export default function App() {
         </p>
       ) : null}
       {saveError ? (
-        <p className="notes-empty" role="alert">
+        <div className="notes-empty" role="alert">
           {saveError}
-        </p>
+          {conflictDraftAvailable ? <div className="notes-list-toolbar">
+            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
+            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+          </div> : null}
+        </div>
       ) : null}
 
       {loadState === 'ready' ? (

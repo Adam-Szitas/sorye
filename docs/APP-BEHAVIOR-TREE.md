@@ -38,7 +38,7 @@ flowchart TD
     KeepMounted --> Reopen
 ```
 
-`packages/platform/src/refresh.ts` owns bounded, non-overlapping background reads and coalesces event bursts. Full-page/standalone kernels use `sync.ts`: workspace and notifications refresh independently. The shell uses `use-hub-session.ts` for session revalidation and `use-notifications.tsx` for the same visible-only notification policy. Focus/visibility/reconnect refresh current data, and unmount aborts outstanding reads and removes timers/channels. Notification events do not refetch the standalone workspace. These reads are independent of Qwen work; analysis continues through its explicit analyze/continue requests.
+`packages/platform/src/refresh.ts` owns bounded, non-overlapping background reads and coalesces event bursts. Full-page/standalone kernels use `sync.ts`: workspace and notifications refresh independently. The shell uses `use-hub-session.ts` for session revalidation and `use-notifications.tsx` for the same visible-only notification policy. Focus/visibility/reconnect refresh current data, and unmount aborts outstanding reads and removes timers/channels. Notification events do not refetch the standalone workspace. In Postgres mode, OCR submissions enter a durable Hub job queue; a separately run OCR worker extracts/analyzes the PDF and the browser polls the authorized job endpoint for progress. The local JSON development path retains direct analyze/continue requests.
 
 ## Shared app requests and cross-app work
 
@@ -57,13 +57,14 @@ flowchart TD
     Auth --> Scope[Derive workspace from server session]
     Scope --> Validate[Validate route input and app permissions]
     Validate --> Store[Hub store / service]
-    Store --> Durable[(Postgres or Hub .data stores)]
+    Store --> Durable[(Postgres or Hub .data metadata)]
+    Store --> BlobStore[(Workspace-scoped Drive blob store)]
     Durable --> Result[Scoped response to caller]
     Result --> App
 
     Events --> Relay[Feature-gated Relay delivery]
     Relay --> Messenger[Messenger #events]
-    Relay --> Webhook[Allowed HTTPS webhook]
+    Relay --> Webhook[Durable Postgres job → supervised Relay worker → allowed HTTPS webhook]
     Relay --> Notice[Hub notification and app badge]
     Handoffs --> Queue[Workspace-scoped handoff record]
     Queue --> Poll[Target app polls unconsumed handoffs]
@@ -71,6 +72,10 @@ flowchart TD
 ```
 
 Apps do not call each other directly. Shared APIs, events, and handoffs pass through Hub, which owns authentication and workspace scoping. Events use Relay; structured app-to-app payloads use the handoff store.
+
+Canvas board edits remain durable in the configured Canvas store. After a save or deletion, Hub publishes a small PostgreSQL `LISTEN/NOTIFY` invalidation so SSE subscribers connected to any Hub instance reload the authorized board from its authoritative store. Presence remains process-local and will be shown only to users connected to the same Hub instance until shared presence storage is added.
+
+Tasks, Notes and Calendar save whole workspace documents with an expected revision. Hub atomically rejects stale revisions with HTTP 409. The edited draft stays in the app and is also kept in app-specific browser `localStorage`; users can download that draft or explicitly discard it and reload the latest server version before continuing.
 
 ## OCR to Protocolio
 
@@ -86,8 +91,13 @@ flowchart LR
 
     User --> Analyze[Optional Node.js analysis of source PDF]
     Analyze --> UploadAPI[POST /api/ocr/analyze]
-    UploadAPI --> Limits[Hub checks auth, request size, PDF signature, file size, page count]
-    Limits --> PdfJs[Node PDF.js reads every page into source rows]
+    UploadAPI --> Limits[Hub checks auth and bounded upload]
+    Limits --> Driver{Store mode}
+    Driver -->|Postgres| Queue[(Durable bounded job queue)]
+    Queue --> Poll[OCR remote polls authorized job status]
+    Queue --> Worker[Separate OCR worker with shared GPU admission]
+    Worker --> PdfJs[Node PDF.js reads every page into source rows]
+    Driver -->|Local JSON development| PdfJs
     PdfJs --> Save[Store source rows and analysis in workspace scope]
     Save --> GPU[Check local GPU headroom before each inference]
     GPU --> Qwen[Qwen reads bounded Node row chunks]
@@ -104,7 +114,7 @@ flowchart LR
     Protocolio --> Draft[Protocolio saves editor draft in localStorage]
 ```
 
-The browser matrix path supports table review, multi-PDF alignment, CSV, and the Protocolio handoff. The separate Node path preserves every raw PDF row and asks the model for meaningful data in three columns: position/variable, description/calculation, period/result. `packages/types/src/ocr-table.ts` removes recognizable letterhead, repeated column headings, signatures and page numbers from the presentation; it preserves body notes, calculations and totals. It validates each AI cell against its source and restores missing or changed values into the same three columns. The reading page and JSON use this same projection, including for older saved readings, with filename, stored document ID and PDF type ID above a continuous table across all pages. Source page/row references remain in JSON. Unclear findings follow the table. Comparison matrices retain calculations and totals under their preceding position across page breaks. Hub GET responses apply the same normalization; raw stored pages remain unchanged. Inference resumes from the beginning if its stored prompt version is obsolete. Protocolio owns its editor draft; Hub pane state and OCR comparison/reading state have their own persistence lifetimes.
+The browser matrix path supports table review, multi-PDF alignment, CSV, and the Protocolio handoff. The separate Node path preserves every raw PDF row and asks the model for meaningful data in three columns: position/variable, description/calculation, period/result. In Postgres mode, OCR work is durably queued and handled outside the interactive Hub request; progress is available through the workspace/user-authorized job status endpoint. A database-backed heartbeat must be fresh before uploads are accepted. The worker lease is renewed while processing, and cancellation/lost ownership aborts ongoing work between PDF pages and model batches. The local JSON development path remains direct and process-local. `packages/types/src/ocr-table.ts` removes recognizable letterhead, repeated column headings, signatures and page numbers from the presentation; it preserves body notes, calculations and totals. It validates each AI cell against its source and restores missing or changed values into the same three columns. The reading page and JSON use this same projection, including for older saved readings, with filename, stored document ID and PDF type ID above a continuous table across all pages. Source page/row references remain in JSON. Unclear findings follow the table. Comparison matrices retain calculations and totals under their preceding position across page breaks. Hub GET responses apply the same normalization; raw stored pages remain unchanged. Inference resumes from the beginning if its stored prompt version is obsolete. Protocolio owns its editor draft; Hub pane state and OCR comparison/reading state have their own persistence lifetimes.
 
 ## Dashboard package map and LLM controls
 
@@ -142,6 +152,7 @@ The package map derives its visible app nodes from the authenticated workspace s
 | Visited app's in-memory editor state | App component tree | Kept while that app stays mounted in the current Hub session |
 | OCR selected reading | OCR remote | `sessionStorage` |
 | OCR multi-document selection and comparison | OCR remote | App-owned `localStorage` record |
+| Tasks/Notes/Calendar stale-save draft | Respective remote | App-specific `localStorage` until the user downloads or discards it; never automatically replaces the latest server document |
 | Protocolio template and editor mode | Protocolio remote | App-owned `localStorage` draft |
 | Shared records and app workflows | Hub APIs and stores | Postgres or `.data`, depending on configured store |
 | Event delivery and structured handoffs | Hub | Workspace-scoped Hub stores; target app consumes/polls |

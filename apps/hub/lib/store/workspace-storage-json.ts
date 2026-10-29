@@ -80,13 +80,13 @@ export async function getWorkspaceDatabaseUrl(
   workspaceId: string,
 ): Promise<string | null> {
   const record = await getWorkspaceStorageRecord(workspaceId);
-  if (!record?.databaseUrlEncrypted || record.driver !== 'postgres') {
+  if (!record || record.driver !== 'postgres') {
     return null;
   }
-  if (record.status !== 'connected') return null;
+  if (!record.databaseUrlEncrypted) throw new Error('Configured workspace database has no credentials');
   try {
     return decryptSecret(record.databaseUrlEncrypted);
   } catch {
-    return null;
+    throw new Error('Configured workspace database credentials could not be decrypted');
   }
 }

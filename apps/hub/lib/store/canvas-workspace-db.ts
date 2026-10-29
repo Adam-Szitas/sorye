@@ -135,7 +135,7 @@ export async function updateCanvasBoard(
   }
 
   const document = patch.document ?? current.document;
-  await db
+  const [saved] = await db
     .update(schema.canvasBoards)
     .set({
       title: patch.title?.trim() || current.title,
@@ -147,10 +147,16 @@ export async function updateCanvasBoard(
       updatedAt: new Date(),
       revision: current.revision + 1,
     })
-    .where(eq(schema.canvasBoards.id, boardId));
+    .where(and(
+      eq(schema.canvasBoards.id, boardId),
+      eq(schema.canvasBoards.workspaceId, workspaceId),
+      eq(schema.canvasBoards.revision, current.revision),
+    ))
+    .returning();
 
-  const board = await getCanvasBoard(db, userId, workspaceId, boardId);
-  return board ? { board } : null;
+  if (saved) return { board: rowToBoard(saved) };
+  const latest = await getCanvasBoard(db, userId, workspaceId, boardId);
+  return latest ? { conflict: latest } : null;
 }
 
 export async function deleteCanvasBoard(

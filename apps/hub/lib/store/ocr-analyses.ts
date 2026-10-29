@@ -8,11 +8,11 @@ function hubStore() {
   return getStoreDriver() === 'postgres' ? postgresStore : jsonStore;
 }
 
-export const listOcrAnalyses = (userId: string, workspaceId: string) =>
+export const listOcrAnalyses = (userId: string, workspaceId: string, offset = 0) =>
   withWorkspaceDb(
     workspaceId,
-    (db) => workspaceDb.listOcrAnalyses(db, userId, workspaceId),
-    () => hubStore().listOcrAnalyses(userId, workspaceId),
+    (db) => workspaceDb.listOcrAnalyses(db, userId, workspaceId, offset),
+    () => hubStore().listOcrAnalyses(userId, workspaceId, offset),
   );
 
 export const getOcrAnalysis = (

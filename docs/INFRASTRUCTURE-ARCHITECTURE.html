@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Sorye infrastructure architecture</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #e6edf6;
+      --muted: #a9b8ca;
+      --paper: #0b1220;
+      --surface: #121d2d;
+      --line: #2d4058;
+      --navy: #081321;
+      --blue: #8bc4ff;
+      --blue-pale: #172d45;
+      --green: #76ddb1;
+      --green-pale: #15352d;
+      --amber: #ffd27a;
+      --amber-pale: #382d19;
+      --violet: #c0adff;
+      --violet-pale: #292343;
+      --shadow: 0 12px 32px rgb(0 0 0 / 22%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 5rem; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-size: 16px; line-height: 1.6; }
+    a { color: var(--blue); text-underline-offset: .2em; }
+    a:hover { color: #c1e0ff; }
+    a:focus-visible { outline: 3px solid #f0a900; outline-offset: 3px; border-radius: 3px; }
+    .hero { color: #f5f8fc; background: radial-gradient(ellipse at 80% 0%, #203b5b, transparent 46%), var(--navy); }
+    .hero-inner, main, .nav-inner { width: min(1160px, calc(100% - 40px)); margin-inline: auto; }
+    .hero-inner { padding: 46px 0 42px; }
+    .eyebrow { margin: 0 0 8px; color: #a8cef5; font-size: .78rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { max-width: 850px; margin: 0; font-size: clamp(2.25rem, 5vw, 4rem); letter-spacing: -.045em; line-height: 1.04; }
+    .intro { max-width: 760px; margin: 18px 0 0; color: #d2dfed; font-size: 1.12rem; }
+    .principle { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 13px; max-width: 890px; margin-top: 25px; padding: 17px 19px; border: 1px solid #758ba5; border-radius: 14px; background: rgb(255 255 255 / 7%); }
+    .principle strong { color: #ffdc8d; white-space: nowrap; }
+    .principle p { margin: 0; color: #e5edf6; }
+    .site-nav { position: sticky; z-index: 5; top: 0; border-bottom: 1px solid var(--line); background: rgb(12 20 33 / 94%); backdrop-filter: blur(12px); }
+    .nav-inner { display: flex; align-items: center; gap: 8px; min-height: 54px; overflow-x: auto; }
+    .nav-inner a { flex: 0 0 auto; padding: 7px 10px; border-radius: 8px; color: #c5d2e0; font-size: .88rem; font-weight: 700; text-decoration: none; }
+    .nav-inner a:hover { background: var(--blue-pale); color: var(--blue); }
+    main { padding: 28px 0 66px; }
+    section { margin-top: 46px; }
+    section:first-child { margin-top: 8px; }
+    h2 { margin: 0; font-size: clamp(1.55rem, 3vw, 2.15rem); letter-spacing: -.03em; line-height: 1.2; }
+    h3 { margin: 0; font-size: 1.08rem; line-height: 1.3; }
+    .section-lead { max-width: 800px; margin: 9px 0 20px; color: var(--muted); }
+    .surface { border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); }
+    .flow { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 22px; padding: 19px; }
+    .flow-card { position: relative; min-height: 132px; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: #152235; }
+    .flow-card:not(:last-child)::after { position: absolute; top: 50%; right: -19px; content: "→"; color: #6a8198; font-size: 1.25rem; font-weight: 800; transform: translateY(-50%); }
+    .number { display: inline-grid; width: 27px; height: 27px; margin-bottom: 9px; place-items: center; border-radius: 8px; background: var(--green-pale); color: var(--green); font-size: .8rem; font-weight: 800; }
+    .flow-card p { margin: 5px 0 0; color: var(--muted); font-size: .88rem; line-height: 1.45; }
+    .recommended { display: inline-block; margin-top: 8px; padding: 2px 7px; border-radius: 999px; background: var(--green-pale); color: var(--green); font-size: .72rem; font-weight: 800; }
+    .boundary { padding: 19px; border: 2px solid #42566e; border-radius: 20px; background: #0e1928; }
+    .boundary-head { display: flex; align-items: start; justify-content: space-between; gap: 20px; margin-bottom: 15px; }
+    .boundary-head p { margin: 4px 0 0; color: var(--muted); }
+    .tag { flex: 0 0 auto; padding: 5px 10px; border: 1px solid #42566e; border-radius: 999px; background: #152235; color: #c5d2e0; font-size: .78rem; font-weight: 750; }
+    .zones { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .zone { min-width: 0; padding: 15px; border: 1px solid var(--line); border-top: 4px solid var(--blue); border-radius: 13px; background: var(--surface); }
+    .zone.data { border-top-color: #bb5c77; }
+    .zone.ops { border-top-color: #bf8724; }
+    .zone.control { border-top-color: #816bc0; }
+    .zone .kind { margin: 0 0 5px; color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    .zone ul { margin: 9px 0 0; padding-left: 18px; color: #b5c4d5; font-size: .9rem; }
+    .zone li + li { margin-top: 5px; }
+    .connection-title { margin: 22px 0 9px; font-size: 1rem; }
+    .connections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 18px; margin: 0; padding: 0; list-style: none; }
+    .connections li { display: grid; grid-template-columns: minmax(120px, .65fr) 1.35fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+    .connections strong { color: #d8e4f2; }
+    .connections span { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+    .card { padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .card p { margin: 7px 0 0; color: var(--muted); font-size: .93rem; }
+    .card .badge { display: inline-block; margin-bottom: 9px; padding: 3px 8px; border-radius: 999px; background: var(--violet-pale); color: var(--violet); font-size: .72rem; font-weight: 800; }
+    .card .badge.green { background: var(--green-pale); color: var(--green); }
+    .card .badge.amber { background: var(--amber-pale); color: var(--amber); }
+    .callout { margin-top: 14px; padding: 14px 16px; border-left: 4px solid #bb8420; border-radius: 0 10px 10px 0; background: var(--amber-pale); color: #f2dcad; }
+    .callout p { margin: 0; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #1a293c; color: #c1d2e5; font-size: .82rem; letter-spacing: .035em; }
+    td { color: #b4c3d4; font-size: .92rem; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { min-width: 155px; color: var(--ink); font-weight: 750; }
+    .scale-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; counter-reset: scale; }
+    .scale-step { padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+    .scale-step::before { counter-increment: scale; content: "0" counter(scale); display: block; margin-bottom: 8px; color: var(--blue); font-size: .8rem; font-weight: 900; letter-spacing: .08em; }
+    .scale-step p { margin: 5px 0 0; color: var(--muted); font-size: .9rem; }
+    .foot { margin-top: 43px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: .88rem; }
+    .foot p { margin: 5px 0; }
+    @media (max-width: 1000px) {
+      .flow { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .flow-card:nth-child(4)::after { content: ""; }
+      .zones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 650px) {
+      .hero-inner, main, .nav-inner { width: min(100% - 28px, 1160px); }
+      .hero-inner { padding: 34px 0 30px; }
+      .principle { grid-template-columns: 1fr; gap: 4px; }
+      .flow { grid-template-columns: 1fr; gap: 10px; }
+      .flow-card { min-height: 0; }
+      .flow-card:not(:last-child)::after { content: "↓"; top: auto; right: 17px; bottom: -19px; z-index: 1; transform: none; }
+      .flow-card:nth-child(4)::after { content: "↓"; }
+      .zones, .grid, .scale-flow, .connections { grid-template-columns: 1fr; }
+      .boundary { padding: 13px; }
+      .boundary-head { display: block; }
+      .tag { display: inline-block; margin-top: 10px; }
+      .connections li { grid-template-columns: 1fr; gap: 2px; }
+      th, td { padding: 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">Infrastructure proposal · Proxmox · Docker</p>
+      <h1>A modular platform that can grow one measured step at a time</h1>
+      <p class="intro">A readable map of how code reaches users, where services run, how data is protected, and how each part can be extended or replaced without redesigning the whole platform.</p>
+      <div class="principle">
+        <strong>Performance and quality.</strong>
+        <p>Keep services modular, observable and recoverable. Scale the measured bottleneck. If a proposed direction weakens performance, reliability, security or quality, explain the concrete risk and recommend a safer option.</p>
+      </div>
+    </div>
+  </header>
+  <nav class="site-nav" aria-label="Page sections">
+    <div class="nav-inner">
+      <a href="#delivery">Release flow</a>
+      <a href="#runtime">VM layout</a>
+      <a href="#extensions">How to extend</a>
+      <a href="#observability">Monitoring</a>
+      <a href="#recovery">Backups</a>
+      <a href="#scaling">Scale safely</a>
+    </div>
+  </nav>
+  <main>
+    <section id="delivery" aria-labelledby="delivery-title">
+      <h2 id="delivery-title">1. How a change reaches production</h2>
+      <p class="section-lead">Build once, test the same artifact in staging, then promote its exact digest. CI jobs run on isolated runner VMs; the Git service itself does not execute builds.</p>
+      <div class="surface flow" aria-label="Release flow from developer commit through staging to production">
+        <article class="flow-card"><span class="number">1</span><h3>Developer</h3><p>Commit and push source.</p></article>
+        <article class="flow-card"><span class="number">2</span><h3>Forgejo</h3><p>Git, review and workflow definitions.</p><span class="recommended">Recommended Git host</span></article>
+        <article class="flow-card"><span class="number">3</span><h3>CI runners</h3><p>Separate VM pool runs tests, scans and builds.</p></article>
+        <article class="flow-card"><span class="number">4</span><h3>OCI registry</h3><p>Store signed images by immutable digest.</p></article>
+        <article class="flow-card"><span class="number">5</span><h3>Staging</h3><p>Deploy automatically; exercise full flows.</p></article>
+        <article class="flow-card"><span class="number">6</span><h3>Release gate</h3><p>Protected approval at first; automate later if safe.</p></article>
+        <article class="flow-card"><span class="number">7</span><h3>Production</h3><p>Gradual rollout, health checks and rollback.</p></article>
+      </div>
+      <div class="callout"><p><strong>Why Forgejo?</strong> It provides Git hosting and integrated Actions workflows while delegating execution to separately installed Forgejo Runners. This maps well to separate VMs and limits the impact of build workloads. Gitea is a viable alternative, but choose one host deliberately; their Actions workflows are similar, not fully interchangeable. See the <a href="https://forgejo.org/docs/latest/user/actions/overview/">Forgejo Actions overview</a> and <a href="https://forgejo.org/docs/v16.0/admin/actions/">runner administration guide</a>.</p></div>
+    </section>
+
+    <section id="runtime" aria-labelledby="runtime-title">
+      <h2 id="runtime-title">2. Where services run</h2>
+      <p class="section-lead">Proxmox manages virtual machines. Docker Compose runs services inside each VM. Network zones and credentials separate public traffic, application workloads, durable data and operations.</p>
+      <div class="boundary">
+        <div class="boundary-head"><div><h3>Proxmox cluster boundary</h3><p>VMs are independently sized, backed up and replaceable. Use private VLANs/firewalls between these zones.</p></div><span class="tag">VM lifecycle: Proxmox</span></div>
+        <div class="zones">
+          <article class="zone"><p class="kind">Edge and apps</p><h3>Ingress + app pools</h3><ul><li>Ingress: TLS, routing, rate limits</li><li>Staging Hub and app set</li><li>Production Hub/API replicas</li><li>Independent OCR and scheduled workers</li></ul></article>
+          <article class="zone data"><p class="kind">Durable data</p><h3>Database + files</h3><ul><li>PostgreSQL, private access, PITR</li><li>S3-compatible object storage</li><li>File versioning and lifecycle rules</li><li>Migration and restore procedures</li></ul></article>
+          <article class="zone ops"><p class="kind">Observe and recover</p><h3>Telemetry + backup</h3><ul><li>OpenTelemetry collectors</li><li>Metrics, logs, traces and alerts</li><li>PBS on separate hardware</li><li>Encrypted offsite backup copy</li></ul></article>
+          <article class="zone control"><p class="kind">Manage and deliver</p><h3>Git + automation</h3><ul><li>Forgejo Git service</li><li>Isolated CI runner VM(s)</li><li>Private OCI image registry</li><li>Deployment automation VM/tool</li></ul></article>
+        </div>
+        <h3 class="connection-title">The important connections</h3>
+        <ul class="connections">
+          <li><strong>Browser → ingress</strong><span>Public HTTPS enters through one controlled edge.</span></li>
+          <li><strong>Ingress → app pool</strong><span>Private routes distribute requests to healthy app instances.</span></li>
+          <li><strong>App → PostgreSQL / S3</strong><span>Private service contracts keep metadata and bytes durable.</span></li>
+          <li><strong>CI → registry → deploy</strong><span>Deploy immutable image digests; CI has no Proxmox or production Docker socket access.</span></li>
+          <li><strong>VMs and services → telemetry</strong><span>Collectors batch and forward measurements to a separate monitoring service.</span></li>
+          <li><strong>Proxmox / DB / S3 → backup</strong><span>Backup data crosses to separate hardware and then an offsite account/location.</span></li>
+        </ul>
+      </div>
+      <div class="callout"><p><strong>Start with Compose per VM.</strong> It is simple to operate and works with this layout. Compose does not schedule containers across VMs or provide cluster autoscaling. Add a cluster orchestrator only when measured cross-host scheduling needs justify its added operating burden.</p></div>
+    </section>
+
+    <section id="extensions" aria-labelledby="extensions-title">
+      <h2 id="extensions-title">3. Extend a component without coupling the whole system</h2>
+      <p class="section-lead">The extension seam is the contract between services. Keep that contract stable, then add capacity or replace an implementation behind it.</p>
+      <div class="grid">
+        <article class="card"><span class="badge green">Scale out</span><h3>Hub and app workloads</h3><p>Put stateless API instances behind ingress. Scale one micro-frontend’s asset delivery independently. Move CPU-heavy OCR and scheduled work into bounded worker pools.</p></article>
+        <article class="card"><span class="badge green">Add capacity</span><h3>Workers and queues</h3><p>Add worker VMs and queue consumers independently. Bound concurrency, memory, retries and queue age; keep jobs durable so capacity can be increased without losing work.</p></article>
+        <article class="card"><span class="badge">Replace by contract</span><h3>Database providers</h3><p>Use Hub-owned repository interfaces and migrations. Add another database adapter only for a real deployment need; never silently split a workspace across providers on failure.</p></article>
+        <article class="card"><span class="badge">S3 contract</span><h3>File storage</h3><p>Keep the application on an S3-compatible API. Add storage nodes or move providers without changing app logic; verify consistency, versioning and restore behavior before cutover.</p></article>
+        <article class="card"><span class="badge">OCI contract</span><h3>Images and deployment</h3><p>Build OCI images and deploy immutable digests. A registry or deployment controller can be replaced independently if image naming, credentials and rollout health checks remain explicit.</p></article>
+        <article class="card"><span class="badge amber">One owner</span><h3>VM and Docker management</h3><p>Proxmox is authoritative for VMs; versioned Compose plus automation is authoritative for containers. A UI such as Portainer can help operators, but must not become a competing desired-state source.</p></article>
+      </div>
+      <div class="callout"><p><strong>Scale with evidence.</strong> Modular does not mean deploying every service separately from day one. Keep logical boundaries and resource limits from the start; add VM or replica boundaries when telemetry shows a component needs independent capacity or failure isolation.</p></div>
+    </section>
+
+    <section id="observability" aria-labelledby="observability-title">
+      <h2 id="observability-title">4. See user experience and resource behavior</h2>
+      <p class="section-lead">Give every app, worker, VM and data service a service name, environment, version, health check and telemetry path. A dashboard should connect a user-visible slowdown to the responsible component.</p>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Segment</th><th scope="col">Track</th><th scope="col">Why it matters</th></tr></thead><tbody>
+        <tr><td>Frontend and each app</td><td>App/route load, Web Vitals, long tasks, JS errors, failed requests, active sessions, release version</td><td>Find slow navigation, broken remotes and regressions visible to users.</td></tr>
+        <tr><td>Hub and APIs</td><td>Request volume, p50/p95/p99 latency, errors, event-loop delay, CPU/RAM, pool wait, slow calls</td><td>Separate application saturation from downstream waits.</td></tr>
+        <tr><td>Queues and workers</td><td>Queue depth and oldest age, task duration, retries, failures, concurrency, memory per job</td><td>Reveal work the app cannot handle fast enough and safely bound it.</td></tr>
+        <tr><td>Database and object storage</td><td>Connections, locks, query latency, I/O, free disk, replication/PITR, object latency and errors</td><td>Detect data-layer bottlenecks before users see broad failures.</td></tr>
+        <tr><td>VMs and containers</td><td>Host/VM CPU, CPU steal, memory pressure, disk latency, network, restarts, limits and utilization</td><td>See peaks, idle periods, noisy neighbors and capacity headroom.</td></tr>
+        <tr><td>Usage patterns</td><td>Privacy-preserving active users, hourly/daily peaks, feature usage and errors by release</td><td>Size capacity for real usage rather than guesses; avoid personal data in metric labels.</td></tr>
+      </tbody></table></div>
+      <p class="section-lead">A practical stack is OpenTelemetry instrumentation and collectors, Prometheus-compatible metrics, Grafana dashboards, centralized logs/traces, and frontend error/performance reporting. Keep the monitoring control plane available when the application is unhealthy.</p>
+    </section>
+
+    <section id="recovery" aria-labelledby="recovery-title">
+      <h2 id="recovery-title">5. Backups that can be restored</h2>
+      <p class="section-lead">A backup is useful only if it is isolated from the failure and deletion paths it must protect, and a restore has been demonstrated.</p>
+      <div class="grid">
+        <article class="card"><span class="badge">VM recovery</span><h3>Proxmox Backup Server</h3><p>Run PBS on separate hardware/storage. Use scoped credentials, encryption and retention. Replicate critical snapshots to another location/account.</p></article>
+        <article class="card"><span class="badge">Data recovery</span><h3>Database + objects</h3><p>Configure PostgreSQL point-in-time recovery and object versioning/replication. Set retention to match agreed recovery point and recovery time objectives.</p></article>
+        <article class="card"><span class="badge amber">Prove it</span><h3>Restore drills</h3><p>Schedule isolated restores and record duration, missing data checks and steps. Alert on missed backup windows, failed verification and insufficient retention.</p></article>
+      </div>
+      <div class="callout"><p>Production app and CI credentials must not be able to delete backup history. Store recovery credentials separately and test the full path, including application startup and data integrity.</p></div>
+    </section>
+
+    <section id="scaling" aria-labelledby="scaling-title">
+      <h2 id="scaling-title">6. Add resources only where measurements point</h2>
+      <p class="section-lead">This keeps the platform extensible while avoiding premature complexity and infrastructure spend.</p>
+      <div class="scale-flow">
+        <article class="scale-step"><h3>Measure</h3><p>Identify a sustained p95/p99, queue age, memory, I/O, error or saturation problem.</p></article>
+        <article class="scale-step"><h3>Isolate</h3><p>Confirm which app, API, worker, DB, storage or VM owns the bottleneck.</p></article>
+        <article class="scale-step"><h3>Extend</h3><p>Add replicas/resources at that seam, with health checks, limits and rollback.</p></article>
+        <article class="scale-step"><h3>Prove</h3><p>Load-test the change and confirm user latency, reliability and cost improve.</p></article>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p><strong>Architecture proposal, not a claim about deployed state.</strong> Confirm actual VM inventory, Proxmox topology, VLANs, storage, DNS and backup targets before rollout.</p>
+      <p>Detailed decisions and references: <a href="INFRASTRUCTURE-ARCHITECTURE.md">INFRASTRUCTURE-ARCHITECTURE.md</a>.</p>
+    </footer>
+  </main>
+</body>
+</html>

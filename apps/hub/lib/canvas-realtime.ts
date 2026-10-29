@@ -1,4 +1,5 @@
 import type { CanvasBoard, CanvasPresenceUser } from '@sorye/types';
+import postgres from 'postgres';
 
 export type CanvasRealtimeEvent =
   | {
@@ -14,6 +15,12 @@ export type CanvasRealtimeEvent =
       type: 'board-deleted';
       boardId: string;
       byUserId: string;
+    }
+  | {
+      /** Cross-instance invalidation; receivers reload the authoritative board. */
+      type: 'board-changed';
+      boardId: string;
+      byUserId: string;
     };
 
 type Subscriber = (event: CanvasRealtimeEvent) => void;
@@ -22,6 +29,41 @@ const boardSubscribers = new Map<string, Set<Subscriber>>();
 const presenceByBoard = new Map<string, Map<string, CanvasPresenceUser>>();
 /** Users who opened the SSE stream for a board — skip DB on cursor POSTs. */
 const presenceAuthorized = new Map<string, Set<string>>();
+let notifyClient: ReturnType<typeof postgres> | null = null;
+let listenReady: Promise<void> | null = null;
+
+/** PostgreSQL NOTIFY carries only identifiers; the durable board remains the source of truth. */
+async function publishSharedBoardChange(event: CanvasRealtimeEvent): Promise<boolean> {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) return false;
+  if (!notifyClient) {
+    notifyClient = postgres(url, { max: 1, idle_timeout: 0, connect_timeout: 5 });
+    listenReady = notifyClient.listen('sorye_canvas', (raw) => {
+      try {
+        const received = JSON.parse(raw) as CanvasRealtimeEvent;
+        const boardId = received.type === 'board-changed' || received.type === 'board-deleted'
+          ? received.boardId
+          : received.type === 'board-updated' ? received.board.id : '';
+        if (boardId) publishBoardEvent(boardId, received);
+      } catch {
+        // Ignore malformed or stale notifications; clients can reload the board.
+      }
+    }).then(() => undefined);
+  }
+  await listenReady;
+  const message: CanvasRealtimeEvent = event.type === 'board-deleted'
+    ? event
+    : event.type === 'board-updated'
+      ? { type: 'board-changed', boardId: event.board.id, byUserId: event.byUserId }
+      : event;
+  await notifyClient.notify('sorye_canvas', JSON.stringify(message));
+  return true;
+}
+
+export async function publishCanvasBoardEvent(boardId: string, event: CanvasRealtimeEvent): Promise<void> {
+  if (await publishSharedBoardChange(event)) return;
+  publishBoardEvent(boardId, event);
+}
 
 export function authorizeBoardPresence(boardId: string, userId: string): void {
   let set = presenceAuthorized.get(boardId);

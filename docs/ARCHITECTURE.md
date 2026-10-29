@@ -141,6 +141,12 @@ There are **three** persistence layers. Do not mix them:
 
 Production **rejects** `STORE_DRIVER=json` (`lib/env.ts`). After schema changes run `pnpm db:push`.
 
+### Drive file blobs
+
+Drive metadata follows the Hub store driver; file bytes are kept outside JSON/Postgres payloads. Local development uses `.data/files/{workspaceId}/{uuid}`. Production requires `FILE_STORE_DRIVER=s3` and `FILE_S3_BUCKET`; the AWS SDK credential chain supports AWS S3, R2, and self-hosted S3-compatible services such as MinIO via `FILE_S3_ENDPOINT`. GET streams bytes from the object store to the authorized Hub response. Object keys are derived on the server from the authenticated workspace and generated UUID.
+
+To move an existing local Drive library, first take a verified backup and stop writes. Configure the S3 target, run `pnpm --filter @sorye/hub files:migrate-blobs` for a metadata/source-size inventory, then run the same command with `--apply`. The operation streams each source file, records and checks a SHA-256 object metadata value, refuses conflicting target objects, and is safe to re-run for matching objects. Keep local source files until object counts, sizes, sample downloads, and backup restore have been checked. This command migrates bytes only; the JSON metadata-to-Postgres migration is a separate operation.
+
 ### Relay cloud storage
 
 Relay accepts workspace-scoped AWS S3 and Cloudflare R2 connections. Connection metadata and AES-256-GCM-encrypted credentials are stored in `apps/hub/.data/relay-storages.json`; `STORAGE_SECRET_KEY` is a server-only environment secret used to encrypt/decrypt those credentials. Set it to a random value of at least 32 characters in the deployment secret manager and keep it stable; losing or rotating it without re-encrypting the stored records makes existing connections unusable. The Hub process environment cannot be safely mutated by a runtime UI, so user-entered provider keys belong in this encrypted vault, not in process environment variables or browser storage.
@@ -260,7 +266,7 @@ Relay stays inside Hub. The app does not deliver webhooks itself.
 
 1. An app calls `kernel.emit({ type: 'event', name, payload })` (`@sorye/platform`) or the older `emitWorkspaceEvent(name, payload)` helper. Both `POST /api/events`. Names are allowlisted. The client does not send `workspaceId`.
 2. `POST /api/events` checks the allowlisted name, payload size, and the workspace feature flag.
-3. Hub runs `deliverEventViaRelay` in-process: Messenger `#events` and HTTPS webhooks are live; email and WhatsApp are queued, not sent.
+3. Hub runs `deliverEventViaRelay`: Messenger `#events` is delivered inline. With `STORE_DRIVER=postgres`, allowed HTTPS webhook deliveries are persisted as `background_jobs` and handled by the separately supervised `pnpm --filter @sorye/hub worker:relay` process. The worker retries failures with bounded exponential backoff (up to five attempts) and sends an `Idempotency-Key`; webhook receivers should deduplicate because delivery is at least once. In JSON development mode webhooks remain inline. Email and WhatsApp are queued but not sent.
 4. Hub writes a notification. The shell updates badges via `sorye:hub:notify` and `BroadcastChannel('sorye-notifications')`.
 
 Handoffs (`/api/handoffs`) are the structured variant: a source app leaves a payload, the target polls `unconsumed=1`. Messenger chat is a separate API (`/api/messenger`); `#events` is the system channel Relay fills.
@@ -383,7 +389,7 @@ Add containers beside the existing Postgres service. Do not add an API process p
 | MinIO | Drive bytes. Database keeps metadata only | Later |
 | Mail worker | Same Node image, other command. IMAP sync and SMTP send must not block Hub requests. Not a public mail server | Later |
 
-Leave Google OAuth, Sentry, Stripe, and the user’s IMAP/SMTP host outside Compose. When Hub grows past one replica, fan out Relay and Canvas SSE with Postgres `LISTEN/NOTIFY`. Do not add Redis or a second language before that.
+Leave Google OAuth, Sentry, Stripe, and the user’s IMAP/SMTP host outside Compose. Canvas board invalidations now fan out through Postgres `LISTEN/NOTIFY` when `DATABASE_URL` is configured; receiving instances reload authorized board state from its configured store. Presence remains process-local. Relay delivery is still request-path work and needs a durable outbox worker before multi-replica operation. Do not add Redis or a second language before measurements justify them.
 
 From the host, `DATABASE_URL` uses `localhost`. From the Hub container it uses hostname `postgres`.
 
@@ -395,7 +401,7 @@ From the host, `DATABASE_URL` uses `localhost`. From the Hub container it uses h
 4. Repeat for the other remotes. Hub-native apps stay in the Hub container.
 5. MinIO, then move Drive bytes off `.data/files`.
 6. Mail worker with `MAIL_SECRET_KEY` (falls back to `AUTH_SECRET` until then).
-7. Postgres `LISTEN/NOTIFY` only when a second Hub replica is actually required.
+7. Verify the shared Postgres connection used for Canvas `LISTEN/NOTIFY`; provision it before adding Hub replicas. Presence fanout and Relay outbox delivery remain follow-up work.
 
 ## Adding a new micro-frontend
 

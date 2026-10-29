@@ -53,6 +53,7 @@ export async function GET(req: Request) {
   let channelId: string;
   let limit: number;
   let after: string | undefined;
+  let afterId: string | undefined;
   let before: string | undefined;
   try {
     const parsedChannel = parseId(searchParams.get('channelId'), 'channelId');
@@ -65,6 +66,7 @@ export async function GET(req: Request) {
     channelId = parsedChannel;
     limit = parseLimit(searchParams.get('limit'));
     after = parseAfter(searchParams.get('after'));
+    afterId = parseId(searchParams.get('afterId'), 'afterId') ?? undefined;
     const beforeRaw = searchParams.get('before') ?? searchParams.get('cursor');
     before = parseId(beforeRaw, 'before') ?? undefined;
   } catch (err) {
@@ -74,9 +76,9 @@ export async function GET(req: Request) {
     );
   }
 
-  if (after && before) {
+  if ((afterId && !after) || (after && before)) {
     return NextResponse.json(
-      { error: 'Use after or before, not both' },
+      { error: afterId && !after ? 'afterId requires after' : 'Use after or before, not both' },
       { status: 400 },
     );
   }
@@ -85,7 +87,7 @@ export async function GET(req: Request) {
     session.user.id,
     session.workspace.id,
     channelId,
-    { after, before, limit },
+    { after, afterId, before, limit },
   );
 
   if (result.status === 'forbidden') {

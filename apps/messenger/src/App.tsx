@@ -90,7 +90,7 @@ export default function App() {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const fileRef = useRef<HTMLInputElement>(null);
-  const lastMsgAtRef = useRef<string | undefined>(undefined);
+  const lastMessageCursorRef = useRef<{ createdAt: string; id: string } | undefined>(undefined);
   const threadReqRef = useRef(0);
   const loadingOlderRef = useRef(false);
   const pendingRestore = useRef<{ height: number; top: number } | null>(null);
@@ -177,7 +177,7 @@ export default function App() {
     setShowJump(false);
     stickToBottom.current = true;
     pendingRestore.current = null;
-    lastMsgAtRef.current = undefined;
+    lastMessageCursorRef.current = undefined;
     try {
       const page = await fetchMessages({
         channelId: id,
@@ -186,8 +186,9 @@ export default function App() {
       if (req !== threadReqRef.current) return;
       setThreadMessages(page.messages);
       setHasMoreOlder(page.hasMore);
-      lastMsgAtRef.current =
-        page.messages.at(-1)?.createdAt ?? new Date().toISOString();
+      lastMessageCursorRef.current = page.messages.at(-1)
+        ? { createdAt: page.messages.at(-1)!.createdAt, id: page.messages.at(-1)!.id }
+        : undefined;
     } catch (err) {
       if (req !== threadReqRef.current) return;
       setError(err instanceof Error ? err.message : 'Could not load messages');
@@ -277,8 +278,8 @@ export default function App() {
 
   useEffect(() => {
     if (!channelId) return;
-    const latest = messages.at(-1)?.createdAt;
-    if (latest) lastMsgAtRef.current = latest;
+    const latest = messages.at(-1);
+    if (latest) lastMessageCursorRef.current = { createdAt: latest.createdAt, id: latest.id };
   }, [channelId, messages]);
 
   useEffect(() => {
@@ -286,14 +287,23 @@ export default function App() {
     let cancelled = false;
     let inFlight = false;
     const timer = window.setInterval(async () => {
-      if (cancelled || inFlight) return;
+      if (cancelled || inFlight || document.visibilityState !== 'visible') return;
       inFlight = true;
       try {
-        const after = lastMsgAtRef.current;
-        const newer = await pollMessages(channelId, after);
-        if (cancelled || newer.length === 0) return;
-        setThreadMessages((prev) => mergeMessages(prev, newer));
-        lastMsgAtRef.current = newer.at(-1)?.createdAt ?? after;
+        let cursor = lastMessageCursorRef.current;
+        const caughtUp: MessengerMessage[] = [];
+        // Bound each poll cycle so a busy channel cannot monopolize the tab.
+        for (let pageCount = 0; pageCount < 4; pageCount += 1) {
+          const page = await pollMessages(channelId, cursor);
+          if (cancelled || page.messages.length === 0) break;
+          caughtUp.push(...page.messages);
+          const latest = page.messages.at(-1)!;
+          cursor = { createdAt: latest.createdAt, id: latest.id };
+          if (!page.hasMore) break;
+        }
+        if (cancelled || caughtUp.length === 0) return;
+        lastMessageCursorRef.current = cursor;
+        setThreadMessages((prev) => mergeMessages(prev, caughtUp));
         void markMessengerRead(channelId);
       } catch {
         // ignore transient poll errors
@@ -305,6 +315,22 @@ export default function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
+  }, [channelId, threadLoading]);
+
+  useEffect(() => {
+    const resume = () => {
+      if (document.visibilityState === 'visible' && channelId && !threadLoading) {
+        void pollMessages(channelId, lastMessageCursorRef.current).then((page) => {
+          if (page.messages.length === 0) return;
+          const latest = page.messages.at(-1)!;
+          lastMessageCursorRef.current = { createdAt: latest.createdAt, id: latest.id };
+          setThreadMessages((prev) => mergeMessages(prev, page.messages));
+          void markMessengerRead(channelId);
+        }).catch(() => undefined);
+      }
+    };
+    document.addEventListener('visibilitychange', resume);
+    return () => document.removeEventListener('visibilitychange', resume);
   }, [channelId, threadLoading]);
 
   async function forwardToMail(msg: MessengerMessage) {
@@ -361,7 +387,7 @@ export default function App() {
         text: draft.trim(),
       });
       setThreadMessages((prev) => mergeMessages(prev, [message]));
-      lastMsgAtRef.current = message.createdAt;
+      lastMessageCursorRef.current = { createdAt: message.createdAt, id: message.id };
       stickToBottom.current = true;
       setShowJump(false);
       setDraft('');
@@ -392,7 +418,7 @@ export default function App() {
         imageHeight: compressed.height,
       });
       setThreadMessages((prev) => mergeMessages(prev, [message]));
-      lastMsgAtRef.current = message.createdAt;
+      lastMessageCursorRef.current = { createdAt: message.createdAt, id: message.id };
       stickToBottom.current = true;
       setShowJump(false);
       setDraft('');

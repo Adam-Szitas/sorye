@@ -5,6 +5,7 @@ import type { WorkspaceDb } from '@/lib/workspace-db';
 
 export type ListMessagesQuery = {
   after?: string;
+  afterId?: string;
   before?: string;
   limit: number;
 };
@@ -52,7 +53,10 @@ export function paginateChannelMessages(
   const limit = query.limit;
 
   if (query.after) {
-    const newer = sorted.filter((m) => m.createdAt > query.after!);
+    const newer = sorted.filter((m) => {
+      const timeOrder = m.createdAt.localeCompare(query.after!);
+      return timeOrder > 0 || (timeOrder === 0 && query.afterId !== undefined && m.id > query.afterId);
+    });
     const hasMore = newer.length > limit;
     return {
       status: 'ok',
@@ -91,13 +95,19 @@ export async function queryChannelMessagesPage(
 
   if (query.after) {
     const afterDate = new Date(query.after);
+    const afterCursor = query.afterId
+      ? or(
+          gt(schema.messengerMessages.createdAt, afterDate),
+          and(eq(schema.messengerMessages.createdAt, afterDate), gt(schema.messengerMessages.id, query.afterId)),
+        )
+      : gt(schema.messengerMessages.createdAt, afterDate);
     const rows = await db
       .select()
       .from(schema.messengerMessages)
       .where(
         and(
           eq(schema.messengerMessages.channelId, channelId),
-          gt(schema.messengerMessages.createdAt, afterDate),
+          afterCursor,
         ),
       )
       .orderBy(

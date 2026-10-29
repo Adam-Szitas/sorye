@@ -32,7 +32,7 @@ const activatedFile = jsonDataFile<ActivatedStore>(
   () => ({}),
 );
 
-const readSettings = () => settingsFile.read();
+const readSettings = (workspaceId: string) => settingsFile.read(workspaceId);
 
 function normalizeSettings(
   raw: Partial<WorkspaceEventSettings> | undefined,
@@ -49,7 +49,7 @@ function normalizeSettings(
 export async function getEventSettings(
   workspaceId: string,
 ): Promise<WorkspaceEventSettings> {
-  const store = await readSettings();
+  const store = await readSettings(workspaceId);
   return normalizeSettings(store[workspaceId]);
 }
 
@@ -65,7 +65,7 @@ export async function setEventSettings(
     });
     store[workspaceId] = next;
     return next;
-  });
+  }, workspaceId);
 }
 
 export interface PublishEventResult {
@@ -220,7 +220,7 @@ export async function publishWorkspaceEvent(input: {
     if (activated[input.workspaceId]) return false;
     activated[input.workspaceId] = true;
     return true;
-  });
+  }, input.workspaceId);
   if (firstActivation) {
     await postActivationMessage(input.workspaceId, channel.id);
   }
@@ -272,14 +272,14 @@ export async function setEventsFeatureEnabled(input: {
     );
     await activatedFile.update((activated) => {
       activated[input.workspaceId] = true;
-    });
+    }, input.workspaceId);
     await postActivationMessage(input.workspaceId, channel.id);
   }
 
   if (!input.enabled) {
     await activatedFile.update((activated) => {
       delete activated[input.workspaceId];
-    });
+    }, input.workspaceId);
   }
 
   return {

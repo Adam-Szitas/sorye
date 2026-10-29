@@ -10,6 +10,11 @@ Read the repository-root `AGENTS.md` first. The [static behavior tree](./APP-BEH
 
 ## Rules of thumb
 
+- **Performance and reliability over everything.** Prefer measured, observable behavior that remains responsive and preserves data under concurrency, overload, and service failure. Do not assume that a lower-level language alone provides these outcomes.
+- **Keep the application modular and independently scalable.** Maintain clear contracts between Hub, each micro-frontend, worker, database, storage service and infrastructure component. Use per-component health, resource limits, telemetry and deployment boundaries so measured bottlenecks can be scaled, rolled back or replaced independently.
+- When a requested change moves away from performance, quality, security, reliability or modularity, state the specific consequence and recommend a safer direction before implementation. Do not silently implement a technically harmful direction.
+- If navigation opens the wrong app, route, build, or content version, treat it as a reliability defect and a performance failure. Trace navigation state, route resolution, remote/build version, and cache behavior; fix the cause and verify repeat navigation and reloads. A user's report of the wrong version is actionable evidence of a defect.
+
 - **Single source of truth:** `packages/types/src/*.ts` for domain models and app catalog
 - **APIs live in Hub only:** remotes call `fetch('/api/...', { credentials: 'include' })`
 - **No app-to-app calls:** use events, handoffs, or Messenger via Hub. Client path is `kernel.emit` / `kernel.navigate` from `@sorye/platform` (or the existing `emitWorkspaceEvent` helper). Do not import one app from another.
@@ -17,7 +22,7 @@ Read the repository-root `AGENTS.md` first. The [static behavior tree](./APP-BEH
 - **Standalone remote:** `connectKernel` without a Hub `mount` context calls `/api/workspace`, `/api/notifications`, `/api/events`, and `/api/handoffs` with `credentials: 'include'`. Set `VITE_HUB_ORIGIN` when the remote origin is not Hub. Dev CORS is localhost-only and is off in production. `workspaceId` still comes from `ensureHubUser()`.
 - **Workspace scope:** always derive `workspaceId` from `ensureHubUser()`, never from client body
 - **New MF app:** catalog entry in `packages/types/src/apps.ts` → Vite federation `./mount` → root `package.json` dev filter → `docs/apps/APPS.md`. The Catalog app (`alwaysAvailable`) lists `APP_CATALOG` automatically; still update that entry and the docs in the same change (see `.cursor/rules/app-catalog.mdc`).
-- **Hub-native app** (Catalog / Reports / Storefront / Site / Mail / Drive): `APP_CATALOG` + `apps/hub/components/` + wire in `hub-native-app.tsx` — no Vite remote or port. Reports is `adminOnly`. Contact is `presentationOnly` (`/contact`), not customer chrome. Site publishes `/s/[slug]` without login. Mail is an in-workspace mailbox plus optional connected IMAP/SMTP (not a public MX). Drive stores file bytes on disk under `.data/files/{workspaceId}/{uuid}` and metadata only in JSON.
+- **Hub-native app** (Catalog / Reports / Storefront / Site / Mail / Drive): `APP_CATALOG` + `apps/hub/components/` + wire in `hub-native-app.tsx` — no Vite remote or port. Reports is `adminOnly`. Contact is `presentationOnly` (`/contact`), not customer chrome. Site publishes `/s/[slug]` without login. Mail is an in-workspace mailbox plus optional connected IMAP/SMTP (not a public MX). Drive metadata uses the configured store; bytes use local `.data` in development and an S3-compatible object store in production.
 
 ## Common tasks
 

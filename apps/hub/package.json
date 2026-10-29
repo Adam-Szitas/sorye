@@ -4,6 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack --port 3000",
+    "worker:ocr": "tsx lib/workers/ocr-worker.ts",
+    "worker:relay": "tsx lib/workers/relay-worker.ts",
+    "store:import-json": "tsx lib/tools/import-json-state.ts",
+    "files:migrate-blobs": "tsx lib/tools/migrate-file-blobs.ts",
+    "test:scalability": "tsx --test test/scalability.test.ts",
     "prebuild": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
     "build": "next build",
     "start": "next start",
@@ -30,6 +35,7 @@
     "react-dom": "^19.1.0",
     "require-in-the-middle": "8.0.1",
     "swr": "^2.3.3",
+    "tsx": "^4.23.15",
     "zod": "^3.25.67"
   },
   "devDependencies": {

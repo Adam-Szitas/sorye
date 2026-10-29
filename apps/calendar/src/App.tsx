@@ -3,9 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   addMonths,
   buildMonthGrid,
-  loadEvents,
+  createCalendarStorage,
   parseDateKey,
-  saveEvents,
   toDateKey,
   type CalendarEvent,
 } from './calendar-storage';
@@ -38,6 +37,8 @@ function toggleDateInList(dates: string[], dateKey: string): string[] {
 }
 
 export default function App() {
+  const storage = useMemo(() => createCalendarStorage(), []);
+  const { loadEvents, saveEvents } = storage;
   const [viewDate, setViewDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -49,6 +50,7 @@ export default function App() {
     'loading',
   );
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
   const [draft, setDraft] = useState<ScheduleDraft>(() =>
     buildInitialDraft(todayKey()),
   );
@@ -95,10 +97,36 @@ export default function App() {
   const persist = useCallback((next: CalendarEvent[]) => {
     setEvents(next);
     void saveEvents(next).then(
-      () => setSaveError(null),
-      () => setSaveError('Could not save calendar events to the workspace.'),
+      () => { setSaveError(null); setConflictDraftAvailable(false); },
+      (err: unknown) => {
+        setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+        if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
+      },
     );
-  }, []);
+  }, [storage]);
+
+  const downloadConflictDraft = () => {
+    const draft = storage.readConflictDraft();
+    if (!draft) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'sorye-calendar-conflict-draft.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const discardDraftAndReload = async () => {
+    try {
+      const latest = await loadEvents();
+      storage.clearConflictDraft();
+      setEvents(latest);
+      setConflictDraftAvailable(false);
+      setSaveError(null);
+    } catch {
+      setSaveError('Could not reload the latest calendar. Your draft is still available in this browser.');
+    }
+  };
 
   const handleDayClick = (dateKey: string) => {
     setSelectedDate(dateKey);
@@ -164,9 +192,13 @@ export default function App() {
         </p>
       ) : null}
       {saveError ? (
-        <p className="calendar-empty" role="alert">
+        <div className="calendar-empty" role="alert">
           {saveError}
-        </p>
+          {conflictDraftAvailable ? <div className="calendar-month-toolbar">
+            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
+            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+          </div> : null}
+        </div>
       ) : null}
 
       {loadState === 'ready' ? (

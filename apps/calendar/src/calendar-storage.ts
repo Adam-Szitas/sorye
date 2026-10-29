@@ -6,6 +6,11 @@ import {
 
 export type { CalendarEvent, EventKind } from './event-schedule';
 
+export function createCalendarStorage() {
+let revision = 0;
+let conflicted = false;
+let queue: Promise<void> = Promise.resolve();
+const conflictDraftKey = 'sorye:calendar:conflict-draft:v1';
 class ApiError extends Error {
   status: number;
 
@@ -15,7 +20,11 @@ class ApiError extends Error {
   }
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (init?.method === "PUT") {
+    if (conflicted) throw new Error("Another session changed this document. Your draft is kept; reload before merging changes.");
+    init = { ...init, body: JSON.stringify({ ...JSON.parse(String(init.body)), expectedRevision: revision }) };
+  }
   const res = await fetch(path, {
     credentials: 'include',
     ...init,
@@ -24,11 +33,23 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
+  if (res.status === 409) {
+    conflicted = true;
+    try {
+      const parsed = JSON.parse(String(init?.body)) as { events?: CalendarEvent[] };
+      if (parsed.events) localStorage.setItem(conflictDraftKey, JSON.stringify({ savedAt: new Date().toISOString(), events: parsed.events }));
+    } catch { /* The in-memory events remain available if browser storage is unavailable. */ }
+  }
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
+    const error = await res.json().catch(() => ({}));
+    const text = typeof error.error === 'string' ? error.error : 'Could not save the workspace document.';
     throw new ApiError(res.status, text);
   }
-  return res.json() as Promise<T>;
+  const data = await res.json();
+  if (!Number.isInteger(data.revision)) throw new Error("Workspace response is missing a revision. Reload the app.");
+  revision = data.revision;
+  if (!init?.method) conflicted = false;
+  return data as T;
 }
 
 function readLegacyEvents(): CalendarEvent[] | null {
@@ -54,7 +75,7 @@ function clearLegacyEvents() {
   }
 }
 
-export async function loadEvents(): Promise<CalendarEvent[]> {
+async function loadEvents(): Promise<CalendarEvent[]> {
   const data = await api<{ events: CalendarEvent[]; empty: boolean }>(
     '/api/calendar',
   );
@@ -74,7 +95,7 @@ export async function loadEvents(): Promise<CalendarEvent[]> {
   return data.events;
 }
 
-export async function saveEvents(
+async function saveEvents(
   events: CalendarEvent[],
 ): Promise<CalendarEvent[]> {
   const saved = await api<{ events: CalendarEvent[] }>('/api/calendar', {
@@ -82,7 +103,33 @@ export async function saveEvents(
     body: JSON.stringify({ events }),
   });
   clearLegacyEvents();
+  clearConflictDraft();
   return saved.events;
+}
+
+function readConflictDraft(): CalendarEvent[] | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(conflictDraftKey) ?? 'null') as { events?: unknown } | null;
+    if (Array.isArray(parsed?.events)) return parsed.events as CalendarEvent[];
+  } catch { /* ignore invalid local draft */ }
+  return null;
+}
+
+function clearConflictDraft() {
+  try { localStorage.removeItem(conflictDraftKey); } catch { /* ignore */ }
+}
+
+function isConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409;
+}
+
+function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const run = queue.then(() => request<T>(path, init));
+  queue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+return { loadEvents, saveEvents, readConflictDraft, clearConflictDraft, isConflict };
 }
 
 export function toDateKey(year: number, month: number, day: number): string {

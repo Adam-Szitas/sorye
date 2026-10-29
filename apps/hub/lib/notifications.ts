@@ -42,9 +42,9 @@ const settingsFile = jsonDataFile<SettingsStore>(
   () => ({}),
 );
 
-const readNotifications = () => notificationsFile.read();
-const readReadState = () => readStateFile.read();
-const readSettingsStore = () => settingsFile.read();
+const readNotifications = (workspaceId: string) => notificationsFile.read(workspaceId);
+const readReadState = (workspaceId: string) => readStateFile.read(workspaceId);
+const readSettingsStore = (workspaceId: string) => settingsFile.read(workspaceId);
 
 function normalizeSettings(
   raw: Partial<NotificationCenterSettings> | undefined,
@@ -61,7 +61,7 @@ export async function getNotificationSettings(
   workspaceId: string,
   userId: string,
 ): Promise<NotificationCenterSettings> {
-  const store = await readSettingsStore();
+  const store = await readSettingsStore(workspaceId);
   return normalizeSettings(store[workspaceId]?.[userId]);
 }
 
@@ -82,7 +82,7 @@ export async function setNotificationSettings(
     });
     store[workspaceId] = { ...(store[workspaceId] ?? {}), [userId]: next };
     return next;
-  });
+  }, workspaceId);
 }
 
 function readIdsForUser(
@@ -129,7 +129,7 @@ export async function recordWorkspaceNotification(input: {
       0,
       MAX_NOTIFICATIONS,
     );
-  });
+  }, input.workspaceId);
   return notification;
 }
 
@@ -139,8 +139,8 @@ export async function getNotificationSnapshot(input: {
   limit?: number;
 }): Promise<NotificationSnapshot> {
   const [store, readStore, settings] = await Promise.all([
-    readNotifications(),
-    readReadState(),
+    readNotifications(input.workspaceId),
+    readReadState(input.workspaceId),
     getNotificationSettings(input.workspaceId, input.userId),
   ]);
   const notifications = (store[input.workspaceId] ?? []).slice(
@@ -177,7 +177,7 @@ export async function markNotificationsRead(input: {
   appId?: string;
   all?: boolean;
 }): Promise<NotificationSnapshot> {
-  const notificationsStore = await readNotifications();
+  const notificationsStore = await readNotifications(input.workspaceId);
   const notifications = notificationsStore[input.workspaceId] ?? [];
 
   if (input.all || input.appId === 'messenger') {
@@ -204,7 +204,7 @@ export async function markNotificationsRead(input: {
       ...(readStore[input.workspaceId] ?? {}),
       [input.userId]: [...readIds],
     };
-  });
+  }, input.workspaceId);
 
   return getNotificationSnapshot({
     workspaceId: input.workspaceId,

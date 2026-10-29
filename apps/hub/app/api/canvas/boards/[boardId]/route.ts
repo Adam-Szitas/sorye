@@ -1,6 +1,6 @@
 import { ensureHubUser } from '@/lib/ensure-user';
 import {
-  publishBoardEvent,
+  publishCanvasBoardEvent,
 } from '@/lib/canvas-realtime';
 import {
   deleteCanvasBoard,
@@ -62,7 +62,7 @@ export async function PATCH(req: Request, { params }: Params) {
     );
   }
 
-  publishBoardEvent(boardId, {
+  await publishCanvasBoardEvent(boardId, {
     type: 'board-updated',
     board: result.board,
     byUserId: session.user.id,
@@ -87,7 +87,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  publishBoardEvent(boardId, {
+  await publishCanvasBoardEvent(boardId, {
     type: 'board-deleted',
     boardId,
     byUserId: session.user.id,

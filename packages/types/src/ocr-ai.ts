@@ -466,6 +466,9 @@ export interface OcrAnalysis {
   createdAt: string;
 }
 
+/** Bounded library listing; full transcript and pattern are fetched by ID. */
+export type OcrAnalysisSummary = Pick<OcrAnalysis, 'id' | 'fileName' | 'model' | 'status' | 'error' | 'createdAt'>;
+
 /** Content-only export: structured rows and findings, without a text transcript. */
 export function buildOcrReadingDocument(analysis: OcrAnalysis) {
   const pattern = analysis.pattern;

@@ -4,6 +4,7 @@ import * as jsonStore from './workspace-docs-json';
 import * as postgresStore from './workspace-docs-postgres';
 import * as workspaceDb from './workspace-docs-workspace-db';
 import type { WorkspaceDocKind } from './workspace-docs-json';
+import type { WorkspaceDocWriteOptions } from './workspace-doc-conflict';
 
 export type {
   WorkspaceAppDoc,
@@ -31,7 +32,7 @@ export const putWorkspaceDoc = (
   workspaceId: string,
   kind: WorkspaceDocKind,
   payload: Record<string, unknown>,
-  options?: { migrate?: boolean },
+  options?: WorkspaceDocWriteOptions,
 ) =>
   withWorkspaceDb(
     workspaceId,

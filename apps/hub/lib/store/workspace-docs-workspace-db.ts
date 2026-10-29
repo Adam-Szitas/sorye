@@ -1,5 +1,6 @@
 import * as schema from '@sorye/db/schema';
 import { and, eq } from 'drizzle-orm';
+import { WorkspaceDocConflict, type WorkspaceDocWriteOptions } from './workspace-doc-conflict';
 import type { WorkspaceDb } from '@/lib/workspace-db';
 import { getHubSession } from './postgres-store';
 import type {
@@ -55,7 +56,7 @@ export async function putWorkspaceDoc(
   workspaceId: string,
   kind: WorkspaceDocKind,
   payload: Record<string, unknown>,
-  options?: { migrate?: boolean },
+  options?: WorkspaceDocWriteOptions,
 ): Promise<WorkspaceAppDoc | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
   const current = await getWorkspaceDoc(db, userId, workspaceId, kind);
@@ -66,10 +67,13 @@ export async function putWorkspaceDoc(
   }
 
   const now = new Date();
+  if (!options?.migrate && options?.expectedRevision !== (existing?.revision ?? 0)) {
+    throw new WorkspaceDocConflict();
+  }
   const revision = (existing?.revision ?? 0) + 1;
 
   if (existing) {
-    await db
+    const [saved] = await db
       .update(schema.workspaceAppDocs)
       .set({
         payload,
@@ -81,17 +85,22 @@ export async function putWorkspaceDoc(
         and(
           eq(schema.workspaceAppDocs.workspaceId, workspaceId),
           eq(schema.workspaceAppDocs.kind, kind),
+          eq(schema.workspaceAppDocs.revision, existing.revision),
         ),
-      );
+      ).returning();
+    if (!saved) throw new WorkspaceDocConflict();
+    return rowToDoc(saved);
   } else {
-    await db.insert(schema.workspaceAppDocs).values({
+    const [saved] = await db.insert(schema.workspaceAppDocs).values({
       workspaceId,
       kind,
       payload,
       updatedBy: userId,
       updatedAt: now,
       revision,
-    });
+    }).onConflictDoNothing().returning();
+    if (saved) return rowToDoc(saved);
+    if (!options?.migrate) throw new WorkspaceDocConflict();
   }
 
   const saved = await getWorkspaceDoc(db, userId, workspaceId, kind);

@@ -10,6 +10,11 @@ Before editing, compare the proposed work with the behavior map and relevant sou
 
 ## Repository rules
 
+- **Performance and reliability over everything.** Choose designs that keep user interactions fast and preserve correct, available data under load and failure. Validate performance and reliability claims with measurements, concurrency checks, and failure testing rather than language or framework assumptions.
+- **Modular by default; scale the measured bottleneck.** Keep app packages, micro-frontends, APIs, workers, data stores and infrastructure components separable behind explicit contracts, health checks, resource limits and telemetry. Avoid coupling that prevents a hot component from being scaled or rolled back independently.
+- If a requested change points in a direction that harms performance, quality, security, reliability, modularity or safe scaling, explain the concrete risk and propose a better direction before implementing it. The user decides product direction, while agents should identify technical changes that undermine these steering goals.
+- Treat navigation that opens the wrong app, route, build, or content version as a reliability defect and a performance failure. Trace navigation state, route resolution, remote/build version, and cache behavior; correct the source and verify repeat navigation and reloads resolve to the intended version. Treat user reports of wrong-version navigation as actionable defect reports.
+
 - Preserve existing worktree changes. Inspect `git status` before edits and do not revert or overwrite work that is not part of the task.
 - Shared contracts and the app catalog live in `packages/types/`. Hub owns shared APIs and workspace authorization. Derive workspace identity from the server session; do not trust a client-supplied workspace ID.
 - Apps do not import or call one another directly. Route shared behavior through Hub APIs, platform events, or handoffs.

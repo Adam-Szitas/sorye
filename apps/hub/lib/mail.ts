@@ -207,7 +207,7 @@ async function withWorkspaceState<T>(
     ensureCollections(state);
     store[workspaceId] = state;
     return fn(state);
-  });
+  }, workspaceId);
 }
 
 function toPublicProfile(

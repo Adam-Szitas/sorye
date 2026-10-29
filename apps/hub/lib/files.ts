@@ -10,6 +10,7 @@ import {
   type WorkspaceFile,
 } from '@sorye/types';
 import { jsonDataFile } from '@/lib/store/json-file';
+import { putFileBlob, streamFileBlob, deleteFileBlob } from './file-blobs';
 
 type FileStore = Record<string, WorkspaceFile[]>;
 
@@ -331,7 +332,7 @@ export async function listWorkspaceFiles(
   workspaceId: string,
 ): Promise<WorkspaceFile[]> {
   assertSafeSegment(workspaceId, 'workspace');
-  const store = await metaFile.read();
+  const store = await metaFile.read(workspaceId);
   return listForWorkspace(store, workspaceId)
     .map(cloneFile)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -341,7 +342,7 @@ export async function getWorkspaceFile(
   workspaceId: string,
   fileId: string,
 ): Promise<WorkspaceFile> {
-  const store = await metaFile.read();
+  const store = await metaFile.read(workspaceId);
   const row = findInWorkspace(store, workspaceId, fileId);
   if (!row) {
     throw new FileAccessError('File not found', 404);
@@ -358,12 +359,27 @@ export async function readWorkspaceFileBytes(
   if (file.workspaceId !== workspaceId) {
     throw new FileAccessError('File not found', 404);
   }
-  const abs = storedAbsolutePath(file.workspaceId, file.id);
   try {
-    const bytes = await readFile(abs);
+    const stream = await streamFileBlob(workspaceId, fileId);
+    const reader = stream.getReader();
+    const chunks: Buffer[] = [];
+    let length = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > FILE_MAX_BYTES) throw new FileAccessError('File exceeds size limit', 413);
+        chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    const bytes = Buffer.concat(chunks, length);
     return { file, bytes };
-  } catch {
-    throw new FileAccessError('File not found', 404);
+  } catch (error) {
+    if (error instanceof FileAccessError) throw error;
+    throw new FileAccessError('File storage is temporarily unavailable', 503);
   }
 }
 
@@ -407,8 +423,7 @@ export async function createWorkspaceFile(input: {
     updatedAt: now,
   };
 
-  await mkdir(path.dirname(abs), { recursive: true });
-  await writeFile(abs, input.bytes);
+  await putFileBlob(workspaceId, id, input.bytes, mime);
 
   try {
     return await metaFile.update((store) => {
@@ -421,9 +436,9 @@ export async function createWorkspaceFile(input: {
       }
       store[workspaceId] = [...existing, row];
       return cloneFile(row);
-    });
+    }, input.workspaceId);
   } catch (err) {
-    await unlink(abs).catch(() => undefined);
+    await deleteFileBlob(workspaceId, id).catch(() => undefined);
     throw err;
   }
 }
@@ -454,7 +469,7 @@ export async function renameWorkspaceFile(
     next[index] = updated;
     store[workspaceId] = next;
     return cloneFile(updated);
-  });
+  }, workspaceId);
 }
 
 export async function deleteWorkspaceFile(
@@ -473,10 +488,16 @@ export async function deleteWorkspaceFile(
     }
     store[workspaceId] = rows.filter((_, i) => i !== index);
     return current;
-  });
+  }, workspaceId);
 
-  const abs = storedAbsolutePath(row.workspaceId, row.id);
-  await unlink(abs).catch((err: NodeJS.ErrnoException) => {
-    if (err.code !== 'ENOENT') throw err;
-  });
+  await deleteFileBlob(row.workspaceId, row.id);
+}
+
+export async function streamWorkspaceFile(workspaceId: string, fileId: string) {
+  const file = await getWorkspaceFile(workspaceId, fileId);
+  try {
+    return { file, body: await streamFileBlob(workspaceId, file.id) };
+  } catch {
+    throw new FileAccessError('File storage is temporarily unavailable', 503);
+  }
 }

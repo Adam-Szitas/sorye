@@ -1,5 +1,6 @@
 import { jsonDataFile } from './json-file';
 import { getHubSession } from './json-store';
+import { WorkspaceDocConflict, type WorkspaceDocWriteOptions } from './workspace-doc-conflict';
 
 export type WorkspaceDocKind = 'tasks' | 'notes' | 'calendar';
 
@@ -51,7 +52,7 @@ export async function putWorkspaceDoc(
   workspaceId: string,
   kind: WorkspaceDocKind,
   payload: Record<string, unknown>,
-  options?: { migrate?: boolean },
+  options?: WorkspaceDocWriteOptions,
 ): Promise<WorkspaceAppDoc | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
   const key = docKey(workspaceId, kind);
@@ -59,6 +60,9 @@ export async function putWorkspaceDoc(
     const existing = store.docs[key];
     if (options?.migrate && existing) {
       return existing;
+    }
+    if (!options?.migrate && options?.expectedRevision !== (existing?.revision ?? 0)) {
+      throw new WorkspaceDocConflict();
     }
     const next: WorkspaceAppDoc = {
       workspaceId,

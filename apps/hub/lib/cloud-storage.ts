@@ -126,14 +126,14 @@ async function withClient<T>(workspaceId: string, storageId: string, action: (cl
 }
 
 async function findStorageRecord(workspaceId: string, storageId: string): Promise<StorageRecord> {
-  const records = (await storageFile.read())[workspaceId] ?? [];
+  const records = (await storageFile.read(workspaceId))[workspaceId] ?? [];
   const record = records.find((entry) => entry.id === storageId);
   if (!record) throw new CloudStorageError('Storage connection not found.', 404);
   return record;
 }
 
 export async function listCloudStorages(workspaceId: string): Promise<CloudStorageConnection[]> {
-  const records = (await storageFile.read())[workspaceId] ?? [];
+  const records = (await storageFile.read(workspaceId))[workspaceId] ?? [];
   return records.map(safeRecord);
 }
 
@@ -190,7 +190,7 @@ export async function connectCloudStorage(input: {
     }
     records.unshift(record);
     store[input.workspaceId] = records;
-  });
+  }, input.workspaceId);
   return safeRecord(record);
 }
 
@@ -230,14 +230,14 @@ export async function rotateCloudStorageCredentials(workspaceId: string, storage
       secretKeyEncrypted: encryptStorageSecret(secretAccessKey),
     };
     store[workspaceId] = records;
-  });
+  }, workspaceId);
 }
 
 export async function deleteCloudStorage(workspaceId: string, storageId: string): Promise<void> {
   const record = await findStorageRecord(workspaceId, storageId);
   await storageFile.update((store) => {
     store[workspaceId] = (store[workspaceId] ?? []).filter((entry) => entry.id !== record.id);
-  });
+  }, workspaceId);
 }
 
 function validatePrefix(prefix: unknown): string {

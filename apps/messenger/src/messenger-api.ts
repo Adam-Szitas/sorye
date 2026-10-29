@@ -68,11 +68,13 @@ export async function fetchMessages(input: {
   limit?: number;
   before?: string;
   after?: string;
+  afterId?: string;
 }): Promise<MessengerMessagesPage> {
   const params = new URLSearchParams({ channelId: input.channelId });
   params.set('limit', String(input.limit ?? MESSENGER_PAGE_SIZE));
   if (input.before) params.set('before', input.before);
   if (input.after) params.set('after', input.after);
+  if (input.afterId) params.set('afterId', input.afterId);
   const res = await fetch(`/api/messenger/messages?${params}`, {
     credentials: 'include',
   });
@@ -88,18 +90,14 @@ export async function fetchMessages(input: {
 
 export async function pollMessages(
   channelId: string,
-  after?: string,
-): Promise<MessengerMessage[]> {
-  try {
-    const page = await fetchMessages({
-      channelId,
-      after,
-      limit: MESSENGER_PAGE_SIZE,
-    });
-    return page.messages;
-  } catch {
-    return [];
-  }
+  after?: { createdAt: string; id: string },
+): Promise<MessengerMessagesPage> {
+  return fetchMessages({
+    channelId,
+    after: after?.createdAt,
+    afterId: after?.id,
+    limit: MESSENGER_PAGE_SIZE,
+  });
 }
 
 export function mergeMessages(

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useKernel, useSignalValue } from '@sorye/platform/react';
 import { StatusHandler, taskMatchesQuery } from './status-handler';
-import { createDefaultBoard, loadBoard, saveBoard } from './tasks-storage';
+import { createDefaultBoard, createTasksStorage } from './tasks-storage';
 import { KanbanBoard } from './kanban-board';
 import { StatusSettings } from './status-settings';
 import { emitTaskEvent } from './emit-event';
@@ -45,6 +45,8 @@ function emitTaskDiff(kernel: KernelClient, prev: TasksBoard, next: TasksBoard) 
 }
 
 export default function App() {
+  const storage = useMemo(() => createTasksStorage(), []);
+  const { loadBoard, saveBoard } = storage;
   const kernel = useKernel();
   const workspaceName = useSignalValue(kernel.signals.workspaceName);
   const userDisplayName = useSignalValue(kernel.signals.userDisplayName);
@@ -62,6 +64,7 @@ export default function App() {
     'loading',
   );
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,12 +96,38 @@ export default function App() {
       emitTaskDiff(kernel, board, snapshot);
       setBoard(snapshot);
       void saveBoard(snapshot).then(
-        () => setSaveError(null),
-        () => setSaveError('Could not save tasks to the workspace.'),
+        () => { setSaveError(null); setConflictDraftAvailable(false); },
+        (err: unknown) => {
+          setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+          if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
+        },
       );
     },
-    [board, kernel],
+    [board, kernel, storage],
   );
+
+  const downloadConflictDraft = () => {
+    const draft = storage.readConflictDraft();
+    if (!draft) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(draft, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'sorye-tasks-conflict-draft.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const discardDraftAndReload = async () => {
+    try {
+      const latest = await loadBoard();
+      storage.clearConflictDraft();
+      setBoard(latest);
+      setConflictDraftAvailable(false);
+      setSaveError(null);
+    } catch {
+      setSaveError('Could not reload the latest tasks. Your draft is still available in this browser.');
+    }
+  };
 
   const addTask = () => {
     const next = handler.addTask(newTaskTitle);
@@ -157,9 +186,13 @@ export default function App() {
         </p>
       ) : null}
       {saveError ? (
-        <p className="search-results-meta" role="alert">
+        <div className="search-results-meta" role="alert">
           {saveError}
-        </p>
+          {conflictDraftAvailable ? <div className="tasks-toolbar">
+            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
+            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+          </div> : null}
+        </div>
       ) : null}
 
       {loadState === 'ready' && panel === 'board' ? (

@@ -18,6 +18,7 @@ import { jsonDataFile } from '@/lib/store/json-file';
 import { createHandoff } from '@/lib/handoffs';
 import { getWorkspaceFile, FileAccessError } from '@/lib/files';
 import { fileOpenAppIds } from '@sorye/types';
+import { enqueueJob } from '@/lib/jobs';
 
 /** Explicit user-directed delivery is independent of optional notification routes. */
 export async function relayFileToApp(workspaceId: string, fileId: string, targetAppId: string) {
@@ -44,7 +45,7 @@ type RelayStore = Record<string, RelayConfig>;
 
 const relayFile = jsonDataFile<RelayStore>('relay.json', () => ({}));
 
-const readStore = () => relayFile.read();
+const readStore = (workspaceId: string) => relayFile.read(workspaceId);
 
 function isWithinQuietHours(config: RelayConfig, at: Date): boolean {
   if (!config.quietHoursEnabled) return false;
@@ -131,7 +132,7 @@ function mergeMissingDefaultRoutes(
 }
 
 export async function getRelayConfig(workspaceId: string): Promise<RelayConfig> {
-  const snapshot = await readStore();
+  const snapshot = await readStore(workspaceId);
   if (snapshot[workspaceId]) {
     return normalizeConfig(snapshot[workspaceId]);
   }
@@ -139,7 +140,7 @@ export async function getRelayConfig(workspaceId: string): Promise<RelayConfig> 
     const normalized = normalizeConfig(store[workspaceId]);
     store[workspaceId] = normalized;
     return normalized;
-  });
+  }, workspaceId);
 }
 
 /** Read-only failed-delivery counts for one workspace. Does not create config. */
@@ -148,7 +149,7 @@ export async function countFailedRelayDeliveries(
   fromDay: string,
   toDay: string,
 ): Promise<number> {
-  const snapshot = await readStore();
+  const snapshot = await readStore(workspaceId);
   const raw = snapshot[workspaceId];
   if (!raw) return 0;
   const config = normalizeConfig(raw);
@@ -203,7 +204,7 @@ export async function setRelayConfig(
     });
     store[workspaceId] = next;
     return next;
-  });
+  }, workspaceId);
 }
 
 async function appendRelayMessage(
@@ -219,7 +220,25 @@ async function appendRelayMessage(
     };
     store[workspaceId] = next;
     return next;
-  });
+  }, workspaceId);
+}
+
+export async function updateRelayDelivery(input: {
+  workspaceId: string; messageId: string; channelId: string;
+  status: RelayDeliveryStatus; detail: string;
+}) {
+  return relayFile.update((store) => {
+    const current = normalizeConfig(store[input.workspaceId]);
+    const message = current.messages.find((item) => item.id === input.messageId);
+    if (!message) return false;
+    const delivery = message.deliveries.find((item) => item.channelId === input.channelId);
+    if (!delivery) return false;
+    delivery.status = input.status;
+    delivery.detail = input.detail;
+    if (input.status === 'sent') delivery.sentAt = new Date().toISOString();
+    store[input.workspaceId] = { ...current, updatedAt: new Date().toISOString() };
+    return true;
+  }, input.workspaceId);
 }
 
 function deliveryDetail(
@@ -329,8 +348,8 @@ export interface RelayDeliverResult {
 }
 
 /**
- * Apply workspace Relay routes for a published event.
- * Messenger posts are real; webhooks fire when a URL is set; email/WhatsApp queue.
+ * Apply workspace Relay routes. Postgres deployments enqueue webhook work durably;
+ * the JSON development path retains inline delivery for local convenience.
  */
 export async function deliverEventViaRelay(input: {
   workspaceId: string;
@@ -434,14 +453,15 @@ export async function deliverEventViaRelay(input: {
         });
         continue;
       }
-      const result = await deliverWebhook(channel, input.event);
-      deliveries.push({
-        channelId: channel.id,
-        channelKind: channel.kind,
-        status: result.status,
-        detail: result.detail,
-        sentAt: result.status === 'sent' ? sentAt : undefined,
-      });
+      if (process.env.STORE_DRIVER === 'postgres') {
+        deliveries.push({ channelId: channel.id, channelKind: channel.kind,
+          status: 'queued', detail: 'Queued for webhook delivery' });
+      } else {
+        const result = await deliverWebhook(channel, input.event);
+        deliveries.push({ channelId: channel.id, channelKind: channel.kind,
+          status: result.status, detail: result.detail,
+          sentAt: result.status === 'sent' ? sentAt : undefined });
+      }
       continue;
     }
 
@@ -482,6 +502,18 @@ export async function deliverEventViaRelay(input: {
   };
 
   await appendRelayMessage(input.workspaceId, message);
+
+  if (process.env.STORE_DRIVER === 'postgres') {
+    for (const delivery of deliveries) {
+      if (delivery.channelKind !== 'webhook' || delivery.status !== 'queued') continue;
+      const channel = config.channels.find((item) => item.id === delivery.channelId);
+      if (!channel) continue;
+      await enqueueJob({ workspaceId: input.workspaceId, userId: input.userId,
+        kind: 'relay', key: `${input.event.id}:${message.id}:${channel.id}`,
+        payload: { workspaceId: input.workspaceId, messageId: message.id,
+          channelId: channel.id, channel, event: input.event } });
+    }
+  }
 
   return { deliveredMessenger, message };
 }
