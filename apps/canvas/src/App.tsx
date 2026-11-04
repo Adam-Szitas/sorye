@@ -1,3 +1,4 @@
+import { TranslatedText } from '@sorye/platform/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CanvasBoard,
@@ -429,7 +430,7 @@ export default function App() {
                   onClick={() => void handleDelete(board.id)}
                   disabled={loading}
                 >
-                  Delete
+                  <TranslatedText message="delete" />
                 </button>
               </article>
             ))}

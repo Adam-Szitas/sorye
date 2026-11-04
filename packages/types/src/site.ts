@@ -147,9 +147,10 @@ let blockSeq = 0;
 
 export function createSiteBlockId(): string {
   blockSeq += 1;
+  const runtimeCrypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   const rand =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID().replace(/-/g, '').slice(0, 10)
+    runtimeCrypto?.randomUUID
+      ? runtimeCrypto.randomUUID().replace(/-/g, '').slice(0, 10)
       : `${Date.now().toString(36)}${blockSeq.toString(36)}`;
   return `b${rand}`.slice(0, SITE_BLOCK_ID_MAX);
 }

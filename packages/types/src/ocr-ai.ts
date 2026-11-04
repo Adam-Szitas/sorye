@@ -1,6 +1,6 @@
 /** Row transcript sent to Qwen, plus the pattern JSON stored afterwards. */
-import { normalizeOcrTable } from './ocr-table';
-export { normalizeOcrTable, ocrSourceTableCells, ocrPositionId, OCR_TABLE_COLUMNS } from './ocr-table';
+import { normalizeOcrTable, readableOcrLine } from './ocr-table';
+export { normalizeOcrTable, ocrSourceTableCells, ocrPositionId, readableOcrLine, OCR_TABLE_COLUMNS } from './ocr-table';
 
 export const OCR_IMAGE_MARKER = '[IMAGE]';
 export const OCR_MATH_OPEN = '[MATH]';
@@ -80,24 +80,26 @@ function rowCells(row: string): string[] {
  * Otherwise a space-grouped amount stays one piece, including a unit written on it (`96 491,29/ PA`).
  * This does not sum or invent columns.
  */
+const UNIT_SUFFIX = String.raw`\s*\/\s*[^\s\d]+|\s+[A-Za-zÄÖÜäöüß°²³]+\d?`;
 const LISTING_PIECE =
-  /(\d{1,3}(?: \d{3})+(?:,\d+)?|\d+,\d+)(?:\s*\/\s*[^\s\d]+|\s+[A-Za-zÄÖÜäöüß°²³]+)?|(?<![\d.])\d+(?![\d.])/g;
+  new RegExp(String.raw`(\d{1,3}(?: \d{3})+(?:,\d+)?|\d+,\d+)(?:${UNIT_SUFFIX})?|(?<![\d.])\d+(?:${UNIT_SUFFIX})?(?![\d.])`, 'g');
 const POSITION_CODE = /^\d{2}(?:\.\d{2})+(?:\.[A-Za-z0-9]+)?/;
 
 export function listingPieces(row: string): string[] {
-  if (row.includes('\t')) return rowCells(row).filter((cell) => cell.length > 0);
+  if (row.includes('\t')) return row.split('\t').map((cell) => readableOcrLine(cell)).filter((cell) => cell.length > 0);
+  const line = readableOcrLine(row);
   const pieces: string[] = [];
   const pattern = new RegExp(LISTING_PIECE.source, 'g');
   let last = 0;
-  for (const match of row.matchAll(pattern)) {
+  for (const match of line.matchAll(pattern)) {
     const index = match.index ?? 0;
-    const text = row.slice(last, index).trim();
+    const text = line.slice(last, index).trim();
     if (text) pieces.push(text);
     const piece = match[0].trim();
     if (piece) pieces.push(piece);
     last = index + match[0].length;
   }
-  const tail = row.slice(last).trim();
+  const tail = line.slice(last).trim();
   if (tail) pieces.push(tail);
   return pieces;
 }
@@ -109,14 +111,15 @@ function isAmountContinuation(row: string): boolean {
     if ((cells[0] ?? '') !== '') return false;
     return amountTokens(row).length > 0;
   }
-  const trimmed = row.trim();
+  const trimmed = readableOcrLine(row);
   if (!trimmed || POSITION_CODE.test(trimmed)) return false;
-  if (!/\d{1,3}(?: \d{3})+(?:,\d+)?|\d+,\d+/.test(trimmed)) return false;
+  if (!/\d{1,3}(?: \d{3})+(?:,\d+)?|\d+,\d+|(?<![\d.])\d+\s+[A-Za-zÄÖÜäöüß°²³]/.test(trimmed)) return false;
   const rest = trimmed
     .replace(/\d{1,3}(?: \d{3})+(?:,\d+)?/g, ' ')
     .replace(/\d+,\d+/g, ' ')
     .replace(/\s*\/\s*[^\s\d]+/g, ' ')
-    .replace(/\s+[A-Za-zÄÖÜäöüß°²³]+/g, ' ')
+    .replace(/\s+[A-Za-zÄÖÜäöüß°²³]+\d?/g, ' ')
+    .replace(/(?<![\d.])\d+(?![\d.])/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   return rest.length < 8;
@@ -416,6 +419,13 @@ export interface OcrDocumentVector {
   notes: OcrPageNote[];
   /** Present while Qwen is still walking the document. `next` is the next slice index. */
   cursor?: { next: number; total: number; missed: number };
+  /**
+   * ISO time of the first model request for this analysis.
+   * Absent while the job is queued or still extracting PDF rows.
+   */
+  gpuStartedAt?: string;
+  /** ISO time model work finished. Absent while a model request is still running. */
+  gpuFinishedAt?: string;
 }
 
 export type OcrAmountOp = 'gt' | 'gte' | 'lt' | 'lte' | 'eq';
@@ -464,10 +474,41 @@ export interface OcrAnalysis {
   pattern: OcrPatternDocument | null;
   error: string | null;
   createdAt: string;
+  /** When model inference for this analysis started. Null if it never ran. */
+  workStartedAt?: string | null;
+  /** When the analysis left `extracting`. */
+  workFinishedAt?: string | null;
+  /** Accumulated model time in milliseconds. Null if inference never ran. */
+  durationMs?: number | null;
 }
 
 /** Bounded library listing; full transcript and pattern are fetched by ID. */
 export type OcrAnalysisSummary = Pick<OcrAnalysis, 'id' | 'fileName' | 'model' | 'status' | 'error' | 'createdAt'>;
+
+/** `GPU m:ss` from the first model request. Queue and PDF extraction are not included. */
+export function formatOcrGpuDuration(
+  startedAt: string,
+  finishedAt?: string | null,
+  now = Date.now(),
+): string | null {
+  const start = Date.parse(startedAt);
+  if (!Number.isFinite(start)) return null;
+  const end = finishedAt ? Date.parse(finishedAt) : now;
+  if (!Number.isFinite(end)) return null;
+  const totalSeconds = Math.max(0, Math.floor((end - start) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `GPU ${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/** `GPU m:ss` from a stored model duration in milliseconds. */
+export function formatOcrGpuClock(durationMs: number): string | null {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return null;
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `GPU ${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 /** Content-only export: structured rows and findings, without a text transcript. */
 export function buildOcrReadingDocument(analysis: OcrAnalysis) {

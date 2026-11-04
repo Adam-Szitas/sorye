@@ -2,6 +2,7 @@ import { ensureHubUser } from '@/lib/ensure-user';
 import { acquireOcrSlot } from '@/lib/ocr/admission';
 import { analyzeRowPages } from '@/lib/ocr/analyze';
 import { releaseLoadedModel } from '@/lib/ocr/llm';
+import { finishGpuClock, persistGpuStart } from '@/lib/ocr/gpu-time';
 import { storeOcrBatch } from '@/lib/ocr/store-batch';
 import { getOcrAnalysis } from '@/lib/store/ocr-analyses';
 import { NextResponse } from 'next/server';
@@ -49,15 +50,19 @@ export async function POST(
   try {
     const signal = AbortSignal.any([req.signal, AbortSignal.timeout(240_000)]);
     const cursor = loaded.analysis.vector.cursor;
-    const reading = await analyzeRowPages(loaded.analysis.pages, signal, {
+    let analysis = loaded.analysis;
+    const reading = await analyzeRowPages(analysis.pages, signal, {
       start: cursor?.next ?? 0,
       missed: cursor?.missed ?? 0,
-      prior: loaded.analysis.pattern,
+      prior: analysis.pattern,
+      onModelStart: async (startedAt) => {
+        analysis = await persistGpuStart(session.user.id, session.workspace.id, analysis, startedAt);
+      },
     });
     const finished = await storeOcrBatch(
       session.user.id,
       session.workspace.id,
-      loaded.analysis,
+      finishGpuClock(analysis, reading.status),
       reading,
     );
     hold.model = finished.status === 'extracting';

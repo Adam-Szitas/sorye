@@ -136,13 +136,13 @@ export default function App() {
     void bridgeHealth().then((health) => {
       if (health.ok) {
         setBridgeStatus(
-          `Developer bridge ready${health.apiUrl ? ` · ${health.apiUrl}` : ''}`,
+          `PDF service ready${health.apiUrl ? ` · ${health.apiUrl}` : ''}`,
         );
       } else {
         setBridgeStatus(
           health.detail
             ? `Bridge: ${health.detail}`
-            : 'Bridge unreachable — start Protocolio API on PORT=3100',
+            : 'PDF service unavailable. Please try again later.',
         );
       }
     });
@@ -331,33 +331,14 @@ export default function App() {
         {bridgeStatus ? (
           <div className="section handoff-notice">
             <p>
-              <span className="badge green">Dev bridge</span> {bridgeStatus}
+              <span className="badge green">PDF service</span> {bridgeStatus}
             </p>
           </div>
         ) : null}
 
-        <ConnectionForm onConnect={handleConnect} onHealthResult={() => {}} />
-
-        {!tokenReady && (
-          <div className="section token-notice">
-            <p>
-              <span className="badge blue">Token required</span> Direct API mode
-              needs a Bearer token. Prefer the Hub developer bridge (default), or
-              provision / paste a token below.
-            </p>
-            <button type="button" onClick={() => setShowProvision((v) => !v)}>
-              {showProvision ? 'Hide' : 'Provision token'}
-            </button>
-          </div>
-        )}
-
-        {showProvision && (
-          <TokenProvision baseUrl={baseUrl} onProvisioned={handleProvisioned} />
-        )}
-
         {!connected && (
           <div className="error-banner">
-            Connect to the Protocolio API above before generating PDFs. You can
+            The PDF service is unavailable. You can
             still edit every template field and export JSON without a connection.
           </div>
         )}

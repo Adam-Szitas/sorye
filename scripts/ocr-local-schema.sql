@@ -15,3 +15,6 @@ CREATE TABLE IF NOT EXISTS ocr_analyses (
 CREATE INDEX IF NOT EXISTS ocr_analyses_workspace_created_idx
   ON ocr_analyses(workspace_id, created_at);
 ALTER TABLE ocr_analyses ADD COLUMN IF NOT EXISTS vector jsonb;
+ALTER TABLE ocr_analyses ADD COLUMN IF NOT EXISTS work_started_at timestamptz;
+ALTER TABLE ocr_analyses ADD COLUMN IF NOT EXISTS work_finished_at timestamptz;
+ALTER TABLE ocr_analyses ADD COLUMN IF NOT EXISTS duration_ms integer;

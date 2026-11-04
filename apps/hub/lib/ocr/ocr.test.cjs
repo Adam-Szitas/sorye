@@ -22,7 +22,11 @@ function load(file, mocks = {}) {
     if (name === '@/lib/env') return mocks[name] ?? { getEnv: () => ({ OCR_LLM_PROVIDER: 'ollama', OCR_LLM_BASE_URL: 'http://127.0.0.1:8000', OCR_LLM_MODEL: 'qwen3:8b' }) };
     if (name === '@/lib/security') return load('../security.ts', mocks);
     if (name === '@/lib/security-limits') return load('../security-limits.ts', mocks);
-    if (name.startsWith('.')) return load(path.resolve(path.dirname(filename), `${name}.ts`), mocks);
+    if (name.startsWith('.')) {
+      const base = path.resolve(path.dirname(filename), name);
+      const file = fs.existsSync(`${base}.ts`) ? `${base}.ts` : fs.existsSync(`${base}.tsx`) ? `${base}.tsx` : `${base}.ts`;
+      return load(file, mocks);
+    }
     return require(name);
   };
   new Function('require', 'module', 'exports', source)(localRequire, module, module.exports);
@@ -30,7 +34,7 @@ function load(file, mocks = {}) {
 }
 
 const { layoutToRows } = load('./rows.ts');
-const { chunkRowPages, MAX_TRANSCRIPT_BYTES } = load('./chunks.ts');
+const { chunkRowPages, MAX_TRANSCRIPT_BYTES, MAX_MODEL_INPUT_BYTES, outputTokenCap } = load('./chunks.ts');
 const { emptyPattern, normalizePattern, supplementFromRows } = load('./pattern.ts');
 const run = (text, x = 0, math = false) => ({ text, x, y: 0, height: 12, width: text.length * 6, math });
 
@@ -153,6 +157,109 @@ test('resuming inference replaces source fallback rows with complete validated A
   const prior = supplementFromRows(emptyPattern(), pages);
   const fresh = normalizePattern({ normalizedRows: measurementExpected });
   assert.deepEqual(supplementFromRows(mergePatterns([prior, fresh]), pages).normalizedRows, measurementExpected);
+});
+
+test('a two-page listing is one completion when it fits, and a long listing still chunks', async () => {
+  const calls = [];
+  const { analyzeRowPages } = load('./analyze.ts', {
+    './llm': {
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
+      completeJson: async (text, _signal, options) => {
+        calls.push({ text, options });
+        return { normalizedRows: measurementExpected };
+      },
+    },
+  });
+  const pages = measurementPages('\t');
+  const result = await analyzeRowPages(pages);
+  assert.equal(calls.length, 1);
+  assert.equal(result.cursor.total, 1);
+  assert.equal(result.status, 'ready');
+  const text = calls[0].text;
+  assert.match(text, /PAGE 1\n/);
+  assert.match(text, /PAGE 2\n/);
+  assert.equal(text.includes('\t'), false);
+  assert.equal(text.split('01.11.04.A').length - 1, 1);
+  assert.equal(text.split('488,893 m²').length - 1, 1);
+  const cap = outputTokenCap(Buffer.byteLength(text), pages.reduce((count, page) => count + page.rows.length, 0));
+  assert.equal(calls[0].options.maxOutputTokens, cap);
+  assert.ok(cap < 8192);
+  assert.equal(calls[0].options.skipProbe, true);
+  const longPages = [{ page: 1, rows: Array.from({ length: 400 }, (_, index) => `line ${index} ${'x'.repeat(40)}`) }];
+  assert.ok(chunkRowPages(longPages).length > 1);
+  let failures = 0;
+  const failing = load('./analyze.ts', {
+    './llm': {
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
+      completeJson: async () => { failures += 1; throw new Error('bad json'); },
+    },
+  });
+  const missed = await failing.analyzeRowPages(pages);
+  assert.equal(failures, 1);
+  assert.equal(missed.status, 'rows_only');
+  let longFailures = 0;
+  const longRun = load('./analyze.ts', {
+    './llm': {
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
+      completeJson: async () => { longFailures += 1; throw new Error('bad json'); },
+    },
+  });
+  await longRun.analyzeRowPages(longPages, undefined, { budgetMs: 0 });
+  assert.equal(longFailures, 3);
+});
+
+test('model time starts at the first Qwen call and stays quiet until then', async () => {
+  let seenStart = false;
+  const starts = [];
+  const { analyzeRowPages } = load('./analyze.ts', {
+    './gpu-guard': { GpuCapacityError: class extends Error {}, assertGpuHeadroom: async () => {} },
+    './llm': {
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
+      completeJson: async () => {
+        seenStart = starts.length === 1;
+        return { normalizedRows: measurementExpected };
+      },
+    },
+  });
+  const result = await analyzeRowPages(measurementPages(' '), undefined, {
+    onModelStart: async (startedAt) => { starts.push(startedAt); },
+  });
+  assert.equal(result.status, 'ready');
+  assert.equal(starts.length, 1);
+  assert.equal(Number.isNaN(Date.parse(starts[0])), false);
+  assert.equal(seenStart, true);
+
+  const quiet = [];
+  await analyzeRowPages([{ page: 1, rows: [] }], undefined, {
+    onModelStart: async (startedAt) => { quiet.push(startedAt); },
+  });
+  assert.equal(quiet.length, 0);
+
+  const pausedStarts = [];
+  const paused = load('./analyze.ts', {
+    '../llm-control': { getLlmControlSettings: () => ({ paused: true }) },
+    './gpu-guard': { GpuCapacityError: class extends Error {}, assertGpuHeadroom: async () => {} },
+    './llm': {
+      llmModelName: () => 'test', assertLlmAvailable: async () => {}, LlmUnavailableError: class extends Error {},
+      completeJson: async () => { throw new Error('model should not run'); },
+    },
+  });
+  const pausedResult = await paused.analyzeRowPages(measurementPages(' '), undefined, {
+    onModelStart: async (startedAt) => { pausedStarts.push(startedAt); },
+  });
+  assert.equal(pausedResult.status, 'rows_only');
+  assert.equal(pausedStarts.length, 0);
+
+  const { formatOcrGpuDuration } = load('../../../../packages/types/src/ocr-ai.ts');
+  const { withGpuStart, withGpuFinish } = load('./vector.ts');
+  assert.equal(formatOcrGpuDuration('2026-11-03T22:00:00.000Z', '2026-11-03T22:00:42.000Z'), 'GPU 0:42');
+  assert.equal(formatOcrGpuDuration('2026-11-03T22:00:00.000Z', '2026-11-03T22:02:05.000Z'), 'GPU 2:05');
+  const vector = { version: 1, pageStarts: [0], lineCount: 1, notes: [] };
+  const started = withGpuStart(vector, '2026-11-03T22:00:00.000Z');
+  assert.equal(withGpuStart(started, '2026-11-03T22:10:00.000Z').gpuStartedAt, '2026-11-03T22:00:00.000Z');
+  const finished = withGpuFinish(started, '2026-11-03T22:00:42.000Z');
+  assert.equal(finished.gpuFinishedAt, '2026-11-03T22:00:42.000Z');
+  assert.equal(withGpuFinish(vector).gpuFinishedAt, undefined);
 });
 
 test('a saved cursor from an older prompt restarts inference instead of skipping revised chunks', async () => {
@@ -302,6 +409,45 @@ test('a unit price line keeps the space, the slash, and m²', () => {
   assert.equal(row.includes('[MATH]'), false);
   assert.equal(row.includes('/MATH]'), false);
   assert.equal(row.includes('_'), false);
+});
+
+test('the last consumable row keeps its unit in the row list and the normalized table', () => {
+  const { buildOcrReadingDocument, listingPieces } = load('../../../../packages/types/src/ocr-ai.ts');
+  const runs = [
+    { text: '01.11.04.A', x: 10, y: 0, height: 12, width: 80 },
+    { text: '12,5 m²', x: 10, y: 20, height: 12, width: 48 },
+    { text: 'kg', x: 80, y: 40, height: 10, width: 14 },
+  ];
+  assert.deepEqual(layoutToRows(runs, []), ['01.11.04.A', '12,5 m²', 'kg']);
+  const stored = [
+    '01.11.04.A Baustelle einrichten 1',
+    '22,61[MATH]/_m²[/MATH] 15,93 6,68',
+    '510,864[MATH]m²[/MATH] 8_138,07',
+    '3 kg',
+    '12,5 m²',
+  ];
+  const document = buildOcrReadingDocument({
+    id: 'ocr-unit-tail',
+    fileName: 'units.pdf',
+    status: 'ready',
+    pages: [{ page: 1, rows: stored }],
+    pattern: emptyPattern(),
+  });
+  assert.equal(document.normalizedData.rows.length, stored.length);
+  assert.equal(document.normalizedData.rows.at(-1).row, stored.length - 1);
+  const shown = document.normalizedData.rows.map((row) => row.cells.join(' | '));
+  assert.equal(shown.at(-1).includes('12,5 m²'), true);
+  assert.equal(shown.some((line) => line.includes('3 kg')), true);
+  assert.equal(shown.some((line) => line.includes('22,61 / m²')), true);
+  assert.equal(shown.some((line) => line.includes('510,864 m²')), true);
+  assert.equal(shown.join('\n').includes('[MATH]'), false);
+  assert.equal(shown.join('\n').includes('_'), false);
+  assert.deepEqual(listingPieces('3 kg'), ['3 kg']);
+  assert.deepEqual(listingPieces('kg'), ['kg']);
+  assert.equal(listingPieces('12,5 m²').join(' '), '12,5 m²');
+  const chunks = chunkRowPages([{ page: 1, rows: stored }]);
+  assert.equal(chunks.join('').includes(`${stored.length - 1}|`), true);
+  assert.equal(chunks.join('').includes('12,5 m²'), true);
 });
 
 test('stacked lines stay separate and a figure with no text is [IMAGE]', () => {
@@ -814,13 +960,13 @@ test('Ollama requests enforce context, output, thinking and batch limits', async
     assert.equal(requests[1].url, 'http://127.0.0.1:8000/api/generate');
     assert.equal(requests[1].body.keep_alive, 0);
     assert.equal(requests[0].url, 'http://127.0.0.1:8000/api/chat');
-    assert.equal(requests[0].body.keep_alive, '30s');
+    assert.equal(requests[0].body.keep_alive, '10m');
     assert.equal(requests[0].body.options.num_ctx, 8192);
     assert.equal(requests[0].body.options.num_predict, 1800);
     assert.equal(requests[0].body.options.num_batch, 128);
     assert.equal(requests[0].body.think, false);
     assert.equal(requests[0].redirect, 'error');
-    await assert.rejects(completeJson('x'.repeat(6001)), /safe context budget/);
+    await assert.rejects(completeJson('x'.repeat(MAX_MODEL_INPUT_BYTES)), /safe context budget/);
     await assert.rejects(completeJson('cancelled', AbortSignal.abort()), /abort/i);
     assert.equal(requests.length, 2, 'oversized or cancelled work must never reach the GPU');
   } finally { global.fetch = oldFetch; }

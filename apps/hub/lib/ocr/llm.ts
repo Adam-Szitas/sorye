@@ -1,12 +1,16 @@
 import { assertSafeLlmBaseUrl } from '@/lib/security';
+import { MAX_MODEL_INPUT_BYTES, MODEL_CONTEXT_TOKENS } from './chunks';
 import { OCR_PATTERN_SYSTEM_PROMPT } from './pattern';
 import { getLlmControlSettings, logLlmActivity } from '../llm-control';
 
 const LLM_TIMEOUT_MS = 90_000;
-const MAX_INPUT_BYTES = 6000;
+const MAX_INPUT_BYTES = MAX_MODEL_INPUT_BYTES;
 const MAX_MODEL_RESPONSE_BYTES = 256 * 1024;
-/** How long Ollama may keep weights resident if the process dies mid-request. */
-const OLLAMA_KEEP_ALIVE = '30s';
+/**
+ * Long enough that the next slice of the same job starts before Ollama drops
+ * weights. releaseLoadedModel sends keep_alive 0 when the job finishes.
+ */
+const OLLAMA_KEEP_ALIVE = '10m';
 let modelUsed = false;
 const activeRequests = new Set<AbortController>();
 
@@ -144,8 +148,24 @@ function messageContent(payload: unknown): string {
   return typeof message?.content === 'string' ? message.content : '';
 }
 
+export interface CompletionOptions {
+  /** Pattern-sized cap. Omit it to use the configured long-slice limit. */
+  maxOutputTokens?: number;
+  /** Caller already probed the server for this job. */
+  skipProbe?: boolean;
+}
+
+function resolvedOutputTokens(requested: number | undefined, configured: number): number {
+  if (requested == null || !Number.isInteger(requested)) return configured;
+  return Math.min(MODEL_CONTEXT_TOKENS - 1, Math.max(128, requested));
+}
+
 /** Ask the local Qwen/Qwen3-8B server for one JSON object. */
-async function completeJsonRequest(user: string, parentSignal?: AbortSignal): Promise<unknown> {
+async function completeJsonRequest(
+  user: string,
+  parentSignal?: AbortSignal,
+  options?: CompletionOptions,
+): Promise<unknown> {
   if (getLlmControlSettings().paused) throw new LlmUnavailableError('LLM inference is paused by a platform administrator.');
   if (Buffer.byteLength(user) + Buffer.byteLength(OCR_PATTERN_SYSTEM_PROMPT) > MAX_INPUT_BYTES) {
     throw new Error('OCR model input exceeds the safe context budget.');
@@ -154,8 +174,9 @@ async function completeJsonRequest(user: string, parentSignal?: AbortSignal): Pr
     ? AbortSignal.any([parentSignal, AbortSignal.timeout(LLM_TIMEOUT_MS)])
     : AbortSignal.timeout(LLM_TIMEOUT_MS);
   signal.throwIfAborted();
-  await assertLlmAvailable(signal);
+  if (!options?.skipProbe) await assertLlmAvailable(signal);
   const settings = getLlmControlSettings();
+  const maxOutputTokens = resolvedOutputTokens(options?.maxOutputTokens, settings.maxOutputTokens);
   const ollama = settings.provider === 'ollama';
   const url = llmChatUrl();
   const model = llmModelName();
@@ -165,12 +186,12 @@ async function completeJsonRequest(user: string, parentSignal?: AbortSignal): Pr
   ];
   const body: Record<string, unknown> = ollama ? {
     model, messages, stream: false, think: false, format: 'json', keep_alive: OLLAMA_KEEP_ALIVE,
-    options: { temperature: 0.1, num_ctx: settings.contextLength, num_predict: settings.maxOutputTokens, num_batch: 128 },
+    options: { temperature: 0.1, num_ctx: settings.contextLength, num_predict: maxOutputTokens, num_batch: 128 },
   } : {
     model,
     messages,
     temperature: 0.1,
-    max_tokens: settings.maxOutputTokens,
+    max_tokens: maxOutputTokens,
     stream: false,
     response_format: { type: 'json_object' },
     chat_template_kwargs: { enable_thinking: false },
@@ -187,7 +208,7 @@ async function completeJsonRequest(user: string, parentSignal?: AbortSignal): Pr
           model,
           messages,
           temperature: 0.1,
-          max_tokens: settings.maxOutputTokens,
+          max_tokens: maxOutputTokens,
           stream: false,
           chat_template_kwargs: { enable_thinking: false },
         }, signal);
@@ -238,7 +259,11 @@ async function completeJsonRequest(user: string, parentSignal?: AbortSignal): Pr
 }
 
 /** Wrap every inference in a tracked abort controller and metadata-only audit events. */
-export async function completeJson(user: string, parentSignal?: AbortSignal): Promise<unknown> {
+export async function completeJson(
+  user: string,
+  parentSignal?: AbortSignal,
+  options?: CompletionOptions,
+): Promise<unknown> {
   const settings = getLlmControlSettings();
   const started = Date.now();
   const inputBytes = Buffer.byteLength(user) + Buffer.byteLength(OCR_PATTERN_SYSTEM_PROMPT);
@@ -249,7 +274,7 @@ export async function completeJson(user: string, parentSignal?: AbortSignal): Pr
     const signal = parentSignal
       ? AbortSignal.any([parentSignal, controller.signal])
       : controller.signal;
-    const result = await completeJsonRequest(user, signal);
+    const result = await completeJsonRequest(user, signal, options);
     logLlmActivity({
       type: 'request_success', provider: settings.provider, model: settings.model,
       durationMs: Date.now() - started, inputBytes,

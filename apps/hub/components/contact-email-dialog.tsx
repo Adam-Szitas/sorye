@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   contactCopy,
@@ -35,7 +37,7 @@ function syncUserInvalid(event: SyntheticEvent<HTMLElement>) {
 }
 
 const FIELD_CLASS =
-  'mt-1 w-full rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)]/50';
+  'mt-1.5 w-full rounded-lg border border-white/12 bg-black/25 px-3 py-2.5 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)]/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]';
 
 interface ContactEmailDialogProps {
   triggerClassName: string;
@@ -95,34 +97,34 @@ export function ContactEmailDialog({
       <dialog
         ref={dialogRef}
         id={dialogId}
-        className="w-[min(28rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-0 text-[var(--color-text)] shadow-2xl backdrop:bg-black/60"
+        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-0 text-[var(--color-text)] shadow-2xl backdrop:bg-black/70"
         aria-labelledby={`${uid}-title`}
         onClick={onBackdropClick}
         onBlur={syncUserInvalid}
         onInput={syncUserInvalid}
       >
-        <form className="flex flex-col gap-3 p-5" onSubmit={onSubmit} noValidate>
-          <div className="flex items-start justify-between gap-3">
+        <form className="flex max-h-[min(40rem,calc(100dvh-2rem))] flex-col gap-4 overflow-auto p-6 sm:p-7" onSubmit={onSubmit} noValidate>
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 id={`${uid}-title`} className="text-base font-semibold">
+              <h2 id={`${uid}-title`} className="text-lg font-semibold tracking-tight">
                 Email Sorye
               </h2>
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-muted)]">
                 We pre-fill the address and subject. Add who you are and what
                 you need, then Send.
               </p>
             </div>
             <button
               type="button"
-              className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+              className="rounded-lg px-2.5 py-1.5 text-sm text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
               onClick={closeDialog}
             >
-              Close
+              <TranslatedText message="close" />
             </button>
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-to`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-to`}>
               To
             </label>
             <input
@@ -135,7 +137,7 @@ export function ContactEmailDialog({
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-subject`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-subject`}>
               Subject
             </label>
             <input
@@ -153,7 +155,7 @@ export function ContactEmailDialog({
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-product`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-product`}>
               Product
             </label>
             <select
@@ -171,7 +173,7 @@ export function ContactEmailDialog({
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-name`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-name`}>
               Your name
             </label>
             <input
@@ -189,7 +191,7 @@ export function ContactEmailDialog({
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-email`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-email`}>
               Your email
             </label>
             <input
@@ -208,7 +210,7 @@ export function ContactEmailDialog({
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-company`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-company`}>
               Company
             </label>
             <input
@@ -226,7 +228,7 @@ export function ContactEmailDialog({
           </div>
 
           <div>
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-message`}>
+            <label className="text-sm font-medium text-[var(--color-text-muted)]" htmlFor={`${uid}-message`}>
               What you need
             </label>
             <textarea
@@ -243,17 +245,17 @@ export function ContactEmailDialog({
             </p>
           </div>
 
-          <div className="mt-1 flex justify-end gap-2">
+          <div className="mt-2 flex justify-end gap-3">
             <button
               type="button"
-              className="rounded-lg px-3 py-2 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+              className="rounded-xl px-4 py-2.5 text-sm text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
               onClick={closeDialog}
             >
-              Cancel
+              <TranslatedText message="cancel" />
             </button>
             <button
               type="submit"
-              className="rounded-lg bg-[var(--color-accent)] px-3.5 py-2 text-xs font-medium text-[var(--color-surface)] transition hover:brightness-110"
+              className="rounded-xl bg-[var(--color-accent)] px-5 py-2.5 text-sm font-medium text-[var(--color-surface)] transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
             >
               Send
             </button>

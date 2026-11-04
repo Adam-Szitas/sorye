@@ -263,9 +263,17 @@ export const ocrAnalyses = pgTable(
       lineCount: number;
       notes: Array<{ page: number; complete: boolean; warning: string | null }>;
       cursor?: { next: number; total: number; missed: number };
+      gpuStartedAt?: string;
+      gpuFinishedAt?: string;
     } | null>(),
     pattern: jsonb('pattern').$type<Record<string, unknown> | null>(),
     error: text('error'),
+    /** Model-loop start. Null when inference never ran. */
+    workStartedAt: timestamp('work_started_at', { withTimezone: true }),
+    /** Set when status leaves `extracting`. */
+    workFinishedAt: timestamp('work_finished_at', { withTimezone: true }),
+    /** Accumulated model time. Null when inference never ran. */
+    durationMs: integer('duration_ms'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

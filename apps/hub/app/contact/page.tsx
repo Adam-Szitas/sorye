@@ -3,34 +3,38 @@ import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
+const NAV_LINK =
+  'rounded-lg px-3 py-2 text-sm text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]';
+
 export default function ContactPage() {
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
-      <header className="glass flex shrink-0 items-center justify-between gap-4 px-4 py-3 sm:px-6">
+    <div className="flex min-h-dvh flex-col">
+      <header className="glass sticky top-0 z-20 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4 sm:px-8">
         <Link
           href="/"
-          className="text-sm font-semibold tracking-tight text-[var(--color-text)]"
+          className="text-sm font-semibold tracking-tight text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
         >
           Sorye
         </Link>
-        <nav className="flex items-center gap-1">
+        <nav className="flex flex-wrap items-center gap-1" aria-label="Site">
           <Link
-            href="/architecture"
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
+            href="/contact"
+            aria-current="page"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
           >
+            Contact
+          </Link>
+          <Link href="/architecture" className={NAV_LINK}>
             Architecture
           </Link>
-          <Link
-            href="/login"
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-          >
+          <Link href="/login" className={NAV_LINK}>
             Sign in
           </Link>
         </nav>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <main className="flex flex-1 flex-col">
         <AppContact />
-      </div>
+      </main>
     </div>
   );
 }

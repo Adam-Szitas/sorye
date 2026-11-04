@@ -1,6 +1,7 @@
 import { JsonDocument } from '@sorye/sdk/react/document-reading';
 import type { OcrAnalysis } from '@sorye/types';
-import { buildOcrReadingDocument } from '@sorye/types';
+import { buildOcrReadingDocument, formatOcrGpuClock } from '@sorye/types';
+import { GpuClock } from './gpu-clock';
 import { hubApiPath } from './hub-origin';
 
 export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
@@ -25,6 +26,19 @@ export function ReadingView({ analysis }: { analysis: OcrAnalysis }) {
         </a>
       </header>
       <p className="ocr-reading-meta">PDF type: {document.pdfTypeId ?? 'Not identified'} · {normalizedRows.length} data rows</p>
+      {(() => {
+        const started = analysis.vector?.gpuStartedAt ?? analysis.workStartedAt ?? null;
+        const finished = analysis.vector?.gpuFinishedAt ?? analysis.workFinishedAt ?? null;
+        if (started && finished) {
+          return (
+            <p className="ocr-reading-meta">
+              <GpuClock startedAt={started} finishedAt={finished} />
+            </p>
+          );
+        }
+        const stored = analysis.status !== 'extracting' ? formatOcrGpuClock(analysis.durationMs ?? Number.NaN) : null;
+        return stored ? <p className="ocr-reading-meta ocr-gpu-time">{stored}</p> : null;
+      })()}
       <p className="ocr-reading-meta">Stored ID: {document.id}</p>
       {analysis.error ? <p className="ocr-error">{analysis.error}</p> : null}
 

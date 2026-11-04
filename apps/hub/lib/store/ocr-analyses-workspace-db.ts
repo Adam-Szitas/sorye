@@ -9,6 +9,7 @@ import type {
 } from '@sorye/types';
 import { queryLibrary, utcDayRange } from '@/lib/ocr/library-query';
 import { flattenLines } from '@/lib/ocr/vector';
+import { stampWorkColumns } from '@/lib/ocr/work-timing';
 import type { WorkspaceDb } from '@/lib/workspace-db';
 import { getHubSession, getHubSessionForWorkspace } from './postgres-store';
 import {
@@ -17,6 +18,7 @@ import {
   renameOcrAnalysisRow,
   selectOcrAnalysis,
   selectOcrLibrarySources,
+  selectOcrWorkSnapshot,
   updateOcrAnalysisRow,
 } from './ocr-analyses-db';
 import type { OcrAnalysisList, OcrAnalysisRead } from './ocr-analyses-json';
@@ -91,14 +93,26 @@ export async function updateOcrAnalysis(
   id: string,
   patch: Pick<OcrAnalysis, 'status' | 'pattern' | 'error'> & {
     vector?: OcrAnalysis['vector'];
+    workStartedAt?: string | null;
+    workFinishedAt?: string | null;
+    durationMs?: number | null;
   },
 ): Promise<OcrAnalysis | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
   const current = await selectOcrAnalysis(db, workspaceId, id);
   if (!current) return null;
-  const next: OcrAnalysis = { ...current, ...patch };
+  const next = stampWorkColumns({ ...current, ...patch });
   await updateOcrAnalysisRow(db, next);
   return next;
+}
+
+export async function listOcrWork(
+  db: WorkspaceDb,
+  userId: string,
+  workspaceId: string,
+): Promise<{ access: 'denied' } | { access: 'ok'; work: Awaited<ReturnType<typeof selectOcrWorkSnapshot>> }> {
+  if (!(await assertMember(userId, workspaceId))) return { access: 'denied' };
+  return { access: 'ok', work: await selectOcrWorkSnapshot(db, workspaceId) };
 }
 
 export async function queryOcrLibrary(

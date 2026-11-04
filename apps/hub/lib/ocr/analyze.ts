@@ -1,7 +1,7 @@
 import type { OcrAiPage, OcrAnalysisStatus, OcrPatternDocument } from '@sorye/types';
 import { completeJson, llmModelName, assertLlmAvailable, LlmUnavailableError } from './llm';
 import { assertGpuHeadroom, GpuCapacityError } from './gpu-guard';
-import { chunkRowPages, splitChunk } from './chunks';
+import { chunkRowPages, outputTokenCap, splitChunk } from './chunks';
 import { buildVector, completenessWarning } from './vector';
 import { getLlmControlSettings } from '../llm-control';
 import {
@@ -32,6 +32,8 @@ export interface OcrLlmResult {
   pattern: OcrPatternDocument;
   error: string | null;
   cursor: OcrCursor;
+  /** Time spent in the model loop for this batch. Omitted when inference never started. */
+  durationMs?: number;
 }
 
 function hasInk(pages: OcrAiPage[]): boolean {
@@ -51,22 +53,30 @@ function isCancelled(err: unknown, signal?: AbortSignal): boolean {
  * A slice that hits the output limit is halved and read again.
  * The document is not failed because one reply was too long.
  */
+function sliceRows(text: string): number {
+  return text.split('\n').filter((line) => /^\d+\|/.test(line)).length || 1;
+}
+
 async function readSlice(
   text: string,
   signal: AbortSignal | undefined,
   depth: number,
+  fitted: boolean,
+  onModelStart?: () => Promise<void>,
 ): Promise<OcrPatternDocument> {
   try {
     // Recheck before each inference call because other workloads can consume
     // VRAM while this document is being processed.
     await assertGpuHeadroom();
-    return normalizePattern(await completeJson(text, signal));
+    if (onModelStart) await onModelStart();
+    const maxOutputTokens = fitted ? outputTokenCap(Buffer.byteLength(text), sliceRows(text)) : undefined;
+    return normalizePattern(await completeJson(text, signal, { maxOutputTokens, skipProbe: true }));
   } catch (err) {
     if (!isOutputLimit(err)) throw err;
     const halves = splitChunk(text);
     if (!halves || depth >= 6) return emptyPattern();
-    const left = await readSlice(halves[0], signal, depth + 1);
-    const right = await readSlice(halves[1], signal, depth + 1);
+    const left = await readSlice(halves[0], signal, depth + 1, fitted, onModelStart);
+    const right = await readSlice(halves[1], signal, depth + 1, fitted, onModelStart);
     return mergePatterns([left, right]);
   }
 }
@@ -74,11 +84,14 @@ async function readSlice(
 async function readSliceWithRetry(
   text: string,
   signal: AbortSignal | undefined,
+  attempts: number,
+  fitted: boolean,
+  onModelStart?: () => Promise<void>,
 ): Promise<OcrPatternDocument> {
   let last: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return await readSlice(text, signal, 0);
+      return await readSlice(text, signal, 0, fitted, onModelStart);
     } catch (err) {
       if (isCancelled(err, signal) || err instanceof LlmUnavailableError || err instanceof GpuCapacityError) throw err;
       last = err;
@@ -92,6 +105,8 @@ export interface AnalyzeOptions {
   budgetMs?: number;
   prior?: OcrPatternDocument | null;
   missed?: number;
+  /** Fires once, immediately before the first model request in this call. */
+  onModelStart?: (startedAt: string) => void | Promise<void>;
 }
 
 /**
@@ -150,16 +165,26 @@ export async function analyzeRowPages(
   const chunks = chunkRowPages(pages);
   const start = Math.max(0, Math.min(options.start ?? 0, chunks.length));
   const budgetMs = options.budgetMs ?? ocrBatchBudgetMs(chunks.length - start);
+  // One fitting transcript is a single completion: no extra retries, and a
+  // pattern-sized output cap. Longer jobs keep the slice retry and the
+  // configured output limit so a truncated reply can still be split.
   const started = Date.now();
   const parts: OcrPatternDocument[] = options.prior ? [options.prior] : [];
   let missed = options.missed ?? 0;
   let index = start;
+  let announced = false;
+  const announceModel = async () => {
+    if (announced) return;
+    announced = true;
+    await options.onModelStart?.(new Date().toISOString());
+  };
 
   while (index < chunks.length) {
     if (index > start && Date.now() - started >= budgetMs) break;
     if (signal?.aborted) break;
     try {
-      parts.push(await readSliceWithRetry(chunks[index]!, signal));
+      const fitted = chunks.length === 1;
+      parts.push(await readSliceWithRetry(chunks[index]!, signal, fitted ? 1 : 3, fitted, announceModel));
       index += 1;
     } catch (err) {
       if (err instanceof LlmUnavailableError || err instanceof GpuCapacityError) {
@@ -168,6 +193,7 @@ export async function analyzeRowPages(
           pattern: supplementFromRows(parts.length ? mergePatterns(parts) : emptyPattern(), pages),
           error: err.message,
           cursor: { next: index, total: chunks.length, missed },
+          durationMs: Date.now() - started,
         };
       }
       if (isCancelled(err, signal)) break;
@@ -193,5 +219,6 @@ export async function analyzeRowPages(
     pattern,
     error: done ? error : null,
     cursor: { next: index, total: chunks.length, missed },
+    durationMs: Date.now() - started,
   };
 }

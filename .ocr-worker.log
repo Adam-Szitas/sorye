@@ -1,0 +1,5 @@
+
+> @sorye/hub@0.0.0 worker:ocr D:\projects\sorye\apps\hub
+> tsx lib/workers/start-ocr-worker.ts
+
+[ocr-worker] started

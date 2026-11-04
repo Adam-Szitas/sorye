@@ -1,5 +1,6 @@
 'use client';
 
+import { LanguageSelector } from './language-selector';
 import { SWRConfig } from 'swr';
 import { SessionProvider } from 'next-auth/react';
 import { WebVitalsReporter } from '@/components/web-vitals';
@@ -16,7 +17,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           shouldRetryOnError: true,
         }}
       >
-        <WebVitalsReporter />
+        <WebVitalsReporter /><LanguageSelector />
         {children}
       </SWRConfig>
     </SessionProvider>

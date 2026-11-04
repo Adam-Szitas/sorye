@@ -112,3 +112,7 @@ When extending APIs:
 3. Validate outbound URLs with `assertSafeWebhookUrl`
 4. Validate user content size and shape at route boundary
 5. Log relay delivery failures; avoid echoing secrets in error messages
+
+Public app introductions at /learn/[slug] and catalog subdomain roots expose static catalog copy only. App routes and APIs retain their authentication and workspace boundaries.
+
+Protocolio production calls require PROTOCOLIO_SERVICE_TOKEN, provisioned through the engine token system. Browser generation and validation use Hub; no direct generation fallback. Both Hub template routes bound request bodies to 2 MB before parsing. Local Compose exposes the renderer on loopback only and does not publish MongoDB.

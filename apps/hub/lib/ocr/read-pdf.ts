@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import path from 'node:path';
 import type { OcrAiPage } from '@sorye/types';
 import { layoutToRows, type LaidFigure, type LaidRun } from './rows';
 import { MAX_OCR_PAGES } from '../security-limits';
@@ -62,8 +63,9 @@ function loadPdfjs(): Promise<PdfjsLegacy> {
   if (!pdfjsPromise) {
     pdfjsPromise = import('pdfjs-dist/legacy/build/pdf.mjs').then((mod) => {
       const pdfjs = mod as unknown as PdfjsLegacy;
-      const workerPath = pdfRequire.resolve(
-        'pdfjs-dist/legacy/build/pdf.worker.mjs',
+      const workerPath = path.join(
+        path.dirname(pdfRequire.resolve('pdfjs-dist/package.json')),
+        'legacy/build/pdf.worker.mjs',
       );
       pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
       return pdfjs;

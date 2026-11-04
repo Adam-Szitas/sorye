@@ -8,9 +8,11 @@ import {
   type OcrLibraryHit,
   type OcrLibraryQuery,
   type OcrPatternDocument,
+  type OcrWorkSnapshot,
 } from '@sorye/types';
 import { queryLibrary, type OcrLibrarySource } from '@/lib/ocr/library-query';
 import { buildVector, flattenLines } from '@/lib/ocr/vector';
+import { stampWorkColumns } from '@/lib/ocr/work-timing';
 import { MAX_OCR_ANALYSES } from '@/lib/security-limits';
 import { jsonDataFile } from './json-file';
 import { getHubSession, getHubSessionForWorkspace } from './json-store';
@@ -130,6 +132,9 @@ export async function updateOcrAnalysis(
   id: string,
   patch: Pick<OcrAnalysis, 'status' | 'pattern' | 'error'> & {
     vector?: OcrAnalysis['vector'];
+    workStartedAt?: string | null;
+    workFinishedAt?: string | null;
+    durationMs?: number | null;
   },
 ): Promise<OcrAnalysis | null> {
   if (!(await assertMember(userId, workspaceId))) return null;
@@ -142,8 +147,59 @@ export async function updateOcrAnalysis(
     row.pattern = patch.pattern;
     row.error = patch.error;
     if (patch.vector) row.vector = patch.vector;
+    if (patch.durationMs !== undefined) row.durationMs = patch.durationMs;
+    const stamped = stampWorkColumns(present(row));
+    row.workStartedAt = stamped.workStartedAt ?? null;
+    row.workFinishedAt = stamped.workFinishedAt ?? null;
+    row.durationMs = stamped.durationMs ?? null;
     return present(row);
   });
+}
+
+export async function listOcrWork(
+  userId: string,
+  workspaceId: string,
+): Promise<{ access: 'denied' } | { access: 'ok'; work: OcrWorkSnapshot }> {
+  if (!(await assertMember(userId, workspaceId))) return { access: 'denied' };
+  const store = await storeFile.read();
+  const finished = store.analyses
+    .filter((row) => row.workspaceId === workspaceId && (row.status === 'ready' || row.status === 'rows_only'))
+    .map((row) => stampWorkColumns(present(row)))
+    .sort((a, b) =>
+      (b.workFinishedAt ?? b.createdAt).localeCompare(a.workFinishedAt ?? a.createdAt)
+      || b.createdAt.localeCompare(a.createdAt),
+    );
+  let timedCount = 0;
+  let totalDurationMs = 0;
+  for (const row of finished) {
+    if (typeof row.durationMs !== 'number') continue;
+    timedCount += 1;
+    totalDurationMs += row.durationMs;
+  }
+  return {
+    access: 'ok',
+    work: {
+      count: finished.length,
+      timedCount,
+      totalDurationMs: timedCount > 0 ? totalDurationMs : null,
+      jobs: finished.slice(0, 20).map((row) => {
+        const pages = row.pages ?? [];
+        let rowCount = 0;
+        for (const page of pages) rowCount += page.rows?.length ?? 0;
+        return {
+          id: row.id,
+          fileName: row.fileName,
+          status: row.status === 'ready' ? 'ready' as const : 'rows_only' as const,
+          pageCount: pages.length,
+          rowCount,
+          createdAt: row.createdAt,
+          workStartedAt: row.workStartedAt ?? null,
+          workFinishedAt: row.workFinishedAt ?? null,
+          durationMs: typeof row.durationMs === 'number' ? row.durationMs : null,
+        };
+      }),
+    },
+  };
 }
 
 export async function queryOcrLibrary(

@@ -5,7 +5,8 @@ import { finishJob, getJob, heartbeatJob, retryJob, claimJob, setWorkerHeartbeat
 import { llmModelName, releaseLoadedModel } from '@/lib/ocr/llm';
 import { analyzeRowPages } from '@/lib/ocr/analyze';
 import { readPdfAsRows } from '@/lib/ocr/read-pdf';
-import { buildVector, completenessWarning } from '@/lib/ocr/vector';
+import { finishGpuClock, persistGpuStart } from '@/lib/ocr/gpu-time';
+import { buildVector, completenessWarning, withGpuFinish } from '@/lib/ocr/vector';
 import { storeOcrBatch } from '@/lib/ocr/store-batch';
 import { MAX_OCR_ANALYSIS_BYTES, MAX_OCR_PAGES, MAX_OCR_PDF_BYTES, assertJsonPayloadSize } from '@/lib/security-limits';
 import { createOcrAnalysis, getOcrAnalysis, updateOcrAnalysis } from '@/lib/store/ocr-analyses';
@@ -67,17 +68,33 @@ async function runOcr(job: Job, signal: AbortSignal): Promise<Record<string, unk
   while (analysis.status === 'extracting') {
     signal.throwIfAborted();
     const cursor = analysis.vector?.cursor;
+    let current = analysis;
     await updateJobProgress(job, {
       phase: 'analyzing', analysisId,
       completed: cursor?.next ?? 0, total: cursor?.total ?? 0,
+      ...(current.vector.gpuStartedAt ? { gpuStartedAt: current.vector.gpuStartedAt } : {}),
     });
-    const reading = await analyzeRowPages(analysis.pages, signal, {
+    const reading = await analyzeRowPages(current.pages, signal, {
       start: cursor?.next ?? 0,
       missed: cursor?.missed ?? 0,
-      prior: analysis.pattern,
+      prior: current.pattern,
+      onModelStart: async (startedAt) => {
+        current = await persistGpuStart(job.userId, job.workspaceId, current, startedAt);
+        if (!current.vector.gpuStartedAt) return;
+        await updateJobProgress(job, {
+          phase: 'analyzing', analysisId,
+          completed: cursor?.next ?? 0, total: cursor?.total ?? 0,
+          gpuStartedAt: current.vector.gpuStartedAt,
+        });
+      },
     });
     signal.throwIfAborted();
-    analysis = await storeOcrBatch(job.userId, job.workspaceId, analysis, reading);
+    analysis = await storeOcrBatch(
+      job.userId,
+      job.workspaceId,
+      finishGpuClock(current, reading.status),
+      reading,
+    );
   }
   return { analysisId, phase: 'complete' };
 }
@@ -112,6 +129,7 @@ async function runJob(job: Job): Promise<void> {
       if (saved?.access === 'ok' && saved.analysis) await updateOcrAnalysis(job.userId, job.workspaceId, analysisId, {
         status: 'rows_only', pattern: saved.analysis.pattern,
         error: 'Analysis was cancelled. Extracted rows, if available, are retained.',
+        vector: withGpuFinish(saved.analysis.vector),
       }).catch(() => undefined);
     }
     if (SHUTDOWN.signal.aborted) await retryJob(job).catch(() => undefined);

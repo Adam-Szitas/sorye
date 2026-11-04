@@ -1,63 +1,8 @@
-import {
-  ProtocolioClient,
-  type ProtocolioConfig,
-  type PdfTemplate,
-  type GenerateResult,
-  type ValidationResult,
-} from '@protocolio/sdk';
-import { resolveApiBaseUrl, resolveDevToken } from '../config';
-
-const STORAGE_KEY_BASE_URL = 'protocolio_base_url';
-const STORAGE_KEY_TOKEN = 'protocolio_token';
-
-let client: ProtocolioClient | null = null;
-/** Prefer Hub developer bridge (no browser Bearer token). */
-let preferHubBridge = true;
-
-function loadSavedConfig(): ProtocolioConfig {
-  const savedUrl = localStorage.getItem(STORAGE_KEY_BASE_URL);
-  const token = resolveDevToken();
-  const baseUrl = savedUrl !== null && savedUrl !== '' ? savedUrl : resolveApiBaseUrl();
-  return { baseUrl, token };
-}
-
-function persistConfig(config: ProtocolioConfig): void {
-  localStorage.setItem(STORAGE_KEY_BASE_URL, config.baseUrl);
-  localStorage.setItem(STORAGE_KEY_TOKEN, config.token);
-}
-
-const initialConfig = loadSavedConfig();
-if (initialConfig.token && !localStorage.getItem(STORAGE_KEY_TOKEN)) {
-  persistConfig(initialConfig);
-}
-client = new ProtocolioClient(initialConfig);
-
-export function initClient(config: ProtocolioConfig): ProtocolioClient {
-  persistConfig(config);
-  client = new ProtocolioClient(config);
-  // Explicit connect still allows direct Protocolio API usage.
-  preferHubBridge = false;
-  return client;
-}
-
-/** Keep using Hub bridge (recommended for Sorye local dev). */
-export function useHubBridge(enabled = true): void {
-  preferHubBridge = enabled;
-}
-
-export function getClient(): ProtocolioClient | null {
-  return client;
-}
-
-export function hasToken(): boolean {
-  // Hub bridge means developers do not need a browser-side token.
-  if (preferHubBridge) return true;
-  return !!resolveDevToken();
-}
-
-export function getBaseUrl(): string {
-  return loadSavedConfig().baseUrl;
-}
+import type { ProtocolioConfig, PdfTemplate, GenerateResult, ValidationResult } from '@protocolio/sdk';
+export function initClient(_config: ProtocolioConfig): void {}
+export function useHubBridge(_enabled = true): void {}
+export function hasToken(): boolean { return true; }
+export function getBaseUrl(): string { return '/api/protocolio'; }
 
 export async function bridgeHealth(): Promise<{
   ok: boolean;
@@ -118,19 +63,7 @@ async function generateViaHubBridge(
 }
 
 export async function generate(template: PdfTemplate): Promise<GenerateResult> {
-  let result: GenerateResult;
-  if (preferHubBridge) {
-    try {
-      result = await generateViaHubBridge(template);
-    } catch (bridgeErr) {
-      // Fall through to direct client if a token exists.
-      if (!resolveDevToken() || !client) throw bridgeErr;
-      result = await client.generate(template);
-    }
-  } else {
-    if (!client) throw new Error('Client not initialized. Call initClient() first.');
-    result = await client.generate(template);
-  }
+  const result = await generateViaHubBridge(template);
 
   void import('../emit-event').then(({ emitWorkspaceEvent }) =>
     emitWorkspaceEvent('sorye.protocolio.generated', {
@@ -148,8 +81,9 @@ export async function generate(template: PdfTemplate): Promise<GenerateResult> {
 }
 
 export async function validate(template: PdfTemplate): Promise<ValidationResult> {
-  if (!client) throw new Error('Client not initialized. Call initClient() first.');
-  return client.validate(template);
+  const res = await fetch('/api/protocolio/validate', {method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},body:JSON.stringify(template)});
+  if (!res.ok) throw new Error('PDF validation unavailable');
+  return res.json();
 }
 
 export async function download(template: PdfTemplate, filename?: string): Promise<void> {
@@ -164,11 +98,6 @@ export async function download(template: PdfTemplate, filename?: string): Promis
   URL.revokeObjectURL(url);
 }
 
-export async function health(): Promise<boolean> {
-  if (preferHubBridge) {
-    const bridge = await bridgeHealth();
-    if (bridge.ok) return true;
-  }
-  if (!client) return false;
-  return client.health();
-}
+export async function health(): Promise<boolean> { return (await bridgeHealth()).ok; }
+
+export function getClient() { return { generate, validate, health }; }

@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import type { SubscriptionPlan, WorkspaceSummary } from '@sorye/types';
 import { canCreateTeamWorkspace } from '@sorye/types';
@@ -83,7 +85,7 @@ export function WorkspaceSwitcher({
             onClick={() => setCreating(false)}
             className="text-xs text-[var(--color-text-muted)]"
           >
-            Cancel
+            <TranslatedText message="cancel" />
           </button>
         </form>
       )}

@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack --port 3000",
-    "worker:ocr": "tsx lib/workers/ocr-worker.ts",
+    "dev": "tsx scripts/dev.ts",
+    "worker:ocr": "tsx lib/workers/start-ocr-worker.ts",
     "worker:relay": "tsx lib/workers/relay-worker.ts",
     "store:import-json": "tsx lib/tools/import-json-state.ts",
     "files:migrate-blobs": "tsx lib/tools/migrate-file-blobs.ts",

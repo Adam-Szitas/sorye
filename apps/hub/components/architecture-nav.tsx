@@ -21,6 +21,7 @@ export function ArchitectureNav() {
       .map((link) => document.getElementById(link.hash.slice(1)))
       .filter((node): node is HTMLElement => node instanceof HTMLElement);
 
+    let active: string | null = null;
     const mark = (id: string | null) => {
       for (const link of links) {
         const on = id !== null && link.hash === `#${id}`;
@@ -28,52 +29,44 @@ export function ArchitectureNav() {
         if (on) link.setAttribute('aria-current', 'true');
         else link.removeAttribute('aria-current');
       }
+      if (id === active) return;
+      active = id;
+      const link = links.find((item) => item.hash === `#${id}`);
+      if (!link || nav.scrollWidth <= nav.clientWidth + 1) return;
+      const left = link.offsetLeft;
+      const right = left + link.offsetWidth;
+      if (left < nav.scrollLeft || right > nav.scrollLeft + nav.clientWidth) {
+        nav.scrollLeft = Math.max(0, left - 12);
+      }
     };
 
-    if (CSS.supports('scroll-target-group: auto')) {
-      const style = document.createElement('style');
-      style.textContent =
-        '.arch-nav a:target-current{color:var(--color-text);font-weight:650;background:rgba(56,189,248,.12);box-shadow:inset 0 -2px 0 var(--color-accent)}@media (min-width:56rem){.arch-nav a:target-current{box-shadow:inset 2px 0 0 var(--color-accent)}}';
-      document.head.appendChild(style);
-      const sync = () => {
-        const current = nav.querySelector('a:target-current');
-        const id = current instanceof HTMLAnchorElement ? current.hash.slice(1) : null;
-        for (const link of links) {
-          link.classList.remove('is-current');
-          if (id !== null && link.hash === `#${id}`) link.setAttribute('aria-current', 'true');
-          else link.removeAttribute('aria-current');
-        }
-      };
-      sync();
-      document.addEventListener('scroll', sync, { passive: true });
-      document.addEventListener('scrollend', sync);
-      return () => {
-        document.removeEventListener('scroll', sync);
-        document.removeEventListener('scrollend', sync);
-        style.remove();
-      };
-    }
+    let frame = 0;
+    const sync = () => {
+      const line = Math.min(160, window.innerHeight * 0.28);
+      let current: string | null = sections[0]?.id ?? null;
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top <= line) current = section.id;
+      }
+      mark(current);
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
+    };
 
-    const ratios = new Map<string, number>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          ratios.set(entry.target.id, entry.isIntersecting ? entry.intersectionRatio : 0);
-        }
-        let best: string | null = null;
-        let bestRatio = 0;
-        for (const [id, ratio] of ratios) {
-          if (ratio > bestRatio) {
-            best = id;
-            bestRatio = ratio;
-          }
-        }
-        if (best) mark(best);
-      },
-      { rootMargin: '-15% 0px -55% 0px', threshold: [0, 0.25, 0.5, 1] },
-    );
-    for (const section of sections) observer.observe(section);
-    return () => observer.disconnect();
+    sync();
+    const settle = window.setTimeout(sync, 50);
+    document.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('hashchange', sync);
+    return () => {
+      window.clearTimeout(settle);
+      if (frame) cancelAnimationFrame(frame);
+      document.removeEventListener('scroll', onScroll);
+      window.removeEventListener('hashchange', sync);
+    };
   }, []);
 
   return (

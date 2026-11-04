@@ -278,7 +278,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       summary: 'Design a PDF template, then generate or accept OCR handoffs.',
       steps: [
         'Start from a preset or add blocks in the visual builder.',
-        'Generate PDF (Hub developer bridge or your Protocolio token).',
+        'Generate PDF through Sorye’s connected PDF service.',
         'Open alongside OCR — Send to Protocolio loads the layout automatically.',
       ],
     },

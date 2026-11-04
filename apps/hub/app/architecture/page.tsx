@@ -13,28 +13,18 @@ export default function ArchitecturePage() {
   return (
     <div className="arch-root">
       <header className="arch-header glass">
-        <Link href="/" className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
+        <Link href="/" className="arch-brand">
           Sorye
         </Link>
-        <nav className="flex items-center gap-1" aria-label="Site">
-          <Link
-            href="/contact"
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-          >
-            Contact
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-          >
-            Sign in
-          </Link>
+        <nav className="arch-site" aria-label="Site">
+          <Link href="/contact">Contact</Link>
+          <Link href="/login">Sign in</Link>
         </nav>
       </header>
 
       <div className="arch-layout">
         <ArchitectureNav />
-        <main>
+        <main className="arch-main">
           <header className="arch-hero">
             <p className="arch-kicker">Platform</p>
             <h1>How Sorye fits together</h1>
@@ -44,7 +34,7 @@ export default function ArchitecturePage() {
             </p>
           </header>
 
-          <section id="map" className="arch-section" style={{ contentVisibility: 'visible' }}>
+          <section id="map" className="arch-section">
             <h2>System</h2>
             <p>
               Each app can be built and served on its own. It still talks only to the kernel.

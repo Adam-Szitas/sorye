@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   APP_CATALOG,
@@ -767,7 +769,7 @@ export function AppFiles() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[12rem] flex-1">
             <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={searchId}>
-              Search
+              <TranslatedText message="search" />
             </label>
             <input
               id={searchId}
@@ -974,14 +976,14 @@ export function AppFiles() {
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-white/10"
                 onClick={() => setRenameTarget(null)}
               >
-                Cancel
+                <TranslatedText message="cancel" />
               </button>
               <button
                 type="submit"
                 className="rounded-lg bg-[var(--color-accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-surface)] disabled:opacity-50"
                 disabled={busy || !renameValue.trim()}
               >
-                Save
+                <TranslatedText message="save" />
               </button>
             </div>
           </form>
@@ -1004,7 +1006,7 @@ export function AppFiles() {
                 className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] hover:bg-white/10"
                 onClick={() => setDeleteTarget(null)}
               >
-                Cancel
+                <TranslatedText message="cancel" />
               </button>
               <button
                 type="button"
@@ -1012,7 +1014,7 @@ export function AppFiles() {
                 disabled={busy}
                 onClick={() => void confirmDelete()}
               >
-                Delete
+                <TranslatedText message="delete" />
               </button>
             </div>
           </div>

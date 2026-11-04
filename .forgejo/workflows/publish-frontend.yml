@@ -1,0 +1,77 @@
+name: Publish Sorye frontend image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: docker
+    container: node:22-bookworm
+    steps:
+      - name: Check out selected commit
+        uses: https://code.forgejo.org/actions/checkout@v4
+        with:
+          ref: ${{ forgejo.sha }}
+          persist-credentials: false
+
+      - name: Install Docker client and check builder
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends docker.io
+          docker info
+
+      - name: Build and publish SHA-tagged image
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+          NEXT_PUBLIC_DASHBOARD_REMOTE: ${{ vars.NEXT_PUBLIC_DASHBOARD_REMOTE }}
+          NEXT_PUBLIC_CALENDAR_REMOTE: ${{ vars.NEXT_PUBLIC_CALENDAR_REMOTE }}
+          NEXT_PUBLIC_NOTES_REMOTE: ${{ vars.NEXT_PUBLIC_NOTES_REMOTE }}
+          NEXT_PUBLIC_TASKS_REMOTE: ${{ vars.NEXT_PUBLIC_TASKS_REMOTE }}
+          NEXT_PUBLIC_RELAY_REMOTE: ${{ vars.NEXT_PUBLIC_RELAY_REMOTE }}
+          NEXT_PUBLIC_PROTOCOLIO_REMOTE: ${{ vars.NEXT_PUBLIC_PROTOCOLIO_REMOTE }}
+          NEXT_PUBLIC_CANVAS_REMOTE: ${{ vars.NEXT_PUBLIC_CANVAS_REMOTE }}
+          NEXT_PUBLIC_DEVKIT_REMOTE: ${{ vars.NEXT_PUBLIC_DEVKIT_REMOTE }}
+          NEXT_PUBLIC_MESSENGER_REMOTE: ${{ vars.NEXT_PUBLIC_MESSENGER_REMOTE }}
+          NEXT_PUBLIC_OCR_REMOTE: ${{ vars.NEXT_PUBLIC_OCR_REMOTE }}
+          NEXT_PUBLIC_STUDIO_REMOTE: ${{ vars.NEXT_PUBLIC_STUDIO_REMOTE }}
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = "$FORGEJO_SHA"
+          test -n "$NEXT_PUBLIC_DASHBOARD_REMOTE"
+          test -n "$NEXT_PUBLIC_CALENDAR_REMOTE"
+          test -n "$NEXT_PUBLIC_NOTES_REMOTE"
+          test -n "$NEXT_PUBLIC_TASKS_REMOTE"
+          test -n "$NEXT_PUBLIC_RELAY_REMOTE"
+          test -n "$NEXT_PUBLIC_PROTOCOLIO_REMOTE"
+          test -n "$NEXT_PUBLIC_CANVAS_REMOTE"
+          test -n "$NEXT_PUBLIC_DEVKIT_REMOTE"
+          test -n "$NEXT_PUBLIC_MESSENGER_REMOTE"
+          test -n "$NEXT_PUBLIC_OCR_REMOTE"
+          test -n "$NEXT_PUBLIC_STUDIO_REMOTE"
+          registry="${FORGEJO_SERVER_URL#https://}"
+          registry="${registry#http://}"
+          registry="${registry%%/*}"
+          image="$(printf '%s/%s' "$registry" "$FORGEJO_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          tag="sha-$FORGEJO_SHA"
+          printf '%s' "$REGISTRY_TOKEN" | docker login "$registry" --username "$REGISTRY_USER" --password-stdin
+          if docker manifest inspect "$image:$tag" >/dev/null 2>&1; then
+            echo "Image tag already exists: $image:$tag" >&2
+            exit 1
+          fi
+          docker build --file apps/hub/Dockerfile --tag "$image:$tag" \
+            --build-arg "NEXT_PUBLIC_DASHBOARD_REMOTE=$NEXT_PUBLIC_DASHBOARD_REMOTE" \
+            --build-arg "NEXT_PUBLIC_CALENDAR_REMOTE=$NEXT_PUBLIC_CALENDAR_REMOTE" \
+            --build-arg "NEXT_PUBLIC_NOTES_REMOTE=$NEXT_PUBLIC_NOTES_REMOTE" \
+            --build-arg "NEXT_PUBLIC_TASKS_REMOTE=$NEXT_PUBLIC_TASKS_REMOTE" \
+            --build-arg "NEXT_PUBLIC_RELAY_REMOTE=$NEXT_PUBLIC_RELAY_REMOTE" \
+            --build-arg "NEXT_PUBLIC_PROTOCOLIO_REMOTE=$NEXT_PUBLIC_PROTOCOLIO_REMOTE" \
+            --build-arg "NEXT_PUBLIC_CANVAS_REMOTE=$NEXT_PUBLIC_CANVAS_REMOTE" \
+            --build-arg "NEXT_PUBLIC_DEVKIT_REMOTE=$NEXT_PUBLIC_DEVKIT_REMOTE" \
+            --build-arg "NEXT_PUBLIC_MESSENGER_REMOTE=$NEXT_PUBLIC_MESSENGER_REMOTE" \
+            --build-arg "NEXT_PUBLIC_OCR_REMOTE=$NEXT_PUBLIC_OCR_REMOTE" \
+            --build-arg "NEXT_PUBLIC_STUDIO_REMOTE=$NEXT_PUBLIC_STUDIO_REMOTE" \
+            .
+          docker push "$image:$tag"
+          docker logout "$registry"
+          echo "Published $image:$tag"

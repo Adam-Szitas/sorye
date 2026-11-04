@@ -7,6 +7,7 @@ import { acquireOcrSlot } from '@/lib/ocr/admission';
 import { assertOcrAnalyzeRateLimit } from '@/lib/ocr/rate-limit';
 import { llmModelName, releaseLoadedModel } from '@/lib/ocr/llm';
 import { readPdfAsRows } from '@/lib/ocr/read-pdf';
+import { finishGpuClock, persistGpuStart } from '@/lib/ocr/gpu-time';
 import { buildVector, completenessWarning } from '@/lib/ocr/vector';
 import {
   assertJsonPayloadSize,
@@ -187,11 +188,17 @@ async function analyzeUpload(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const reading = await analyzeRowPages(pages, signal, { prior: null });
+  let current = saved;
+  const reading = await analyzeRowPages(pages, signal, {
+    prior: null,
+    onModelStart: async (startedAt) => {
+      current = await persistGpuStart(session.user.id, session.workspace.id, current, startedAt);
+    },
+  });
   const finished = await storeOcrBatch(
     session.user.id,
     session.workspace.id,
-    saved,
+    finishGpuClock(current, reading.status),
     reading,
   );
   hold.model = finished.status === 'extracting';

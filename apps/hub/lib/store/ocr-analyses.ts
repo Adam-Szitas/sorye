@@ -60,6 +60,13 @@ export const renameOcrAnalysis = (
     () => hubStore().renameOcrAnalysis(userId, workspaceId, id, fileName),
   );
 
+export const listOcrWork = (userId: string, workspaceId: string) =>
+  withWorkspaceDb(
+    workspaceId,
+    (db) => workspaceDb.listOcrWork(db, userId, workspaceId),
+    () => hubStore().listOcrWork(userId, workspaceId),
+  );
+
 export const updateOcrAnalysis = (
   userId: string,
   workspaceId: string,

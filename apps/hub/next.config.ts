@@ -1,8 +1,16 @@
 import type { NextConfig } from 'next';
 import { withSentryConfig } from '@sentry/nextjs/config';
+import path from 'node:path';
 
 /** Hub Next config — types package is compiled via transpilePackages, not barrel-optimized. */
 const nextConfig: NextConfig = {
+  output: 'standalone',
+  outputFileTracingRoot: path.join(__dirname, '../..'),
+  outputFileTracingIncludes: {
+    '/api/ocr/**': [
+      '../../node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+    ],
+  },
   transpilePackages: ['@sorye/types', '@sorye/db', '@sorye/sdk', '@sorye/platform'],
   serverExternalPackages: ['imapflow', 'nodemailer', 'mailparser', 'pdfjs-dist'],
 };

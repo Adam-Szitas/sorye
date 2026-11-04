@@ -22,9 +22,10 @@ import { DatabaseGuide } from './database-guide';
 import { EventsGuide } from './events-guide';
 import { LlmControl } from './LlmControl';
 import { PackageMap } from './PackageMap';
+import { WorkAnalytics } from './work-analytics';
 import './styles.css';
 
-type DashTab = 'connect' | 'database' | 'events' | 'overview' | 'llm' | 'package';
+type DashTab = 'work' | 'connect' | 'database' | 'events' | 'overview' | 'llm' | 'package';
 
 interface MetricCard {
   label: string;
@@ -105,7 +106,7 @@ function activityVerb(item: ActivityItem): string {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<DashTab>('connect');
+  const [tab, setTab] = useState<DashTab>('work');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<HubSession | null>(null);
@@ -182,6 +183,13 @@ export default function App() {
       </header>
 
       <nav className="dashboard-tabs" aria-label="Dashboard sections">
+        <button
+          type="button"
+          className={tab === 'work' ? 'active' : undefined}
+          onClick={() => setTab('work')}
+        >
+          Work by app
+        </button>
         {session?.user.isAdmin ? <button type="button" className={tab === 'llm' ? 'active' : undefined} onClick={() => setTab('llm')}>LLM &amp; GPU</button> : null}
         <button type="button" className={tab === 'package' ? 'active' : undefined} onClick={() => setTab('package')}>My package map</button>
         <button
@@ -232,6 +240,8 @@ export default function App() {
         <PackageMap session={session} />
       ) : !loading && !error && session && tab === 'llm' && session.user.isAdmin ? (
         <LlmControl />
+      ) : !loading && !error && session && tab === 'work' ? (
+        <WorkAnalytics />
       ) : !loading && !error && session && snapshots ? (
         tab === 'connect' ? (
           <EmbedGuide

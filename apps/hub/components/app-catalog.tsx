@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   APP_CATALOG,
@@ -183,7 +185,7 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
                         className="rounded-lg bg-white/12 px-3 py-1.5 text-xs font-medium transition hover:bg-white/18"
                         onClick={() => openApp(app)}
                       >
-                        Open
+                        <TranslatedText message="open" />
                       </button>
                     ) : app.status === 'coming_soon' ? (
                       <span className="text-[11px] text-[var(--color-text-muted)]">

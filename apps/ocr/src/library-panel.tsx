@@ -228,7 +228,7 @@ export function LibraryPanel() {
                 </dl>
               ) : null}
               {columns.length > 0 ? (
-                <div className="ocr-library-table-wrap">
+                <div className="ocr-library-table-wrap" tabIndex={0} role="region" aria-label={`Stored rows for ${hit.fileName}`}>
                   <table>
                     <thead>
                       <tr>

@@ -328,6 +328,9 @@ importers:
 
   apps/ocr:
     dependencies:
+      '@sorye/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@sorye/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -372,8 +375,11 @@ importers:
   apps/protocolio:
     dependencies:
       '@protocolio/sdk':
-        specifier: file:../../../protocolio-dashboard
-        version: file:../protocolio-dashboard
+        specifier: file:..\..\vendor\protocolio-sdk-1.0.0.tgz
+        version: file:vendor/protocolio-sdk-1.0.0.tgz
+      '@sorye/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@sorye/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -1636,8 +1642,9 @@ packages:
   '@preact/signals-core@1.14.4':
     resolution: {integrity: sha512-HNB6HYeYKhQbJ1aKl+YRjrS4+QWHLKX6qKoUsfS/m0vqzsVaEBiZiaKbG/e+NKk2ch5ALQr/ihWaMHxiCuuWHA==}
 
-  '@protocolio/sdk@file:../protocolio-dashboard':
-    resolution: {directory: ../protocolio-dashboard, type: directory}
+  '@protocolio/sdk@file:vendor/protocolio-sdk-1.0.0.tgz':
+    resolution: {integrity: sha512-Mqn2VQeDfE9iegjRujr4YFQNpFpsDSt4cUQbqYLqHMbXAFjA+52ktzGICbpfWVhyPmEuLhBT5szk9l/TmP/drw==, tarball: file:vendor/protocolio-sdk-1.0.0.tgz}
+    version: 1.0.0
 
   '@rolldown/pluginutils@1.0.0-beta.27':
     resolution: {integrity: sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA==}
@@ -4133,7 +4140,7 @@ snapshots:
 
   '@preact/signals-core@1.14.4': {}
 
-  '@protocolio/sdk@file:../protocolio-dashboard': {}
+  '@protocolio/sdk@file:vendor/protocolio-sdk-1.0.0.tgz': {}
 
   '@rolldown/pluginutils@1.0.0-beta.27': {}
 

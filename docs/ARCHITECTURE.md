@@ -429,3 +429,5 @@ From the host, `DATABASE_URL` uses `localhost`. From the Hub container it uses h
 | Per-app behavior | `docs/apps/APPS.md` |
 
 See also: [SECURITY.md](./SECURITY.md), [apps/APPS.md](./apps/APPS.md).
+
+Protocolio renderer deployment and SDK ownership are described in [PROTOCOLIO.md](./PROTOCOLIO.md). The PDF engine remains a separate service; Sorye owns the editor and authenticated API bridge.

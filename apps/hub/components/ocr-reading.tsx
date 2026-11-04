@@ -1,6 +1,7 @@
 import { JsonDocument } from '@sorye/sdk/react/document-reading';
 import type { OcrAnalysis } from '@sorye/types';
-import { buildOcrReadingDocument } from '@sorye/types';
+import { buildOcrReadingDocument, formatOcrGpuClock } from '@sorye/types';
+import { OcrGpuClock } from './ocr-gpu-clock';
 import { PrintReadingButton } from './ocr-reading-print';
 
 export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
@@ -23,6 +24,20 @@ export function OcrReading({ analysis }: { analysis: OcrAnalysis }) {
         </p>
         <h1>{analysis.fileName}</h1>
         <p className="reading-meta">PDF type: {document.pdfTypeId ?? 'Not identified'} · {normalizedRows.length} data rows</p>
+        {(() => {
+          const started = analysis.vector?.gpuStartedAt ?? analysis.workStartedAt ?? null;
+          const finished = analysis.vector?.gpuFinishedAt ?? analysis.workFinishedAt ?? null;
+          const live = analysis.status === 'extracting' && Boolean(started) && !finished;
+          if (started && (finished || live)) {
+            return (
+              <p className="reading-meta">
+                <OcrGpuClock startedAt={started} finishedAt={finished} live={live} />
+              </p>
+            );
+          }
+          const stored = analysis.status !== 'extracting' ? formatOcrGpuClock(analysis.durationMs ?? Number.NaN) : null;
+          return stored ? <p className="reading-meta reading-gpu">{stored}</p> : null;
+        })()}
         <p className="reading-meta">Stored ID: {document.id}</p>
         {analysis.error ? <p className="reading-warning">{analysis.error}</p> : null}
         {warnings.length > 0 ? (

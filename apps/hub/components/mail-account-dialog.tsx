@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   MAIL_ACCOUNT_LABEL_MAX,
@@ -175,7 +177,7 @@ export function MailAccountDialog({
             className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
             onClick={onClose}
           >
-            Close
+            <TranslatedText message="close" />
           </button>
         </div>
 
@@ -351,7 +353,7 @@ export function MailAccountDialog({
             className="rounded-lg px-3 py-2 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
             onClick={onClose}
           >
-            Cancel
+            <TranslatedText message="cancel" />
           </button>
           <button
             type="submit"

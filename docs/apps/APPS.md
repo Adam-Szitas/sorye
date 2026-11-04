@@ -163,7 +163,7 @@ Presentation page for Sorye (smaller–mid ops automation). Visitors (logged out
 
 ## Purpose
 
-First app users typically enable. Shows workspace metrics, embed/database integration guides, and the **App events** master switch.
+First app users typically enable. Shows workspace metrics, embed/database integration guides, the **App events** master switch, and a **Work by app** view.
 
 ## Key files
 
@@ -172,6 +172,7 @@ First app users typically enable. Shows workspace metrics, embed/database integr
 | `src/App.tsx` | Main dashboard views |
 | `src/events-guide.tsx` | Explains + toggles App events via `PATCH /api/events` |
 | `src/dashboard-data.ts` | Workspace metrics from Hub APIs |
+| `src/work-analytics.tsx` | One headed section per app with work, stacked on the page. OCR stats stay in the OCR section; the job table is a separate OCR section under the other apps. Other apps show event counts only |
 | `src/embed-guide.tsx`, `database-guide.tsx` | Integration docs |
 | `src/mount.tsx` | MF entry |
 
@@ -180,6 +181,7 @@ First app users typically enable. Shows workspace metrics, embed/database integr
 - **Outbound:** `PATCH /api/events` to enable/disable workspace events
 - **Inbound:** `GET /api/tasks`, `/api/notes`, `/api/calendar` for overview counts (migrates leftover browser localStorage once if the server doc is empty)
 - **Relay:** Indirect — turning events on unlocks Relay + Messenger `#events`
+- **Work:** `GET /api/analytics` uses the session workspace. The Work by app view stacks one section per app that has data, each with that app’s name as a heading. OCR totals come from `ocr_analyses` (file name, status, page and row counts, model start/finish and duration) and the job table stays in its own OCR section. Other apps appear only when Hub already recorded their events, as counts. Empty apps are omitted.
 
 ## Dependencies
 
@@ -582,7 +584,7 @@ Upload PDF → browser layout matrix (columns/rows) for review, CSV, or Protocol
 
 ## Processing model
 
-The **layout matrix stays in the browser**. Analyze with Qwen sends the PDF to Hub (`POST /api/ocr/analyze`, 64 MB, 500 pages). Hub calls the `Qwen/Qwen3-8B` container in small slices. A slice that hits the output limit is split and read again. Long documents stay on `extracting` and continue through `POST /api/ocr/analyses/{id}/continue`. Hub writes `ocr_analyses`. With `STORE_DRIVER=json` the same record lands in `apps/hub/.data/ocr-analyses.json` until Postgres is on.
+The **layout matrix stays in the browser**. Analyze with Qwen sends the PDF to Hub (`POST /api/ocr/analyze`, 64 MB, 500 pages). A transcript that fits the model context is one request. Longer documents are read in slices; a slice that hits the output limit is split and read again. Long documents stay on `extracting` and continue through `POST /api/ocr/analyses/{id}/continue`. Hub writes `ocr_analyses`. With `STORE_DRIVER=json` the same record lands in `apps/hub/.data/ocr-analyses.json` until Postgres is on.
 
 All three Hub settings (`OCR_LLM_PROVIDER`, `OCR_LLM_BASE_URL`, `OCR_LLM_MODEL`) are required, with no defaults. Hub checks the running server and configured model before inference. If configuration is missing/invalid or Qwen is down, the LLM is excluded and the lines are still stored (`status: "rows_only"`) and image markers are copied into the pattern JSON.
 
@@ -851,3 +853,9 @@ Drizzle schema for Postgres. Used by Hub store driver, not directly by MF remote
 | `sorye.test.ping` | Relay test |
 
 All names validated server-side in `POST /api/events`.
+
+## Public app introductions
+
+Every catalog app has a public /learn/<slug> introduction with plain-language copy owned by apps/hub/lib/app-landings.ts. Exact catalog subdomains at their root show that introduction when routed to Hub. Open links use the canonical Hub app route and its existing authentication. See [landing-page steering](../APP-LANDINGS.md).
+
+Protocolio editor → authenticated Hub generate/validate/health endpoints → separate Protocolio renderer and its MongoDB. SDK source belongs to the Protocolio repository; Sorye consumes a versioned archive. Browser generation no longer falls back to direct engine access. See PROTOCOLIO.md for deployment and credentials.

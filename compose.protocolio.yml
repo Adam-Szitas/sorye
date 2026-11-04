@@ -1,0 +1,31 @@
+services:
+  protocolio:
+    image: sorye-protocolio:1.0.0
+    build:
+      context: ${PROTOCOLIO_SOURCE_DIR:-../protocolio}
+    ports:
+      - "127.0.0.1:3100:8080"
+    environment:
+      PORT: "8080"
+      MONGODB_URI: mongodb://protocolio-db:27017
+      MONGODB_DB: protocolio
+    depends_on:
+      protocolio-db:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+  protocolio-db:
+    image: mongo:7.0
+    volumes:
+      - protocolio_data:/data/db
+    restart: unless-stopped
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  protocolio_data:

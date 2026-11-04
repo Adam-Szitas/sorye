@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   APP_CATALOG,
@@ -222,7 +224,7 @@ export function ConnectionsPanel({
 
           <ul className="space-y-3">
             {widgetsLoading ? (
-              <li className="text-sm text-[var(--color-text-muted)]">Loading…</li>
+              <li className="text-sm text-[var(--color-text-muted)]"><TranslatedText message="loading" /></li>
             ) : null}
             {widgets.map((w) => (
               <li

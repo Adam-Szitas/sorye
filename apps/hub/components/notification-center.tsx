@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   APP_CATALOG,
@@ -74,7 +76,7 @@ export function NotificationCenter() {
             className="rounded-lg px-2 py-1 text-sm text-[var(--color-text-muted)] hover:bg-white/10"
             onClick={closeCenter}
           >
-            Close
+            <TranslatedText message="close" />
           </button>
         </header>
 

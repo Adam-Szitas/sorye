@@ -1,8 +1,12 @@
+import { preferredLocale } from '@/lib/preferred-locale';
+﻿import { landingSlugForHost } from '@/lib/app-landings';
 import { auth } from '@/auth';
 import { isAuthDevBypass } from '@/lib/auth-dev-bypass';
 import { NextResponse } from 'next/server';
 
 const publicPaths = [
+  '/sitemap.xml',
+  '/learn',
   '/login',
   '/api/auth',
   '/embed',
@@ -40,6 +44,16 @@ function withDevCors(res: NextResponse, origin: string): NextResponse {
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  const landingSlug = landingSlugForHost(req.nextUrl.hostname);
+  const unlocalized = /^\/learn\/([^/]+)\/?$/.exec(pathname);
+  if ((pathname === '/' && landingSlug) || unlocalized) {
+    const destination = req.nextUrl.clone();
+    destination.pathname = '/learn/' + (pathname === '/' ? landingSlug : unlocalized![1]) + '/' + preferredLocale(req.headers.get('accept-language'));
+    const response = NextResponse.redirect(destination, 307);
+    response.headers.set('Vary', 'Accept-Language');
+    response.headers.set('Cache-Control', 'private, no-store');
+    return response;
+  }
   const standaloneOrigin = devStandaloneOrigin(req);
   if (standaloneOrigin && req.method === 'OPTIONS') {
     return withDevCors(new NextResponse(null, { status: 204 }), standaloneOrigin);
@@ -81,3 +95,5 @@ export default auth((req) => {
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
+
+

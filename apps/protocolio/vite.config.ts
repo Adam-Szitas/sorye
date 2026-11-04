@@ -21,7 +21,7 @@ export default defineConfig({
     origin: 'http://localhost:3007',
     hmr: false,
     fs: {
-      allow: ['..', '../../..', '../../../protocolio-dashboard'],
+      allow: ['..', '../../..'],
     },
     proxy: {
       // Sorye Hub (handoffs, events, Protocolio developer bridge)
@@ -39,19 +39,6 @@ export default defineConfig({
       },
       '/api/auth': {
         target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      // Direct Protocolio PDF engine (when not using Hub bridge)
-      '/api/generate': {
-        target: 'http://127.0.0.1:3100',
-        changeOrigin: true,
-      },
-      '/api/validate': {
-        target: 'http://127.0.0.1:3100',
-        changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://127.0.0.1:3100',
         changeOrigin: true,
       },
     },

@@ -1,10 +1,10 @@
 {
   "latestErrorEvent": {
     "code": "TYPE-001",
-    "message": "Failed to generate type declaration. Execute the below cmd to reproduce and fix the error. #TYPE-001\nargs: {\"cmd\":\"npx tsc --project D:\\\\projects\\\\sorye\\\\apps\\\\canvas\\\\node_modules\\\\.federation\\\\tsconfig.0c76ee1a5a4869c935a6da3ff1036f5c.json\"}\nView the docs to see how to solve: https://module-federation.io/guide/troubleshooting/type#type-001",
+    "message": "Failed to generate type declaration. Execute the below cmd to reproduce and fix the error. #TYPE-001\nargs: {\"cmd\":\"npx tsc --project D:\\\\projects\\\\sorye\\\\apps\\\\canvas\\\\node_modules\\\\.federation\\\\tsconfig.2490a8e04a96b94b080db0d57e624bda.json\"}\nView the docs to see how to solve: https://module-federation.io/guide/troubleshooting/type#type-001",
     "args": {
-      "cmd": "npx tsc --project D:\\projects\\sorye\\apps\\canvas\\node_modules\\.federation\\tsconfig.0c76ee1a5a4869c935a6da3ff1036f5c.json"
+      "cmd": "npx tsc --project D:\\projects\\sorye\\apps\\canvas\\node_modules\\.federation\\tsconfig.2490a8e04a96b94b080db0d57e624bda.json"
     },
-    "timestamp": 1788813578049
+    "timestamp": 1793735822729
   }
 }

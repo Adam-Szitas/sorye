@@ -1,3 +1,4 @@
+import { TranslatedText } from '@sorye/platform/react';
 import { uploadToDrive } from '@sorye/sdk/files';
 import { useRef, useState, useId } from 'react';
 import type { GridBlock, GridCell, GridAlign, GridValign, GridRowSettings } from '@protocolio/sdk';
@@ -414,7 +415,7 @@ function GridCellEditor({
             onChange={handleFileChange}
             style={{ display: 'none' }}
           />
-          {loading && <p className="section-hint"><span className="spinner" />Loading…</p>}
+          {loading && <p className="section-hint"><span className="spinner" /><TranslatedText message="loading" /></p>}
           {block.src && isDataUri(block.src) && (
             <img src={block.src} alt="Cell preview" className="image-preview" />
           )}

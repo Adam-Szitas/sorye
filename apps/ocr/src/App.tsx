@@ -1,3 +1,4 @@
+import { TranslatedText } from '@sorye/platform/react';
 import '@sorye/sdk/register';
 import '@sorye/sdk/tokens.css';
 import { Button } from '@sorye/sdk/react';
@@ -28,6 +29,7 @@ import { runOcr, warmOcrEngine } from './ocr-engine';
 import { sendLayoutToProtocolio } from './send-to-protocolio';
 import { emitWorkspaceEvent } from './emit-event';
 import { hubApiPath } from './hub-origin';
+import { GpuClock } from './gpu-clock';
 import { ReadingView } from './reading-view';
 import { LibraryPanel } from './library-panel';
 import { CombinedReading, type ComparisonAnalysis, type ComparisonDocument } from './combined-reading';
@@ -69,7 +71,7 @@ function delay(ms: number): Promise<void> {
 async function submitAndFollowAnalysis(
   body: FormData,
   onAnalysisProgress?: (analysis: OcrAnalysis) => void,
-  onQueued?: (status: string) => void,
+  onQueued?: (status: string, gpuStartedAt?: string) => void,
   onJobCreated?: (jobId: string | null) => void,
 ): Promise<OcrAnalysis> {
   const response = await fetch(hubApiPath('/api/ocr/analyze'), {
@@ -94,17 +96,19 @@ async function submitAndFollowAnalysis(
     const job = (await jobResponse.json().catch(() => ({}))) as {
       status?: string;
       error?: string;
-      result?: { analysisId?: string; phase?: string; completed?: number; total?: number };
+      result?: { analysisId?: string; phase?: string; completed?: number; total?: number; gpuStartedAt?: string };
     };
     if (!jobResponse.ok) throw new Error(job.error || `Could not check analysis (${jobResponse.status})`);
     if (job.status === 'failed' || job.status === 'cancelled') {
       throw new Error(job.error || (job.status === 'cancelled' ? 'Analysis was cancelled' : 'Analysis failed'));
     }
     const progress = job.result;
+    const gpuStartedAt = progress?.phase === 'analyzing' ? progress.gpuStartedAt : undefined;
     if (job.status === 'running') {
       onQueued?.(progress?.phase === 'analyzing' && progress.total
         ? `Qwen is reading section ${Math.min((progress.completed ?? 0) + 1, progress.total)} of ${progress.total}.`
-        : progress?.phase === 'reading_pdf' ? 'Extracting rows from the PDF…' : 'Waiting for an OCR worker…');
+        : progress?.phase === 'reading_pdf' ? 'Extracting rows from the PDF…' : 'Waiting for an OCR worker…',
+      gpuStartedAt);
     } else {
       onQueued?.('Waiting for an OCR worker…');
     }
@@ -217,6 +221,7 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState('');
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
+  const [gpuStartedAt, setGpuStartedAt] = useState<string | null>(null);
   const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
   const [comparisonBusy, setComparisonBusy] = useState(false);
   const [comparisonProgress, setComparisonProgress] = useState('');
@@ -599,17 +604,22 @@ export default function App() {
     setAnalyzing(true);
     setAnalysisError(null);
     setAnalysis(null);
+    setGpuStartedAt(null);
     try {
       const body = new FormData();
       if (!driveFileIdRef.current) throw new Error('Save this PDF to Drive before analyzing it');
       body.append('fileId', driveFileIdRef.current);
       const current = await submitAndFollowAnalysis(body, (next) => {
         setAnalysis(next);
+        if (next.vector?.gpuStartedAt) setGpuStartedAt(next.vector.gpuStartedAt);
         const cursor = next.vector?.cursor;
         setAnalysisProgress(cursor?.total
           ? `Qwen is reading section ${Math.min(cursor.next + 1, cursor.total)} of ${cursor.total}.`
           : 'Qwen is reading this document. A few pages usually take a minute.');
-      }, setAnalysisProgress, setAnalysisJobId);
+      }, (status, started) => {
+        if (started) setGpuStartedAt(started);
+        setAnalysisProgress(status);
+      }, setAnalysisJobId);
       setAnalysis(current);
       const summary =
         current.pattern?.summary ||
@@ -665,7 +675,11 @@ export default function App() {
           const saved = await uploadToDrive(file, 'ocr', hubApiPath('/api/files'));
           const body = new FormData();
           body.append('fileId', saved.id);
-          const complete = await submitAndFollowAnalysis(body, undefined, (status) => {
+          setGpuStartedAt(null);
+          const complete = await submitAndFollowAnalysis(body, (next) => {
+            if (next.vector?.gpuStartedAt) setGpuStartedAt(next.vector.gpuStartedAt);
+          }, (status, started) => {
+            if (started) setGpuStartedAt(started);
             setComparisonProgress(`Analyzing ${index + 1} of ${pdfs.length}: ${file.name} · ${status}`);
           });
           setComparisonDocuments((previous) => [
@@ -799,7 +813,7 @@ export default function App() {
                 disabled={viewPage >= pdfPageCount}
                 onClick={() => viewPdfPage(viewPage + 1)}
               >
-                Next
+                <TranslatedText message="next" />
               </button>
             </div>
           </div>
@@ -849,10 +863,13 @@ export default function App() {
         ) : null}
 
         {analyzing ? (
-          <div className="ocr-send-status" role="status">
-            <span>{analysisProgress || (analysis?.status === 'extracting' && analysis.vector?.cursor
+          <div className="ocr-send-status">
+            <span role="status">{analysisProgress || (analysis?.status === 'extracting' && analysis.vector?.cursor
               ? `Qwen is reading section ${Math.min(analysis.vector.cursor.next + 1, analysis.vector.cursor.total)} of ${analysis.vector.cursor.total}.`
               : 'Qwen is reading this document. A few pages usually take a minute.')}</span>
+            {gpuStartedAt && analysis?.status !== 'ready' && analysis?.status !== 'rows_only' ? (
+              <GpuClock startedAt={gpuStartedAt} live />
+            ) : null}
             {analysisJobId ? <button type="button" className="btn-ghost" onClick={() => void cancelQueuedAnalysis()}>Cancel analysis</button> : null}
           </div>
         ) : null}
@@ -886,7 +903,12 @@ export default function App() {
         >
           {comparisonBusy ? 'Analyzing PDFs…' : 'Upload PDFs to compare'}
         </Button>
-        {comparisonProgress ? <p role="status">{comparisonProgress}</p> : null}
+        {comparisonProgress ? (
+          <p>
+            <span role="status">{comparisonProgress}</span>
+            {comparisonBusy && gpuStartedAt ? <GpuClock startedAt={gpuStartedAt} live /> : null}
+          </p>
+        ) : null}
         {comparisonError ? <p className="ocr-error" role="alert">{comparisonError}</p> : null}
       </section>
 
@@ -989,7 +1011,7 @@ export default function App() {
               </p>
             </div>
             <button type="button" className="btn-ghost" onClick={closePreview}>
-              Close
+              <TranslatedText message="close" />
             </button>
           </div>
         </div>

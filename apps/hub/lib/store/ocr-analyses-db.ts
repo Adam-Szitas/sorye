@@ -8,7 +8,8 @@ import {
   type OcrDocumentVector,
   type OcrPatternDocument,
 } from '@sorye/types';
-import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
+import type { AnalyticsOcrJob, OcrWorkSnapshot } from '@sorye/types';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { MAX_OCR_ANALYSES } from '@/lib/security-limits';
 import { OCR_LIBRARY_LIMIT, type OcrLibrarySource } from '@/lib/ocr/library-query';
 import { buildVector, flattenLines } from '@/lib/ocr/vector';
@@ -62,7 +63,38 @@ function rowToAnalysis(row: typeof schema.ocrAnalyses.$inferSelect): OcrAnalysis
         : null,
     error: row.error,
     createdAt: row.createdAt.toISOString(),
+    workStartedAt: row.workStartedAt?.toISOString() ?? null,
+    workFinishedAt: row.workFinishedAt?.toISOString() ?? null,
+    durationMs: row.durationMs ?? null,
   };
+}
+
+const workColumnsReady = new WeakMap<object, Promise<void>>();
+
+/** Nullable columns. Safe to run more than once; skipped after the first success per pool. */
+export function ensureOcrWorkColumns(db: WorkspaceDb): Promise<void> {
+  const existing = workColumnsReady.get(db);
+  if (existing) return existing;
+  const pending = db
+    .execute(sql`
+      ALTER TABLE ocr_analyses
+        ADD COLUMN IF NOT EXISTS work_started_at timestamptz,
+        ADD COLUMN IF NOT EXISTS work_finished_at timestamptz,
+        ADD COLUMN IF NOT EXISTS duration_ms integer
+    `)
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      workColumnsReady.delete(db);
+      throw err;
+    });
+  workColumnsReady.set(db, pending);
+  return pending;
+}
+
+function asDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function insertOcrAnalysis(
@@ -88,8 +120,10 @@ export async function insertOcrAnalysis(
 
 export async function updateOcrAnalysisRow(
   db: WorkspaceDb,
-  record: Pick<OcrAnalysis, 'id' | 'workspaceId' | 'status' | 'pattern' | 'error' | 'vector'>,
+  record: Pick<OcrAnalysis, 'id' | 'workspaceId' | 'status' | 'pattern' | 'error' | 'vector'> &
+    Partial<Pick<OcrAnalysis, 'workStartedAt' | 'workFinishedAt' | 'durationMs'>>,
 ): Promise<void> {
+  await ensureOcrWorkColumns(db);
   await db
     .update(schema.ocrAnalyses)
     .set({
@@ -97,6 +131,9 @@ export async function updateOcrAnalysisRow(
       pattern: record.pattern as unknown as Record<string, unknown> | null,
       error: record.error,
       vector: record.vector,
+      workStartedAt: asDate(record.workStartedAt),
+      workFinishedAt: asDate(record.workFinishedAt),
+      durationMs: record.durationMs ?? null,
     })
     .where(
       and(
@@ -167,11 +204,140 @@ export async function selectOcrAnalyses(
   return rows.map(row => ({ ...row, status: asStatus(row.status), createdAt: row.createdAt.toISOString() }));
 }
 
+function modelTimeSql() {
+  return sql`coalesce(
+    ${schema.ocrAnalyses.durationMs},
+    case
+      when coalesce(${schema.ocrAnalyses.vector}->>'gpuStartedAt', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+       and coalesce(${schema.ocrAnalyses.vector}->>'gpuFinishedAt', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+      then greatest(0, (
+        extract(epoch from (
+          (${schema.ocrAnalyses.vector}->>'gpuFinishedAt')::timestamptz
+          - (${schema.ocrAnalyses.vector}->>'gpuStartedAt')::timestamptz
+        )) * 1000
+      )::int)
+      else null
+    end
+  )`;
+}
+
+function clockSql(
+  column: typeof schema.ocrAnalyses.workStartedAt | typeof schema.ocrAnalyses.workFinishedAt,
+  key: 'gpuStartedAt' | 'gpuFinishedAt',
+) {
+  return sql`coalesce(
+    ${column},
+    case
+      when coalesce(${schema.ocrAnalyses.vector}->>${key}, '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+      then (${schema.ocrAnalyses.vector}->>${key})::timestamptz
+      else null
+    end
+  )`;
+}
+
+function asInt(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(2_147_483_647, Math.floor(n));
+}
+
+function asIso(value: unknown): string | null {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function resultRows(result: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
+  return [];
+}
+
+/** Finished analyses for the analytics page. Transcripts stay in the table. */
+export async function selectOcrWorkSnapshot(
+  db: WorkspaceDb,
+  workspaceId: string,
+): Promise<OcrWorkSnapshot> {
+  await ensureOcrWorkColumns(db);
+  const finished = () => and(
+    eq(schema.ocrAnalyses.workspaceId, workspaceId),
+    inArray(schema.ocrAnalyses.status, ['ready', 'rows_only']),
+  );
+  const [totalsResult, jobsResult] = await Promise.all([
+    db.execute(sql`
+      select
+        count(*)::int as count,
+        count(${modelTimeSql()})::int as timed_count,
+        coalesce(sum(${modelTimeSql()}), 0)::int as total_duration_ms
+      from ${schema.ocrAnalyses}
+      where ${finished()}
+    `),
+    db.execute(sql`
+      select
+        ${schema.ocrAnalyses.id} as id,
+        ${schema.ocrAnalyses.fileName} as file_name,
+        ${schema.ocrAnalyses.status} as status,
+        ${schema.ocrAnalyses.createdAt} as created_at,
+        ${clockSql(schema.ocrAnalyses.workStartedAt, 'gpuStartedAt')} as work_started_at,
+        ${clockSql(schema.ocrAnalyses.workFinishedAt, 'gpuFinishedAt')} as work_finished_at,
+        ${modelTimeSql()} as duration_ms,
+        case
+          when jsonb_typeof(${schema.ocrAnalyses.pages}) = 'array'
+          then jsonb_array_length(${schema.ocrAnalyses.pages})
+          else 0
+        end as page_count,
+        case
+          when jsonb_typeof(${schema.ocrAnalyses.pages}) = 'array' then coalesce((
+            select sum(
+              case
+                when jsonb_typeof(elem->'rows') = 'array' then jsonb_array_length(elem->'rows')
+                else 0
+              end
+            )
+            from jsonb_array_elements(${schema.ocrAnalyses.pages}) as page(elem)
+          ), 0)
+          else 0
+        end as row_count
+      from ${schema.ocrAnalyses}
+      where ${finished()}
+      order by ${clockSql(schema.ocrAnalyses.workFinishedAt, 'gpuFinishedAt')} desc nulls last,
+        ${schema.ocrAnalyses.createdAt} desc
+      limit 20
+    `),
+  ]);
+  const totals = resultRows(totalsResult)[0] ?? {};
+  const count = asInt(totals.count);
+  const timedCount = asInt(totals.timed_count);
+  const jobs: AnalyticsOcrJob[] = [];
+  for (const row of resultRows(jobsResult)) {
+    const status = row.status === 'ready' || row.status === 'rows_only' ? row.status : null;
+    if (!status || typeof row.id !== 'string') continue;
+    const duration = row.duration_ms == null ? null : asInt(row.duration_ms);
+    jobs.push({
+      id: row.id,
+      fileName: typeof row.file_name === 'string' ? row.file_name : 'document.pdf',
+      status,
+      pageCount: asInt(row.page_count),
+      rowCount: asInt(row.row_count),
+      createdAt: asIso(row.created_at) ?? new Date(0).toISOString(),
+      workStartedAt: asIso(row.work_started_at),
+      workFinishedAt: asIso(row.work_finished_at),
+      durationMs: duration,
+    });
+  }
+  return {
+    count,
+    timedCount,
+    totalDurationMs: timedCount > 0 ? asInt(totals.total_duration_ms) : null,
+    jobs,
+  };
+}
+
 export async function selectOcrAnalysis(
   db: WorkspaceDb,
   workspaceId: string,
   id: string,
 ): Promise<OcrAnalysis | null> {
+  await ensureOcrWorkColumns(db);
   const [row] = await db
     .select()
     .from(schema.ocrAnalyses)

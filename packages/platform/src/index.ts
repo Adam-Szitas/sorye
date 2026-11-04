@@ -26,3 +26,5 @@ export type {
   KernelSignals,
   MountedApp,
 } from './types';
+
+export * from './i18n';

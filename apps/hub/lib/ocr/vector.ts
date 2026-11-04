@@ -42,6 +42,21 @@ export function withCursor(
   return next;
 }
 
+/** Keep the first model-request time. Later slices must not restart the clock. */
+export function withGpuStart(vector: OcrDocumentVector, startedAt: string): OcrDocumentVector {
+  if (vector.gpuStartedAt) return vector;
+  return { ...vector, gpuStartedAt: startedAt };
+}
+
+/** Close the model clock once inference is no longer running. */
+export function withGpuFinish(
+  vector: OcrDocumentVector,
+  finishedAt = new Date().toISOString(),
+): OcrDocumentVector {
+  if (!vector.gpuStartedAt || vector.gpuFinishedAt) return vector;
+  return { ...vector, gpuFinishedAt: finishedAt };
+}
+
 /** Versioned map from the flat line vector back to pages. Line text stays on `pages`. */
 export function buildVector(pages: OcrAiPage[]): OcrDocumentVector {
   const pageStarts: number[] = [];

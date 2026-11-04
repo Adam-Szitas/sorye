@@ -1,3 +1,4 @@
+import { readProtocolioTemplate } from '@/lib/protocolio-input';
 import { ensureHubUser } from '@/lib/ensure-user';
 import {
   protocolioGenerate,
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const template = await req.json().catch(() => null);
+  const template = await readProtocolioTemplate(req).catch(() => null);
   if (!template || typeof template !== 'object' || !Array.isArray((template as { blocks?: unknown }).blocks)) {
     return NextResponse.json(
       { error: 'A PdfTemplate JSON body with a blocks array is required' },

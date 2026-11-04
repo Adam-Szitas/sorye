@@ -22,3 +22,7 @@ Before editing, compare the proposed work with the behavior map and relevant sou
 - Keep app-private UI state inside its app. Persist state according to the app's existing owner and lifetime; do not move private state into global kernel signals.
 - When adding or changing an app, keep `packages/types/src/apps.ts`, federation/Hub wiring, `docs/apps/APPS.md`, and the behavior tree consistent.
 - Follow the security, testing, and architecture instructions in `docs/AGENTS.md`, `docs/SECURITY.md`, and `docs/ARCHITECTURE.md`.
+
+## Keep app landing pages current
+
+Follow [App landing page steering](docs/APP-LANDINGS.md) for every app change. Update the belonging landing page in the same change; every new app must include a complete landing page.

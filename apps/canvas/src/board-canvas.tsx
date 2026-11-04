@@ -1,3 +1,4 @@
+import { TranslatedText } from '@sorye/platform/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CanvasDocument,
@@ -713,7 +714,7 @@ export function BoardCanvas({
               setEditingId(null);
             }}
           >
-            Delete
+            <TranslatedText message="delete" />
           </button>
         ) : null}
         <p className="toolbar-hint">

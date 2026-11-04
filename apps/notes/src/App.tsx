@@ -1,3 +1,4 @@
+import { TranslatedText } from '@sorye/platform/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createNotesStorage, type Note } from './notes-storage';
 import { emitWorkspaceEvent } from './emit-event';
@@ -219,7 +220,7 @@ export default function App() {
                     />
                   </label>
                   <button type="button" className="btn-danger btn-sm" onClick={deleteActive}>
-                    Delete
+                    <TranslatedText message="delete" />
                   </button>
                 </div>
 

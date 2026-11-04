@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import {
   formatStorefrontPrice,
@@ -279,7 +281,7 @@ export function AppStorefront() {
               className="rounded-lg px-2 py-1 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
               onClick={closeDialog}
             >
-              Close
+              <TranslatedText message="close" />
             </button>
           </div>
           <p className="text-sm leading-relaxed text-[var(--color-text-muted)]">

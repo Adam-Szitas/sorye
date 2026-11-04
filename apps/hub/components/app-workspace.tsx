@@ -1,4 +1,6 @@
 'use client';
+import { TranslatedText } from '@sorye/platform/react';
+
 
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
@@ -76,7 +78,7 @@ function AppPane({
           onClick={onClose}
           aria-label={`Close ${app.name}`}
         >
-          Close
+          <TranslatedText message="close" />
         </button>
       </header>
       {shouldShowUsageGuide(app.id) ? (

@@ -231,3 +231,24 @@ export async function getWorkspaceReports(
     funnel,
   };
 }
+
+/** Event counts already recorded for this workspace. Apps with no events are omitted. */
+export async function listWorkspaceAppEventCounts(
+  workspaceId: string,
+): Promise<ReportNamedCount[]> {
+  const today = utcDayKey(new Date());
+  const fromDay = addDaysUtc(today, -(MAX_STORED_DAYS - 1));
+  const store = await statsFile.read();
+  const index = store[workspaceId] ?? { days: {} };
+  const byApp: Record<string, number> = {};
+  for (const [day, bucket] of Object.entries(index.days)) {
+    if (day < fromDay || day > today) continue;
+    for (const [appId, n] of Object.entries(bucket.byApp)) {
+      if (!KNOWN_APP_IDS.has(appId)) continue;
+      bump(byApp, appId, n);
+    }
+  }
+  return Object.entries(byApp)
+    .filter(([, count]) => count > 0)
+    .map(([id, count]) => ({ id, label: appLabel(id), count }));
+}

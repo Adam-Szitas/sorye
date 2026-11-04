@@ -10,13 +10,36 @@ export function ocrPositionId(text: string): string | null {
 const VARIABLE = /^[A-ZÄÖÜ][A-ZÄÖÜ\d_]{0,15}$/u;
 const COLUMN_HEADER = /^(?:Pos\.?\s*Nr\.?\s+Stichwort\s+LZ|Variable\s+Berechnung\s+Ergebnis\s*EH)$/i;
 const PAGE_NUMBER = /^(?:\d{2}\.\d{2}\.\d{4}\s+)?(?:Seite|Page)\s*:?\s*\d+\s*(?:\/|von|of)\s*\d+$/i;
-// Match only a terminal value, never a number embedded inside a calculation.
-const RESULT = /(?:^|\s)([+−-]?(?:\d{1,3}(?:[ .]\d{3})+|\d+)(?:[,.]\d+)?(?:\s*(?:[\p{L}€%][\p{L}\p{N}²³%€°/]*))?)$/u;
+// A terminal amount, including the unit written on it (`12,5 m²`, `3 kg`, `22,61 / m²`, `0,067PA`).
+const RESULT = /(?:^|\s)([+−-]?(?:\d{1,3}(?:[ .]\d{3})+|\d+)(?:[,.]\d+)?(?:\s*(?:\/\s*)?[\p{L}€%][\p{L}\p{N}²³%€°/]*)?)$/u;
+
+/**
+ * Older stored lines used `_` as a gap and wrapped units in `[MATH]`.
+ * A real underscore in current text, such as `Wien_Kopie`, stays.
+ * This does not calculate or rewrite the stored row.
+ */
+export function readableOcrLine(text: string): string {
+  const legacy = /\[\/?MATH|MATH\]|\[\/?IMAGE|IMAGE\]|__/.test(text);
+  const cleaned = legacy
+    ? text
+        .replaceAll('[MATH]', ' ')
+        .replaceAll('[/MATH]', ' ')
+        .replaceAll('/MATH]', ' ')
+        .replaceAll('MATH]', ' ')
+        .replaceAll('[MATH', ' ')
+        .replaceAll('[/MATH', ' ')
+        .replaceAll('[IMAGE]', ' ')
+        .replaceAll('IMAGE]', ' ')
+        .replaceAll('[IMAGE', ' ')
+        .replace(/_+/g, ' ')
+    : text;
+  return cleaned.replace(/[ \t]{2,}/g, ' ').trim();
+}
 
 /** Reconstruct three semantic columns without changing or evaluating source values. */
 export function ocrSourceTableCells(source: string): [string, string, string] {
   if (source.includes('\t')) {
-    const pieces = source.split('\t').map((cell) => cell.trim());
+    const pieces = source.split('\t').map((cell) => readableOcrLine(cell));
     if (pieces.length >= 3) {
       const first = pieces[0]!;
       const middle = pieces.slice(1, -1).filter(Boolean).join(' ');
@@ -26,7 +49,7 @@ export function ocrSourceTableCells(source: string): [string, string, string] {
       return ['', [first, middle].filter(Boolean).join(' '), last];
     }
   }
-  const text = source.trim();
+  const text = readableOcrLine(source);
   const id = ocrPositionId(text);
   let first = id ?? '';
   let rest = id ? text.slice(id.length).trim() : text;
@@ -63,7 +86,7 @@ export function normalizeOcrTable(pages: OcrAiPage[], pattern?: OcrPatternDocume
   const rows: OcrNormalizedRow[] = [];
   let pdfTypeId: string | null = null;
   for (const page of pages) {
-    const flat = page.rows.map((row) => row.replace(/\s+/g, ' ').trim());
+    const flat = page.rows.map((row) => readableOcrLine(row).replace(/\s+/g, ' ').trim());
     const header = flat.findIndex((row) => COLUMN_HEADER.test(row));
     // Only discard the letterhead when a recognizable table header delimits it.
     const bodyStart = header >= 0 ? header + 1 : 0;
@@ -76,7 +99,9 @@ export function normalizeOcrTable(pages: OcrAiPage[], pattern?: OcrPatternDocume
         const type = /\b\d+\.[\p{L}]+(?:[-/][\p{L}\p{N}.]+)+/u.exec(text)?.[0];
         if (type && !pdfTypeId) pdfTypeId = type;
       }
-      if (row < bodyStart || (footer >= 0 && row >= footer) || !text
+      // Drop the signature row itself. A consumable after it, including the last
+      // line of the page, stays. Page numbers are still furniture.
+      if (row < bodyStart || row === footer || !text
         || COLUMN_HEADER.test(text) || PAGE_NUMBER.test(text) || text === '[IMAGE]') continue;
 
       const expected = ocrSourceTableCells(source);

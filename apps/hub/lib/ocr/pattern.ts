@@ -17,7 +17,7 @@ const KINDS = new Set([
   'unknown',
 ]);
 
-export const OCR_NORMALIZATION_VERSION = 2;
+export const OCR_NORMALIZATION_VERSION = 3;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;

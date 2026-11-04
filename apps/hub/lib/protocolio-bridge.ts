@@ -72,7 +72,12 @@ export async function ensureProtocolioToken(
   apiUrl = resolveProtocolioApiUrl(),
 ): Promise<string> {
   const envToken = resolveProtocolioDevToken();
-  if (envToken) return envToken;
+  const serviceToken = process.env.PROTOCOLIO_SERVICE_TOKEN?.trim();
+  if (serviceToken) return serviceToken;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('PROTOCOLIO_SERVICE_TOKEN is required in production');
+  }
+  if (process.env.PROTOCOLIO_DEV_TOKEN?.trim() || process.env.DEV_TOKEN?.trim()) return envToken;
 
   const stored = await readStoredToken(apiUrl);
   if (stored) return stored;
@@ -134,7 +139,7 @@ export async function protocolioGenerate(
   let res = await post(token);
 
   // Env DEV_TOKEN may be wrong / API may prefer registered tokens — retry once.
-  if (res.status === 401 || res.status === 403) {
+  if (process.env.NODE_ENV !== 'production' && !process.env.PROTOCOLIO_SERVICE_TOKEN && (res.status === 401 || res.status === 403)) {
     token = await registerToken(apiUrl);
     res = await post(token);
   }

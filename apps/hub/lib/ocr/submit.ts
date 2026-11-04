@@ -9,7 +9,7 @@ import { MAX_OCR_PDF_BYTES } from '../security-limits';
 export async function submitOcr(req: Request, session: HubSession) {
   try {
     return await withUploadSlot(async () => {
-      if (!(await hasLiveWorker('ocr'))) throw new JobWorkerUnavailableError('OCR processing is temporarily unavailable. Please retry shortly.');
+      if (!(await hasLiveWorker('ocr'))) throw new JobWorkerUnavailableError('No OCR worker is running, so analysis cannot start.');
       const form = await readBoundedFormData(req, MAX_OCR_PDF_BYTES + 1_000_000);
       let fileId = form.get('fileId');
       if (typeof fileId !== 'string') {

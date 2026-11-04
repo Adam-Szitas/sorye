@@ -1,3 +1,4 @@
+import { TranslatedText } from '@sorye/platform/react';
 import { useCallback, useEffect, useState } from 'react';
 import type { CloudStorageConnection, CloudStorageProvider } from '@sorye/types';
 import { broadcastRelayUpdated } from './relay-storage';
@@ -137,7 +138,7 @@ export function RelayStorages() {
         <label className="field">Access key ID<input required autoComplete="off" value={form.accessKeyId} onChange={(event) => setForm({ ...form, accessKeyId: event.target.value })} /></label>
         <label className="field">Secret access key<input type="password" required autoComplete="new-password" value={form.secretAccessKey} onChange={(event) => setForm({ ...form, secretAccessKey: event.target.value })} /></label>
         <p className="field-hint">Use a dedicated key limited to this bucket. Grant only list, read, and upload permission (s3:ListBucket, s3:GetObject, s3:PutObject). Do not use your personal cloud root credentials.</p>
-        <div className="storage-actions"><button type="button" className="btn-ghost btn-sm" onClick={() => { setShowForm(false); setForm(emptyForm); }}>Cancel</button><button type="submit" className="btn-primary btn-sm" disabled={busy}>{busy ? 'Checking…' : 'Verify and connect'}</button></div>
+        <div className="storage-actions"><button type="button" className="btn-ghost btn-sm" onClick={() => { setShowForm(false); setForm(emptyForm); }}><TranslatedText message="cancel" /></button><button type="submit" className="btn-primary btn-sm" disabled={busy}>{busy ? 'Checking…' : 'Verify and connect'}</button></div>
       </form> : null}
     </section>
   );

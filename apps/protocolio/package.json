@@ -10,7 +10,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@protocolio/sdk": "file:../../../protocolio-dashboard",
+    "@protocolio/sdk": "file:..\\..\\vendor\\protocolio-sdk-1.0.0.tgz",
+    "@sorye/platform": "workspace:*",
     "@sorye/sdk": "workspace:*",
     "@sorye/telemetry": "workspace:*",
     "@sorye/types": "workspace:*",

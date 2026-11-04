@@ -853,3 +853,80 @@
     flex-direction: column;
   }
 }
+
+.work-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.work-section {
+  padding: 1.1rem 1.25rem 1.15rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 24, 38, 0.72);
+}
+
+.work-section h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.work-section .metrics-grid {
+  margin: 0.85rem 0 0;
+}
+
+.work-section .metric-card {
+  background: rgba(11, 15, 23, 0.55);
+}
+
+.work-section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+}
+
+.work-kicker {
+  margin: 0.35rem 0 1rem;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+}
+
+.work-table-wrap {
+  overflow: auto;
+  max-height: 28rem;
+}
+
+.work-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.work-table th,
+.work-table td {
+  padding: 0.55rem 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  vertical-align: top;
+}
+
+.work-table th {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.work-file {
+  overflow-wrap: anywhere;
+}
+
+.work-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.status-pill.status-rows_only {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+}

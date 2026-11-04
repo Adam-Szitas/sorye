@@ -17,6 +17,7 @@ export * from './relay';
 export * from './notifications';
 export * from './studio';
 export * from './reports';
+export * from './analytics';
 export * from './storefront';
 export * from './site';
 export * from './mail';

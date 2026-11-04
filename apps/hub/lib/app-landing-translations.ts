@@ -1,0 +1,103 @@
+﻿import { APP_LANDINGS } from './app-landings';
+export const landingLocales = ['en', 'de', 'sk', 'hu', 'es'] as const;
+export type LandingLocale = typeof landingLocales[number];
+export const landingLabels = {
+ en: ['Explore all apps','One tool. A clearer working day.','Open','How it works','More tools for your day','Sign in and enable the app in your workspace.','For administrators. Sign-in required.','Learn more about Sorye.','Language'],
+ de: ['Alle Apps entdecken','Ein Werkzeug. Ein übersichtlicherer Arbeitstag.','Öffnen:','So funktioniert es','Weitere Werkzeuge für Ihren Alltag','Melden Sie sich an und aktivieren Sie die App in Ihrem Arbeitsbereich.','Für Administratoren. Anmeldung erforderlich.','Mehr über Sorye erfahren.','Sprache'],
+ sk: ['Preskúmať všetky aplikácie','Jeden nástroj. Prehľadnejší pracovný deň.','Otvoriť','Ako to funguje','Ďalšie nástroje na každý deň','Prihláste sa a aktivujte aplikáciu vo svojom pracovnom priestore.','Pre správcov. Vyžaduje sa prihlásenie.','Viac o Sorye.','Jazyk'],
+ hu: ['Az összes alkalmazás','Egy eszköz. Átláthatóbb munkanap.','Megnyitás:','Így működik','További eszközök a mindennapokra','Jelentkezzen be, és engedélyezze az alkalmazást a munkaterületén.','Rendszergazdáknak. Bejelentkezés szükséges.','Tudjon meg többet a Sorye-ról.','Nyelv'],
+ es: ['Explorar todas las aplicaciones','Una herramienta. Un día de trabajo más claro.','Abrir','Cómo funciona','Más herramientas para tu día','Inicia sesión y activa la aplicación en tu espacio de trabajo.','Para administradores. Requiere iniciar sesión.','Más información sobre Sorye.','Idioma'],
+} as const;
+const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
+ de: [
+ 'Finden Sie das passende Werkzeug für Ihre Arbeit.|Apps durchsuchen.|Lesen, was jede App kann.|Eine aktivierte App öffnen.',
+ 'Lernen Sie Sorye kennen und nehmen Sie Kontakt auf.|Das Angebot ansehen.|Dokument- und Board-Werkzeuge entdecken.|Das Team kontaktieren.',
+ 'Sehen Sie, was in Ihrem Arbeitsbereich passiert.|Aktuelle Aktivitäten prüfen.|Apps in Ihrem Paket ansehen.|Verbindungen und Einstellungen verwalten.',
+ 'Sammeln Sie Ideen und Besprechungsnotizen an einem Ort.|Eine Notiz erstellen.|Titel und Text eingeben.|Gespeicherte Notizen später wieder öffnen.',
+ 'Behalten Sie Besprechungen und Fristen im Kalender.|Einen Tag auswählen.|Termin und Uhrzeit hinzufügen.|Anstehende Termine ansehen.',
+ 'Senden Sie App-Neuigkeiten dorthin, wo Ihr Team nachschaut.|App-Ereignisse im Dashboard aktivieren.|Gewünschte Meldungen auswählen.|An Messenger oder eine verbundene Website senden. E-Mail-Versand ist noch nicht angeschlossen.',
+ 'Produkte ansehen und eine Bestellanfrage senden.|Produkte auswählen.|In den Warenkorb legen.|Anfrage absenden. Kartenzahlung ist noch nicht verfügbar.',
+ 'Erstellen Sie eine einfache öffentliche Seite für Ihren Arbeitsbereich.|Eine Vorlage wählen.|Texte, Links und Kontaktdaten ergänzen.|Veröffentlichen und den Link teilen.',
+ 'Testen Sie Verbindungen zwischen Sorye und anderer Software.|Eine Verbindung auswählen.|Eine Anfrage oder eingebettete App testen.|Ergebnisse zur Fehlersuche lesen. Für Entwickler.',
+ 'Gestalten Sie ein Dokument und erstellen Sie daraus eine PDF-Datei.|Mit einer Vorlage oder einem leeren Dokument beginnen.|Text, Tabellen und andere Blöcke anordnen.|Eine PDF über den verbundenen PDF-Dienst von Sorye erstellen. Tabellen können auch aus OCR übernommen werden.',
+ 'Sammeln Sie Ideen auf einem gemeinsamen Board.|Ein Board erstellen.|Haftnotizen und Formen hinzufügen.|Elemente verschieben und Ideen ordnen.',
+ 'Behalten Sie Aufgaben bis zum Abschluss im Blick.|Eine Aufgabe hinzufügen.|Passende Spalten für den Arbeitsablauf wählen.|Die Aufgabe dem Fortschritt entsprechend verschieben.',
+ 'Chatten Sie mit Menschen in Ihrem Arbeitsbereich.|Unterhaltung oder Kanal öffnen.|Nachricht schreiben oder Foto teilen.|Teamgespräche an einem Ort halten.',
+ 'Lesen und schreiben Sie Nachrichten im Arbeitsbereich.|Das Postfach öffnen.|Nachricht schreiben oder Entwurf speichern.|Optional ein bestehendes E-Mail-Konto zum Lesen und Senden verbinden.',
+ 'Bewahren Sie Dateien an einem Ort auf.|Datei hochladen.|In Drive finden oder umbenennen.|Bei Bedarf herunterladen.',
+ 'Öffnen Sie den separaten SUSM-Dienst in Sorye.|SUSM öffnen.|Anmeldung und Anweisungen des Dienstes befolgen.|In der eingebetteten Seite arbeiten. Daten werden getrennt von Sorye verwaltet.',
+ 'Öffnen Sie den separaten ESPM-Dienst in Sorye.|ESPM öffnen.|Anmeldung und Anweisungen des Dienstes befolgen.|Den externen Beta-Dienst nutzen. Daten werden getrennt von Sorye verwaltet.',
+ 'Holen Sie Tabellen und Informationen aus PDF-Dokumenten.|PDF hochladen.|Tabellen prüfen und unklare Ergebnisse kontrollieren.|Tabelle herunterladen oder an Protocolio senden. Optionale KI-Analyse benötigt einen eingerichteten Dienst.',
+ 'Betrachten Sie ein 3D-Modell aus verschiedenen Blickwinkeln.|Unterstütztes Modell hochladen.|Drehen und heranzoomen.|Bei überschrittenen Grenzen ein kleineres Modell verwenden. Ein kompatibler Browser ist nötig.',
+ 'Helfen Sie Administratoren, Aktivitäten zu verstehen.|Als Administrator anmelden.|Zeitraum auswählen.|Aktivitätszahlen und Zustellprobleme prüfen. Nachrichten- und Dateiinhalte werden nicht angezeigt.'
+ ],
+ sk: [
+ 'Nájdite správny nástroj na svoju prácu.|Prezrite si aplikácie.|Prečítajte si, čo každá robí.|Otvorte aktivovanú aplikáciu.',
+ 'Spoznajte Sorye a spojte sa s nami.|Pozrite si ponuku.|Preskúmajte nástroje na dokumenty a tabule.|Kontaktujte tím.',
+ 'Pozrite sa, čo sa deje vo vašom pracovnom priestore.|Skontrolujte nedávnu aktivitu.|Pozrite si aplikácie v balíku.|Spravujte pripojenia a nastavenia.',
+ 'Majte nápady a poznámky zo stretnutí na jednom mieste.|Vytvorte poznámku.|Zadajte názov a text.|Vráťte sa k uloženým poznámkam.',
+ 'Majte stretnutia a termíny v kalendári.|Vyberte deň.|Pridajte udalosť a čas.|Pozrite si nadchádzajúce plány.',
+ 'Posielajte novinky z aplikácií tam, kde ich tím sleduje.|Zapnite udalosti aplikácií v Dashboard.|Vyberte správy na odosielanie.|Posielajte ich do Messenger alebo na pripojený web. Odosielanie e-mailov zatiaľ nie je pripojené.',
+ 'Prezrite si produkty a pošlite žiadosť o objednávku.|Vyberte produkty.|Pridajte ich do košíka.|Odošlite žiadosť. Platba kartou zatiaľ nie je dostupná.',
+ 'Vytvorte jednoduchú verejnú stránku pracovného priestoru.|Vyberte úvodnú šablónu.|Pridajte text, odkazy a kontakty.|Zverejnite stránku a zdieľajte odkaz.',
+ 'Otestujte prepojenia Sorye s iným softvérom.|Vyberte prepojenie.|Vyskúšajte požiadavku alebo vloženú aplikáciu.|Prečítajte výsledky a nájdite problémy. Nástroj je pre vývojárov.',
+ 'Navrhnite dokument a vytvorte z neho PDF.|Začnite šablónou alebo prázdnym dokumentom.|Usporiadajte text, tabuľky a ďalšie bloky.|Vytvorte PDF cez pripojenú službu Sorye. Tabuľku môžete prevziať aj z OCR.',
+ 'Zdieľajte nápady na spoločnej tabuli.|Vytvorte tabuľu.|Pridajte lístočky a tvary.|Presúvajte prvky a usporiadajte nápady.',
+ 'Sledujte úlohy od začiatku až po dokončenie.|Pridajte úlohu.|Vyberte stĺpce podľa práce tímu.|Presúvajte úlohu podľa postupu.',
+ 'Píšte si s ľuďmi v pracovnom priestore.|Otvorte rozhovor alebo kanál.|Napíšte správu alebo zdieľajte fotografiu.|Majte tímové diskusie pohromade.',
+ 'Čítajte a píšte správy z pracovného priestoru.|Otvorte schránku.|Napíšte správu alebo uložte koncept.|Voliteľne pripojte existujúci e-mailový účet na čítanie a odosielanie pošty.',
+ 'Majte pracovné súbory na jednom mieste.|Nahrajte súbor.|Nájdite alebo premenujte ho v Drive.|Stiahnite si ho, keď ho potrebujete.',
+ 'Otvorte samostatnú službu SUSM v Sorye.|Otvorte SUSM.|Postupujte podľa prihlásenia a pokynov služby.|Pracujte na vloženej stránke. Údaje sú spravované oddelene od Sorye.',
+ 'Otvorte samostatnú službu ESPM v Sorye.|Otvorte ESPM.|Postupujte podľa prihlásenia a pokynov služby.|Používajte externú beta službu. Údaje sú spravované oddelene od Sorye.',
+ 'Získajte tabuľky a užitočné údaje z PDF.|Nahrajte PDF.|Skontrolujte tabuľky a nejasné výsledky.|Stiahnite tabuľku alebo ju pošlite do Protocolio. Voliteľná analýza AI vyžaduje nastavenú službu.',
+ 'Prezrite si 3D model z rôznych uhlov.|Nahrajte podporovaný model.|Otáčajte a približujte ho.|Pri prekročení limitov použite menší model. Vyžaduje sa kompatibilný prehliadač.',
+ 'Pomôžte správcom porozumieť aktivite pracovného priestoru.|Prihláste sa ako správca.|Vyberte obdobie.|Skontrolujte počty aktivít a problémy s doručením. Obsah správ a súborov sa nezobrazuje.'
+ ],
+ hu: [
+ 'Találja meg a munkájához megfelelő eszközt.|Böngésszen az alkalmazások között.|Olvassa el, mire valók.|Nyisson meg egy engedélyezett alkalmazást.',
+ 'Ismerje meg a Sorye-t, és lépjen kapcsolatba velünk.|Nézze meg a kínálatot.|Fedezze fel a dokumentum- és táblaeszközöket.|Keresse meg a csapatot.',
+ 'Lássa, mi történik a munkaterületén.|Tekintse át a legutóbbi tevékenységeket.|Nézze meg a csomag alkalmazásait.|Kezelje a kapcsolatokat és beállításokat.',
+ 'Tartsa egy helyen ötleteit és megbeszélési jegyzeteit.|Hozzon létre jegyzetet.|Adjon címet, és írja be a szöveget.|Később térjen vissza a mentett jegyzetekhez.',
+ 'Tartsa naptárban a találkozókat és határidőket.|Válasszon napot.|Adjon hozzá eseményt és időpontot.|Tekintse át közelgő terveit.',
+ 'Küldje az alkalmazások híreit oda, ahol a csapat figyeli őket.|Engedélyezze az alkalmazáseseményeket a Dashboard felületén.|Válassza ki a küldendő frissítéseket.|Küldje őket a Messengerbe vagy egy kapcsolt webhelyre. Az e-mail-küldés még nincs bekötve.',
+ 'Böngésszen termékeket, és küldjön rendelési kérelmet.|Válasszon termékeket.|Tegye őket a kosárba.|Küldje el a kérelmet. Bankkártyás fizetés még nem érhető el.',
+ 'Készítsen egyszerű nyilvános oldalt a munkaterületéhez.|Válasszon sablont.|Adjon hozzá szöveget, hivatkozásokat és elérhetőségeket.|Tegye közzé, és ossza meg a hivatkozást.',
+ 'Tesztelje a Sorye és más szoftverek kapcsolatait.|Válasszon tesztelendő kapcsolatot.|Próbáljon ki egy kérést vagy beágyazott alkalmazást.|Az eredmények alapján keressen hibákat. Fejlesztőknek készült.',
+ 'Tervezzen dokumentumot, majd készítsen belőle PDF-et.|Kezdjen sablonnal vagy üres dokumentummal.|Rendezze el a szöveget, táblázatokat és más blokkokat.|Készítsen PDF-et a Sorye csatlakoztatott PDF-szolgáltatásával. OCR-ből is átvehet táblázatot.',
+ 'Dolgozzon csapatával az ötleteken egy közös táblán.|Hozzon létre táblát.|Adjon hozzá jegyzetlapokat és alakzatokat.|Mozgassa az elemeket az ötletek rendezéséhez.',
+ 'Kövesse a feladatokat az elkészülésükig.|Adjon hozzá feladatot.|Válasszon a munkafolyamathoz illő oszlopokat.|Mozgassa a feladatot az előrehaladás szerint.',
+ 'Beszélgessen a munkaterület tagjaival.|Nyisson meg beszélgetést vagy csatornát.|Írjon üzenetet, vagy osszon meg fényképet.|Tartsa együtt a csapat beszélgetéseit.',
+ 'Olvasson és írjon üzeneteket a munkaterületén.|Nyissa meg a postaládát.|Írjon üzenetet, vagy mentsen piszkozatot.|Igény szerint kapcsoljon meglévő e-mail-fiókot a levelek olvasásához és küldéséhez.',
+ 'Tartsa egy helyen a munkaterület fájljait.|Töltsön fel fájlt.|Keresse meg vagy nevezze át a Drive-ban.|Töltse le, amikor szüksége van rá.',
+ 'Nyissa meg a különálló SUSM-szolgáltatást a Sorye-ban.|Nyissa meg a SUSM-et.|Kövesse a szolgáltatás bejelentkezési lépéseit és útmutatóját.|Dolgozzon a beágyazott oldalon. Az adatokat a Sorye-tól külön kezelik.',
+ 'Nyissa meg a különálló ESPM-szolgáltatást a Sorye-ban.|Nyissa meg az ESPM-et.|Kövesse a szolgáltatás bejelentkezési lépéseit és útmutatóját.|Használja a külső béta szolgáltatást. Az adatokat a Sorye-tól külön kezelik.',
+ 'Nyerjen ki táblázatokat és hasznos adatokat PDF-ekből.|Töltsön fel PDF-et.|Ellenőrizze a táblázatokat és a bizonytalan eredményeket.|Töltse le a táblázatot, vagy küldje a Protocolióba. Az opcionális AI-elemzéshez beállított szolgáltatás szükséges.',
+ 'Nézzen meg egy 3D-modellt különböző szögekből.|Töltsön fel támogatott modellt.|Forgassa és nagyítsa.|A korlátok túllépésekor használjon kisebb modellt. Kompatibilis böngésző szükséges.',
+ 'Segítse a rendszergazdákat a tevékenységek megértésében.|Jelentkezzen be rendszergazdaként.|Válasszon időszakot.|Tekintse át az aktivitási számokat és kézbesítési hibákat. Üzenet- és fájltartalom nem jelenik meg.'
+ ],
+ es: [
+ 'Encuentra la herramienta adecuada para tu trabajo.|Explora las aplicaciones.|Lee para qué sirve cada una.|Abre una aplicación activada.',
+ 'Conoce Sorye y ponte en contacto.|Consulta lo que ofrece.|Explora herramientas de documentos y tableros.|Contacta con el equipo.',
+ 'Mira qué ocurre en tu espacio de trabajo.|Revisa la actividad reciente.|Consulta las aplicaciones de tu plan.|Gestiona conexiones y ajustes.',
+ 'Guarda ideas y notas de reuniones en un solo lugar.|Crea una nota.|Añade un título y escribe el texto.|Vuelve a tus notas guardadas cuando las necesites.',
+ 'Organiza reuniones, fechas y plazos en un calendario.|Elige un día.|Añade un evento y su hora.|Revisa tus próximos planes.',
+ 'Envía novedades de tus aplicaciones donde las consulta tu equipo.|Activa los eventos de aplicaciones en Dashboard.|Elige las novedades que quieres enviar.|Envíalas a Messenger o a una web conectada. El envío por correo aún no está conectado.',
+ 'Explora productos y envía una solicitud de pedido.|Elige productos.|Añádelos al carrito.|Envía la solicitud. El pago con tarjeta aún no está disponible.',
+ 'Crea una página pública sencilla para tu espacio de trabajo.|Elige una plantilla.|Añade texto, enlaces y datos de contacto.|Publica la página y comparte su enlace.',
+ 'Prueba conexiones entre Sorye y otros programas.|Elige una conexión.|Prueba una solicitud o una aplicación integrada.|Revisa los resultados para detectar problemas. Es una herramienta para desarrolladores.',
+ 'Diseña un documento y conviértelo en PDF.|Empieza con una plantilla o un documento vacío.|Organiza textos, tablas y otros bloques.|Genera el PDF mediante el servicio conectado de Sorye. También puedes importar una tabla de OCR.',
+ 'Organiza ideas en un tablero compartido con tu equipo.|Crea un tablero.|Añade notas adhesivas y formas.|Mueve los elementos para ordenar las ideas.',
+ 'Sigue el trabajo pendiente hasta terminarlo.|Añade una tarea.|Elige columnas que encajen con tu equipo.|Mueve la tarea según avance el trabajo.',
+ 'Habla con las personas de tu espacio de trabajo.|Abre una conversación o un canal.|Escribe un mensaje o comparte una foto.|Mantén juntas las conversaciones del equipo.',
+ 'Lee y escribe mensajes desde tu espacio de trabajo.|Abre el buzón.|Escribe un mensaje o guarda un borrador.|Si quieres, conecta una cuenta de correo existente para leer y enviar mensajes.',
+ 'Guarda los archivos de trabajo en un solo lugar.|Sube un archivo.|Búscalo o cambia su nombre en Drive.|Descárgalo cuando lo necesites.',
+ 'Abre el servicio independiente SUSM dentro de Sorye.|Abre SUSM.|Sigue el inicio de sesión y las instrucciones del servicio.|Trabaja en su página integrada. Sus datos se gestionan por separado de Sorye.',
+ 'Abre el servicio independiente ESPM dentro de Sorye.|Abre ESPM.|Sigue el inicio de sesión y las instrucciones del servicio.|Usa el servicio beta externo. Sus datos se gestionan por separado de Sorye.',
+ 'Extrae tablas e información útil de documentos PDF.|Sube un PDF.|Revisa las tablas y comprueba los resultados dudosos.|Descarga la tabla o envíala a Protocolio. El análisis opcional con IA requiere un servicio configurado.',
+ 'Abre un modelo 3D y míralo desde distintos ángulos.|Sube un modelo compatible.|Gíralo y amplíalo para examinarlo.|Usa un modelo más pequeño si supera los límites. Se necesita un navegador compatible.',
+ 'Ayuda a los administradores a entender la actividad.|Inicia sesión como administrador.|Elige un intervalo de fechas.|Revisa los recuentos y problemas de entrega. No se muestran contenidos de mensajes ni archivos.'
+ ]
+};
+const ids = ['catalog','contact','dashboard','notes','calendar','relay','storefront','site','devtools','protocolio','canvas','tasks','messenger','mail','files','susm','espm','ocr','studio','reports'];
+export const localizedLandings = Object.fromEntries(landingLocales.map(locale => [locale, locale === 'en' ? APP_LANDINGS : Object.fromEntries(ids.map((id,index) => { const [summary,...steps] = rows[locale][index].split('|'); return [id,{summary,steps}]; }))])) as Record<LandingLocale, typeof APP_LANDINGS>;
+export function landingUrl(slug: string, locale: LandingLocale) { return `https://sorye.app/learn/${slug}/${locale}`; }
