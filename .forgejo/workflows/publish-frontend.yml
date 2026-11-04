@@ -37,24 +37,61 @@ jobs:
           NEXT_PUBLIC_STUDIO_REMOTE: ${{ vars.NEXT_PUBLIC_STUDIO_REMOTE }}
         run: |
           set -eu
-          test "$(git rev-parse HEAD)" = "$FORGEJO_SHA"
-          test -n "$NEXT_PUBLIC_DASHBOARD_REMOTE"
-          test -n "$NEXT_PUBLIC_CALENDAR_REMOTE"
-          test -n "$NEXT_PUBLIC_NOTES_REMOTE"
-          test -n "$NEXT_PUBLIC_TASKS_REMOTE"
-          test -n "$NEXT_PUBLIC_RELAY_REMOTE"
-          test -n "$NEXT_PUBLIC_PROTOCOLIO_REMOTE"
-          test -n "$NEXT_PUBLIC_CANVAS_REMOTE"
-          test -n "$NEXT_PUBLIC_DEVKIT_REMOTE"
-          test -n "$NEXT_PUBLIC_MESSENGER_REMOTE"
-          test -n "$NEXT_PUBLIC_OCR_REMOTE"
-          test -n "$NEXT_PUBLIC_STUDIO_REMOTE"
+          missing=0
+          require_setting() {
+            if [ -z "$2" ]; then
+              echo "Missing $1" >&2
+              missing=1
+            fi
+          }
+          require_setting "Forgejo Actions secret REGISTRY_USER (registry account name)" "${REGISTRY_USER:-}"
+          require_setting "Forgejo Actions secret REGISTRY_TOKEN (package-write token)" "${REGISTRY_TOKEN:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_DASHBOARD_REMOTE" "${NEXT_PUBLIC_DASHBOARD_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_CALENDAR_REMOTE" "${NEXT_PUBLIC_CALENDAR_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_NOTES_REMOTE" "${NEXT_PUBLIC_NOTES_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_TASKS_REMOTE" "${NEXT_PUBLIC_TASKS_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_RELAY_REMOTE" "${NEXT_PUBLIC_RELAY_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_PROTOCOLIO_REMOTE" "${NEXT_PUBLIC_PROTOCOLIO_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_CANVAS_REMOTE" "${NEXT_PUBLIC_CANVAS_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_DEVKIT_REMOTE" "${NEXT_PUBLIC_DEVKIT_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_MESSENGER_REMOTE" "${NEXT_PUBLIC_MESSENGER_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_OCR_REMOTE" "${NEXT_PUBLIC_OCR_REMOTE:-}"
+          require_setting "Forgejo Actions variable NEXT_PUBLIC_STUDIO_REMOTE" "${NEXT_PUBLIC_STUDIO_REMOTE:-}"
+          require_setting "Forgejo runtime FORGEJO_SHA" "${FORGEJO_SHA:-}"
+          require_setting "Forgejo runtime FORGEJO_SERVER_URL" "${FORGEJO_SERVER_URL:-}"
+          require_setting "Forgejo runtime FORGEJO_REPOSITORY" "${FORGEJO_REPOSITORY:-}"
+          if [ "$missing" -ne 0 ]; then
+            echo "Correct the listed Actions settings or runner runtime, then rerun this workflow." >&2
+            exit 1
+          fi
+
+          checked_out_sha="$(git rev-parse HEAD)" || {
+            echo "Cannot read the checked-out commit SHA." >&2
+            exit 1
+          }
+          if [ "$checked_out_sha" != "$FORGEJO_SHA" ]; then
+            echo "Checkout mismatch: expected $FORGEJO_SHA, got $checked_out_sha." >&2
+            exit 1
+          fi
+          case "$FORGEJO_SERVER_URL" in
+            https://*|http://*) ;;
+            *) echo "FORGEJO_SERVER_URL must start with https:// or http://." >&2; exit 1 ;;
+          esac
           registry="${FORGEJO_SERVER_URL#https://}"
           registry="${registry#http://}"
           registry="${registry%%/*}"
+          if [ -z "$registry" ]; then
+            echo "Cannot derive the registry host from FORGEJO_SERVER_URL." >&2
+            exit 1
+          fi
           image="$(printf '%s/%s' "$registry" "$FORGEJO_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           tag="sha-$FORGEJO_SHA"
-          printf '%s' "$REGISTRY_TOKEN" | docker login "$registry" --username "$REGISTRY_USER" --password-stdin
+          echo "Registry host: $registry"
+          echo "Target image: $image:$tag"
+          if ! printf '%s' "$REGISTRY_TOKEN" | docker login "$registry" --username "$REGISTRY_USER" --password-stdin; then
+            echo "Registry login failed. Check REGISTRY_USER, REGISTRY_TOKEN, package write access, and registry connectivity." >&2
+            exit 1
+          fi
           if docker manifest inspect "$image:$tag" >/dev/null 2>&1; then
             echo "Image tag already exists: $image:$tag" >&2
             exit 1
