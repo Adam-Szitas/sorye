@@ -1,168 +1,35 @@
-# Playwright E2E (local)
+# Sorye end-to-end tests
 
-Visual + journey tests for **Sorye Hub**, **SUSM**, and **ESPM**. Chromium only.
+Playwright exercises Sorye Hub and its in-repository apps. The suite uses Chromium and targets `http://localhost:3000` by default. It does not require another application repository.
 
-Defaults are **localhost**, never Vercel. If a local app is down, that spec fails with a “start the local app” message instead of hitting production.
+## Run
 
-Playwright does not start Hub unless you set `E2E_START_HUB=1`.
-
-## Three terminals, then UI in Chrome
-
-From `D:\projects\sorye` (do **not** run `npx pnpm@10.12.1 test:e2e:ui`):
-
-**Terminal 1 — Hub**
+Start Sorye in one terminal:
 
 ```bash
 pnpm dev
 ```
 
-http://localhost:3000
-
-**Terminal 2 — ESPM** (Angular in `D:\MyESPM\ESPM`)
-
-```bash
-cd D:\MyESPM\ESPM
-npm start
-```
-
-http://localhost:4200 (`ng serve`)
-
-**Terminal 3 — SUSM** (Angular in `D:\Martina\app\susm`)
-
-```bash
-cd D:\Martina\app\susm
-ng serve
-```
-
-http://localhost:4200 (`ng serve` default). Use **localhost**, not `127.0.0.1` — on Windows the dev server often binds `[::1]` only.
-
-If ESPM is already on :4200, pick another port and point tests at it:
-
-```powershell
-cd D:\Martina\app\susm
-ng serve --port 4201
-$env:SUSM_URL="http://localhost:4201"
-```
-
-**Then watch tests** (still from `D:\projects\sorye`):
-
-```bash
-pnpm test:e2e:ui
-```
-
-### Open Playwright UI in Chrome — not Cursor
-
-Playwright UI at **http://127.0.0.1:9323** is a **single client**. If Cursor Simple Browser / IDE Chromium already opened that tab, Run is greyed or the suite already ran there.
-
-1. Close any Cursor tab on port **9323**.
-2. Leave the `pnpm test:e2e:ui` terminal running (it prints the URL and does **not** auto-open a browser).
-3. In **system Chrome or Edge**, open http://127.0.0.1:9323
-4. Press the green Play (Run all — F5). Test windows are Playwright-bundled Chromium with a dedicated `e2e/.pw-user-data` profile — not Cursor MCP Chrome and not your daily Chrome profile.
-
-**If Run is greyed / tests already ran in Cursor:** close the Cursor tab on 9323 → Ctrl+C the UI command → `pnpm test:e2e:ui` again → open the URL in Chrome.
-
-`pnpm test:e2e:ui` does **not** pass `--project=hub`. It opens `playwright.ui.config.ts`, which is a single **hub · susm · espm** project so the left tree lists `hub.spec.ts`, `susm.spec.ts`, and `espm.spec.ts`. Those specs navigate the **top-level** page to Hub (`localhost:3000`), SUSM (`localhost:4200` unless `SUSM_URL` is set), and ESPM (`localhost:4200`) — not only a Hub iframe.
-
-If port **9323** is already in use: `$env:PLAYWRIGHT_UI_PORT="9324"` then `pnpm test:e2e:ui`, or skip UI Mode with `pnpm test:e2e:headed`.
-
-### If the sidebar only shows Sorye Hub
-
-Playwright UI Mode stores Filters in the browser and, on a **fresh** load of `playwright.config.ts`, checks **only the first project** (`hub`). That is why a raw `playwright test --ui` looks like Hub-only.
-
-1. Clear the **search** box at the top of the left sidebar (no `hub` grep).
-2. Expand **Filters** (chevron next to the search box).
-3. Enable every project checkbox: **hub**, **susm**, and **espm**, or the combined **hub · susm · espm**.
-4. Status filters: leave **passed / failed / skipped / flaky** as you like; skipped authenticated tests still appear.
-5. Click the green **Play** on the **Tests** toolbar (**Run all — F5**). Do not click Play only on `hub.spec.ts`.
-
-Prefer `pnpm test:e2e:ui` so you do not have to fight that first-project default.
-
-### Watch Chromium without the UI server
-
-If 9323 stays painful (single client), skip UI Mode:
-
-```bash
-pnpm test:e2e:headed
-```
-
-Headless (CI / no window):
+Run the browser tests in another:
 
 ```bash
 pnpm test:e2e
 ```
 
-One app only (CLI projects in `playwright.config.ts`):
+For an interactive browser, use `pnpm test:e2e:headed`. For Playwright UI, run `pnpm test:e2e:ui`, then open the displayed URL (normally `http://127.0.0.1:9323`) in system Chrome or Edge. Close any other Playwright UI tab on that port first. The UI runner does not open a browser automatically.
 
-```bash
-pnpm test:e2e -- --project=hub
-pnpm test:e2e -- --project=susm
-pnpm test:e2e -- --project=espm
-```
+Set `E2E_START_HUB=1` if Playwright should start `pnpm dev` when Hub is down. Set `HUB_URL` to another local Hub URL when needed. Non-local targets require an explicit `ALLOW_LIVE_E2E=true`. `PLAYWRIGHT_UI_PORT` changes the UI server port.
 
-Update visual baselines after intentional UI changes:
+Set `AUTH_DEV_BYPASS=true` in `apps/hub/.env.local` for local tests; they do not need Google credentials. If Hub uses PostgreSQL locally, start it with `pnpm db:up` and apply the schema with `pnpm db:push` before testing.
+
+## Coverage
+
+`hub.spec.ts` checks launcher, catalog, Dashboard, Studio, and OCR smoke journeys. `hub-advanced.spec.ts` covers split panes, Mail, Messenger, Drive, Contact, Storefront, Site, Reports, Relay, and notifications. See [HUB-SCENARIOS.md](./HUB-SCENARIOS.md) for the detailed matrix.
+
+Visual baselines live beside `hub.spec.ts`. Update them only after an intentional UI change:
 
 ```bash
 pnpm test:e2e -- --update-snapshots
 ```
 
-## Prerequisites
-
-1. `AUTH_DEV_BYPASS=true` in `apps/hub/.env.local` (never invent Google secrets).
-2. If `STORE_DRIVER=postgres`, run `pnpm db:up` first.
-3. Hub + remotes on :3000–:3012 via `pnpm dev` in this repo.
-4. Local ESPM on :4200 (`D:\MyESPM\ESPM`, `npm start`) and local SUSM on :4200 (`D:\Martina\app\susm`, `ng serve`) — or `SUSM_URL` if you used `--port`.
-
-Authenticated SUSM/ESPM tests do **not** need Hub.
-
-## Credentials (gitignored)
-
-Copy placeholders from `.env.example` into `e2e/.env` (already gitignored) or set them in the shell. Empty → **authenticated** tests skip; **login-wall** tests still open the local app so you see SUSM/ESPM in Chromium.
-
-| Env | Login field |
-|-----|-------------|
-| `SUSM_EMAIL` / `SUSM_PASSWORD` | E-mail address + Password |
-| `ESPM_USERNAME` / `ESPM_PASSWORD` | Username + Password (`espm-beta`); production myespm.eu uses “User name” |
-
-PowerShell (current session only):
-
-```powershell
-$env:SUSM_EMAIL="..."
-$env:SUSM_PASSWORD="..."
-$env:ESPM_USERNAME="..."
-$env:ESPM_PASSWORD="..."
-```
-
-Do not commit `e2e/.env`.
-
-### URL overrides
-
-| Env | Default |
-|-----|---------|
-| `HUB_URL` | `http://localhost:3000` |
-| `SUSM_URL` | `http://localhost:4200` (`D:\Martina\app\susm` `ng serve`). Auto-detects :4201 if that process looks like SUSM. If ESPM owns :4200, set this explicitly. |
-| `ESPM_URL` | `http://localhost:4200` |
-| `PLAYWRIGHT_UI_PORT` | `9323` — if in use: `$env:PLAYWRIGHT_UI_PORT="9324"` or `pnpm test:e2e:headed` |
-| `E2E_START_HUB` | unset — Playwright will not auto-start `pnpm dev` |
-| `ALLOW_LIVE_E2E` | unset — non-localhost URLs are rejected. Set `true` only to hit Vercel / myespm.eu |
-
-Hub **Catalog** still iframes the Vercel URLs for in-app embeds. Those Hub embed specs skip unless `ALLOW_LIVE_E2E=true`. Full-page local journeys are `susm.spec.ts` / `espm.spec.ts`.
-
-## Locators
-
-Selectors live in `e2e/locators/` — one file per app. Specs and `e2e/helpers.ts` call `loc(page, …)` or the small `hubLogin` / `susmLogin` / `espmLogin` helpers. Do not put raw CSS or role names in the spec files.
-
-| App | File | Login constants |
-|-----|------|-----------------|
-| Hub | `e2e/locators/hub.ts` | `HubLogin` (plus Mail / Messenger / Drive / Contact modal constants) |
-| SUSM | `e2e/locators/susm.ts` | `SusmLogin` |
-| ESPM | `e2e/locators/espm.ts` | `EspmLogin` |
-
-To retarget a login field, edit that object (`role` / `name` / `label` / `text` / `css`). `loc()` uses the first strategy that is set: **role → label → placeholder → text → css**. Keep `role` for accessible queries; delete `role` (and `name`) to fall back to `css`.
-
-## Scenarios
-
-- **Hub:** launcher without Google, Catalog + Manage apps, Dashboard, Studio (sample part if WebGPU), OCR upload chrome. Screenshots mask the status-bar clock.
-- **Hub advanced** (`e2e/hub-advanced.spec.ts`, `@advanced`): dock + split panes, Mail compose, Messenger → Mail, Contact email / Try remotes, Drive preview, Storefront enquiry, Site editor, Reports, notifications. See [HUB-SCENARIOS.md](./HUB-SCENARIOS.md).
-- **SUSM:** login-wall smoke (always opens the local app); if credentials are set — sign in, Projects list, open a project (or open create and dismiss). Snapshots mask emails / user chips.
-- **ESPM:** login-wall smoke (always opens the local app); if credentials are set — sign in, a core list (Works / Orders / …), view or open create and dismiss. Snapshots mask emails / user chips.
-- **Hub iframe:** skipped unless `ALLOW_LIVE_E2E=true` (Catalog still points at Vercel). Full-page SUSM/ESPM journeys live in `susm.spec.ts` / `espm.spec.ts`.
+Selectors live in `e2e/locators/hub.ts`; reusable browser steps are in `e2e/helpers.ts`.

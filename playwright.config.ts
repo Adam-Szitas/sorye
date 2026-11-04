@@ -1,17 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
-import { espmURL, hubLooksUp, hubURL, susmURL } from './e2e/load-env';
+import { hubLooksUp, hubURL } from './e2e/load-env';
 
 const startHub =
   process.env.E2E_START_HUB === '1' && !hubLooksUp(hubURL);
 
 /**
- * Playwright E2E + visual diffs for Hub (localhost) and local SUSM / ESPM.
- *
- * Three CLI projects: `hub`, `susm`, `espm`. Playwright UI Mode checks only the
- * **first** project unless Filters were saved — so `pnpm test:e2e:ui` uses
- * `playwright.ui.config.ts` (one combined project) instead of this file.
- *
- * Start apps yourself (`pnpm dev`, plus local SUSM/ESPM). Playwright does not
+ * Playwright E2E and visual checks for Sorye Hub and its apps.
+ * Start Sorye yourself (`pnpm dev`). Playwright does not
  * auto-start Hub unless E2E_START_HUB=1 and :3000 is down.
  *
  * Tests use Playwright-bundled Chromium (not `channel: 'chrome'`). That keeps
@@ -50,16 +45,6 @@ export default defineConfig({
       name: 'hub',
       testMatch: /hub(?:-advanced)?\.spec\.ts/,
       use: { baseURL: hubURL },
-    },
-    {
-      name: 'susm',
-      testMatch: /susm\.spec\.ts/,
-      use: { baseURL: susmURL },
-    },
-    {
-      name: 'espm',
-      testMatch: /espm\.spec\.ts/,
-      use: { baseURL: espmURL },
     },
   ],
   ...(startHub

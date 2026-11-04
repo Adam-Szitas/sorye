@@ -4,17 +4,13 @@ import {
   type Page,
   type Response,
 } from "@playwright/test";
-import { espmURL, hubURL, susmURL } from "./load-env";
+import { hubURL } from "./load-env";
 import {
-  EspmBoot,
   HubChrome,
   HubLauncher,
   HubManageApps,
   HubRemote,
   HubUsageGuide,
-  SUSM_LOGIN_URL,
-  SusmNav,
-  espmLogin,
   hubLogin,
   hubManageAppsRowName,
   hubOpenApp,
@@ -23,9 +19,7 @@ import {
   hubPane,
   hubRemoteHeading,
   hubUsageGuide,
-  identityMaskLocators,
   loc,
-  susmLogin,
 } from "./locators";
 
 export type CapturedIssue = {
@@ -221,8 +215,6 @@ export async function ensureAppEnabled(
       "Tasks",
       "Relay",
       "DevKit",
-      "SUSM",
-      "ESPM",
       "Protocolio",
       "Canvas",
       "Storefront",
@@ -292,77 +284,4 @@ export async function dismissUsageGuide(
   if (await guide.isVisible().catch(() => false)) {
     await loc(guide, HubUsageGuide.gotIt).click();
   }
-}
-
-export async function waitForBootLoaderGone(page: Page): Promise<void> {
-  const boot = loc(page, EspmBoot.loader);
-  if ((await boot.count()) === 0) return;
-  await expect(boot.first())
-    .toBeHidden({ timeout: 45_000 })
-    .catch(async () => {
-      await expect(loc(page, EspmBoot.loadingText)).toHaveCount(0, {
-        timeout: 20_000,
-      });
-    });
-}
-
-export type SusmCredentials = { email: string; password: string };
-export type EspmCredentials = { username: string; password: string };
-
-export const SUSM_CREDS_SKIP =
-  "Set SUSM_EMAIL and SUSM_PASSWORD in e2e/.env (or $env:SUSM_EMAIL / $env:SUSM_PASSWORD) to run authenticated SUSM journeys";
-
-export const ESPM_CREDS_SKIP =
-  "Set ESPM_USERNAME and ESPM_PASSWORD in e2e/.env (or $env:ESPM_USERNAME / $env:ESPM_PASSWORD) to run authenticated ESPM journeys";
-
-export function susmCredentials(): SusmCredentials | null {
-  const email = "test@test.te";
-  const password = "Password";
-  if (!email || !password) return null;
-  return { email, password };
-}
-
-export function espmCredentials(): EspmCredentials | null {
-  const username = process.env.ESPM_USERNAME?.trim() ?? "";
-  const password = process.env.ESPM_PASSWORD ?? "";
-  if (!username || !password) return null;
-  return { username, password };
-}
-
-/** Mask emails, names, and user chips in visual snapshots. */
-export function identityScreenshotMask(page: Page): Locator[] {
-  return identityMaskLocators(page);
-}
-
-export async function loginSusm(
-  page: Page,
-  creds: SusmCredentials,
-): Promise<void> {
-  await page.goto(susmURL);
-  const form = susmLogin(page);
-  await expect(page).toHaveURL(SUSM_LOGIN_URL, { timeout: 30_000 });
-  await expect(form.email).toBeVisible({ timeout: 15_000 });
-  await form.email.fill(creds.email);
-  await form.password.fill(creds.password);
-  await form.submit.click();
-  await expect(page).not.toHaveURL(SUSM_LOGIN_URL, { timeout: 25_000 });
-  await expect(loc(page, SusmNav.logout)).toBeVisible({
-    timeout: 20_000,
-  });
-}
-
-export async function loginEspm(
-  page: Page,
-  creds: EspmCredentials,
-): Promise<void> {
-  await page.goto(espmURL);
-  await waitForBootLoaderGone(page);
-  const form = espmLogin(page);
-  await expect(form.username).toBeVisible({ timeout: 40_000 });
-  await form.username.fill(creds.username);
-  await form.password.fill(creds.password);
-  await form.submit.click();
-  await expect(form.username).toHaveCount(0, {
-    timeout: 25_000,
-  });
 }

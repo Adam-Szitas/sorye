@@ -11,7 +11,7 @@ import {
   returnToHubLauncher,
   waitForRemoteReady,
 } from './helpers';
-import { hubURL, requireAppReachable } from './load-env';
+import { hubURL, requireHubReachable } from './load-env';
 import {
   HubCatalog,
   HubChrome,
@@ -43,7 +43,7 @@ test.use({ baseURL: hubURL });
 
 test.describe('Sorye Hub advanced', { tag: '@advanced' }, () => {
   test.beforeAll(() => {
-    requireAppReachable('hub');
+    requireHubReachable();
   });
 
   test('launcher dock opens a split Catalog + Dashboard desk', async ({

@@ -10,32 +10,28 @@ import {
   openAppTile,
   waitForRemoteReady,
 } from './helpers';
-import { allowLiveE2E, hubURL, requireAppReachable } from './load-env';
+import { hubURL, requireHubReachable } from './load-env';
 import {
   HubCatalog,
   HubChrome,
   HubContact,
   HubDashboard,
-  HubEmbed,
   HubLauncher,
   HubLogin,
   HubManageApps,
   HubOcr,
   HubRemote,
   HubStudio,
-  espmLogin,
-  hubAppIframeCss,
   hubManageAppsRowName,
   hubPane,
   loc,
-  susmLogin,
 } from './locators';
 
 test.use({ baseURL: hubURL });
 
 test.describe('Sorye Hub', () => {
   test.beforeAll(() => {
-    requireAppReachable('hub');
+    requireHubReachable();
   });
 
   test('lands on the launcher without Google', async ({ page }, testInfo) => {
@@ -195,81 +191,4 @@ test.describe('Sorye Hub', () => {
     });
   });
 
-  test('embeds SUSM in a Hub pane when a slot is free', async ({ page }, testInfo) => {
-    test.skip(
-      !allowLiveE2E(),
-      'Hub Catalog iframes https://susm.vercel.app. Local SUSM is susm.spec.ts. Set ALLOW_LIVE_E2E=true to run this embed.',
-    );
-    const issues = attachIssueCollector(page);
-    await gotoHubHome(page);
-    const enabled = await ensureAppEnabled(page, 'SUSM');
-    test.skip(!enabled, 'SUSM is not installed (plan slot limit)');
-
-    await openAppOnLeft(page, 'SUSM');
-    await dismissUsageGuide(page, 'SUSM');
-    const iframe = loc(page, { css: hubAppIframeCss('SUSM') });
-    await expect(iframe).toBeVisible({ timeout: 20_000 });
-
-    const blocked = loc(page, HubEmbed.susmLoadError);
-    const framedLogin = susmLogin(page.frameLocator(hubAppIframeCss('SUSM'))).heading;
-    const loginVisible = await framedLogin
-      .waitFor({ state: 'visible', timeout: 25_000 })
-      .then(() => true)
-      .catch(() => false);
-
-    if (!loginVisible) {
-      const failed = await blocked.isVisible().catch(() => false);
-      throw new Error(
-        failed
-          ? 'Hub iframe onError — likely X-Frame-Options / CSP frame-ancestors.'
-          : 'SUSM iframe present but UI not reachable (cross-origin blank or load stall).',
-      );
-    }
-    await expect(framedLogin).toBeVisible();
-
-    await testInfo.attach('console-network', {
-      body: formatIssues(issues),
-      contentType: 'text/plain',
-    });
-  });
-
-  test('embeds ESPM in a Hub pane when a slot is free', async ({ page }, testInfo) => {
-    test.skip(
-      !allowLiveE2E(),
-      'Hub Catalog iframes https://espm-beta.vercel.app. Local ESPM is espm.spec.ts. Set ALLOW_LIVE_E2E=true to run this embed.',
-    );
-    const issues = attachIssueCollector(page);
-    await gotoHubHome(page);
-    const enabled = await ensureAppEnabled(page, 'ESPM');
-    test.skip(!enabled, 'ESPM is not installed (plan slot limit)');
-
-    await openAppOnLeft(page, 'ESPM');
-    await dismissUsageGuide(page, 'ESPM');
-    const iframe = loc(page, { css: hubAppIframeCss('ESPM') });
-    await expect(iframe).toBeVisible({ timeout: 20_000 });
-
-    const blocked = loc(page, HubEmbed.espmLoadError);
-    const framed = espmLogin(page.frameLocator(hubAppIframeCss('ESPM')));
-    const framedUi = framed.heading.or(framed.submit);
-    const uiVisible = await framedUi
-      .first()
-      .waitFor({ state: 'visible', timeout: 25_000 })
-      .then(() => true)
-      .catch(() => false);
-
-    if (!uiVisible) {
-      const failed = await blocked.isVisible().catch(() => false);
-      throw new Error(
-        failed
-          ? 'Hub iframe onError — likely X-Frame-Options / CSP frame-ancestors.'
-          : 'ESPM iframe present but UI not reachable (boot loader, login wall, or frame-ancestors).',
-      );
-    }
-    await expect(framedUi.first()).toBeVisible();
-
-    await testInfo.attach('console-network', {
-      body: formatIssues(issues),
-      contentType: 'text/plain',
-    });
-  });
 });

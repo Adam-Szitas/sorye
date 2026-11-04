@@ -31,5 +31,4 @@ Free-plan workspaces only have **two optional app slots**. Advanced tests may **
 | Real SMTP / internet mail | Connected IMAP accounts need a real app password; e2e stays on the Sorye mailbox. Contact Send would open `mailto:` |
 | Site publish / public `/s/…` | Flaky vs existing published slug |
 | Architecture page | Public doc at `/architecture` (also linked from Contact and login). No e2e yet |
-| SUSM / ESPM | Own projects; Hub iframe skipped unless `ALLOW_LIVE_E2E=true` |
 | Other companies’ data | Local `AUTH_DEV_BYPASS` workspace only |

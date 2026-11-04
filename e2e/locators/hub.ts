@@ -154,15 +154,6 @@ export function hubRemoteHeading(heading: string): LocatorSpec {
   return { role: 'heading', name: heading, exact: true };
 }
 
-export function hubAppIframeCss(appName: string): string {
-  return `iframe[title="${appName}"]`;
-}
-
-export const HubEmbed = {
-  susmLoadError: { text: /Could not load SUSM in the Hub frame/ },
-  espmLoadError: { text: /Could not load ESPM in the Hub frame/ },
-} as const satisfies Record<string, LocatorSpec>;
-
 export const HubDashboard = {
   nav: { role: 'navigation' as const, name: 'Dashboard sections' },
   workspaceOverview: { role: 'button' as const, name: 'Workspace overview' },

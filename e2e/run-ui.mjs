@@ -7,7 +7,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const host = process.env.PLAYWRIGHT_UI_HOST ?? '127.0.0.1';
 const port = process.env.PLAYWRIGHT_UI_PORT ?? '9323';
 const url = `http://${host}:${port}`;
-const uiConfig = 'playwright.ui.config.ts';
+const uiConfig = 'playwright.config.ts';
 const cli = path.join(root, 'node_modules', '@playwright', 'test', 'cli.js');
 const noOpenHook = path.join(root, 'e2e', 'pw-ui-no-open.cjs');
 
@@ -47,18 +47,9 @@ function printBanner() {
   console.log('Port in use?  $env:PLAYWRIGHT_UI_PORT="9324"   then  pnpm test:e2e:ui');
   console.log('No UI server (watch a Chromium window only):  pnpm test:e2e:headed');
   console.log('');
-  console.log('Local apps (localhost — not Vercel). Resolved URLs print after “Listing tests”.');
-  console.log('  Hub   hub.spec.ts   http://localhost:3000              pnpm dev');
-  console.log('  SUSM  susm.spec.ts  http://localhost:4200 (ng serve)   cd D:\\Martina\\app\\susm && ng serve');
-  console.log('         if ESPM owns :4200:  ng serve --port 4201   then  $env:SUSM_URL="http://localhost:4201"');
-  console.log('  ESPM  espm.spec.ts  http://localhost:4200              cd D:\\MyESPM\\ESPM && npm start');
+  console.log('Sorye Hub tests use http://localhost:3000. Start them with pnpm dev.');
   console.log('');
-  console.log('In Playwright UI:');
-  console.log('  1. Left tree must list hub.spec.ts, susm.spec.ts, and espm.spec.ts.');
-  console.log('  2. If you only see Hub: open Filters (chevron by the search box),');
-  console.log('     check hub / susm / espm (or “hub · susm · espm”), clear the search box.');
-  console.log('  3. Click the green Play on the Tests toolbar (Run all — F5),');
-  console.log('     not the play button on a single file.');
+  console.log('In Playwright UI, choose a Hub test or press Run all (F5).');
   console.log('');
 }
 
@@ -74,12 +65,10 @@ async function main() {
     process.exit(1);
   }
 
-  const listEnv = { ...process.env, E2E_PRINT_TARGETS: '1' };
-
   const listed = spawnSync(process.execPath, [cli, 'test', '--list', '-c', uiConfig], {
     cwd: root,
     encoding: 'utf8',
-    env: listEnv,
+    env: process.env,
     windowsHide: true,
   });
 
@@ -87,7 +76,7 @@ async function main() {
   if (listed.stderr) process.stderr.write(listed.stderr);
   if (listed.status) {
     console.error(
-      'Could not list tests. Is @playwright/test installed? Are URLs localhost (or ALLOW_LIVE_E2E=true)?',
+      'Could not list tests. Is @playwright/test installed? Is HUB_URL localhost (or ALLOW_LIVE_E2E=true)?',
     );
     process.exit(listed.status);
   }

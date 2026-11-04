@@ -39,7 +39,7 @@ Read the repository-root `AGENTS.md` first. The [static behavior tree](./APP-BEH
 | Register new app | `packages/types/src/apps.ts`, `apps/hub/lib/mf-remotes.ts`, `docs/apps/APPS.md` |
 | Hub-native page (Catalog / Contact / Reports / Storefront / Site / Mail / Drive) | `packages/types/src/apps.ts`, `apps/hub/components/`, `hub-native-app.tsx` |
 | Mail (workspace + IMAP accounts) | `packages/types/src/mail.ts`, `apps/hub/lib/mail.ts`, `apps/hub/lib/mail-imap.ts`, `apps/hub/app/api/mail/**` |
-| Visual / E2E | `pnpm test:e2e` / `pnpm test:e2e -- --project=hub` (includes `hub-advanced.spec.ts`) / `pnpm test:e2e:ui` (open http://127.0.0.1:9323 in **system Chrome**, not Cursor) / `pnpm test:e2e:headed` — Hub `:3000`, ESPM `:4200`, SUSM `:4200` (`D:\Martina\app\susm`, or `SUSM_URL` if `--port 4201`). Scenarios: `e2e/HUB-SCENARIOS.md`. Do not open 9323 in Simple Browser. |
+| Visual / E2E | `pnpm test:e2e` / `pnpm test:e2e -- --project=hub` (includes `hub-advanced.spec.ts`) / `pnpm test:e2e:ui` (open http://127.0.0.1:9323 in **system Chrome**, not Cursor) / `pnpm test:e2e:headed` — Sorye Hub `:3000` and its remotes. Scenarios: `e2e/HUB-SCENARIOS.md`. Do not open 9323 in Simple Browser. |
 
 ## Dev command
 
