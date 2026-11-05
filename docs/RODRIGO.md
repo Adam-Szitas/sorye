@@ -1,8 +1,18 @@
 # Rodrigo backend integration
 
+**Ownership clarification:** Hub must retain both its app-facing interface and its signed Rodrigo-facing interface. Backend domain operations and the durable event spine belong in Rodrigo after migration. See [Apps, Hub and Rodrigo](HUB-RODRIGO-BOUNDARY.md) for target flows, current gaps and release ordering.
+
 Rodrigo is implemented in the **separate Git repository `D:\projects\rodrigo`**. Its Rust source, Docker image, monitoring stack, tests and authoritative API contract live there. This Sorye repository contains only the Next.js caller, TypeScript types and a versioned contract snapshot. Existing Hub data paths have not moved.
 
 The current integration is `GET /api/backend/capabilities`: Hub resolves the authenticated session, signs the request, calls Rodrigo and validates the HTTP v1 response. All four planned adapters report `not_implemented`; `dataReady` is false and document routes return HTTP 503 `adapter_not_configured`. This is the explicitly requested Rust-service-only stage. No PostgreSQL, MongoDB, Redis or S3 adapter is installed or connected by Rodrigo.
+
+## Target data flow and migration boundary
+
+The intended production data path is **Sorye apps → Hub → Rodrigo → databases/storage**. Browser apps use Hub's same-origin authenticated APIs. Hub remains the UI host, session edge and typed API gateway. Rodrigo becomes the sole owner of Sorye product data operations and database credentials. Hub must not silently fall back to a direct database when Rodrigo is unavailable.
+
+This is **not current behavior**. `lib/ensure-user.ts` still reads/writes user and workspace state through Hub stores; `lib/store/`, `lib/jobs.ts` and `lib/workspace-db.ts` directly access JSON/Postgres/workspace databases. Rodrigo v1 requires a workspace-scoped signed assertion, so moving identity storage first requires a separate signed `session:resolve` bootstrap contract: Hub verifies the login subject, Rodrigo resolves the authorized workspace and membership, and only then does Hub sign workspace-scoped requests. Never trust a browser-supplied workspace ID. Migrate one domain at a time with one authoritative writer, parity and outage tests, and no silent dual write. Keep Hub DB credentials until the replacement paths are proven, then remove them. Update both app behavior maps when the live state owner changes.
+
+The independent Protocolio PDF engine still uses MongoDB for its token/user/log store. If the rule is literally that Rodrigo owns **all** database requests, Protocolio must become a stateless renderer or delegate that persistence to Rodrigo; merely routing the editor through Hub does not remove its MongoDB dependency. Hub and Rodrigo should remain independently deployable, with a compatible contract and digest pair recorded for each release.
 
 ## Target boundaries
 

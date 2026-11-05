@@ -1,8 +1,12 @@
 # Sorye VM, delivery and operations architecture
 
+**Service boundary:** Apps <-> Sorye Hub <-> Rodrigo <-> data and service dependencies is the target path. Hub keeps app integration and session/API forwarding; Rodrigo owns backend execution and the durable event spine after migration. See [the ownership and release boundary](HUB-RODRIGO-BOUNDARY.md).
+
 **Principle: Performance and quality.** Keep the product modular, observable and independently scalable. If a requested change would undermine performance, quality, security or reliability, the developer or agent must state the concrete risk and recommend a better direction before implementation. A product owner may still choose the trade-off knowingly.
 
 This is a target design for the existing Proxmox environment, not a description of deployed infrastructure. It assumes each service VM uses Docker Compose initially. It deliberately separates hypervisor control, source/build/release, application operations and backup authority. No single internet-facing control panel should have unrestricted root access to every layer.
+
+**Data-plane target:** Sorye browser apps call Hub APIs; Hub forwards protected data operations to Rodrigo's versioned, signed Rust API; Rodrigo alone connects to Sorye product databases and storage. The current Hub still owns direct stores and Rodrigo has no durable adapters. See [RODRIGO.md](./RODRIGO.md) for the required identity-bootstrap and one-writer migration. Protocolio's MongoDB remains a separate exception until redesigned.
 
 ## Target structure
 

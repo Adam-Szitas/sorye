@@ -61,6 +61,9 @@ importers:
 
   apps/canvas:
     dependencies:
+      '@sorye/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@sorye/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
@@ -294,6 +297,9 @@ importers:
 
   apps/notes:
     dependencies:
+      '@sorye/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@sorye/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
@@ -417,6 +423,9 @@ importers:
 
   apps/relay:
     dependencies:
+      '@sorye/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@sorye/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk

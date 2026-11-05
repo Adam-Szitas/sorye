@@ -110,5 +110,18 @@ jobs:
             --build-arg "NEXT_PUBLIC_STUDIO_REMOTE=$NEXT_PUBLIC_STUDIO_REMOTE" \
             .
           docker push "$image:$tag"
+          docker image inspect "$image:$tag" --format '{{json .RepoDigests}}'
+          for app in dashboard calendar notes tasks relay protocolio canvas devkit messenger ocr studio catalog contact storefront site mail files susm espm reports; do
+            target=gateway
+            case "$app" in dashboard|calendar|notes|tasks|relay|protocolio|canvas|devkit|messenger|ocr|studio) target=remote ;; esac
+            app_image="$image-$app:$tag"
+            if docker manifest inspect "$app_image" >/dev/null 2>&1; then
+              echo "Refusing to overwrite $app_image" >&2
+              exit 1
+            fi
+            docker build --file deploy/app.Dockerfile --target "$target" --build-arg "APP=$app" --tag "$app_image" .
+            docker push "$app_image"
+            docker image inspect "$app_image" --format '{{json .RepoDigests}}'
+          done
           docker logout "$registry"
           echo "Published $image:$tag"

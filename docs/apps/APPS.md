@@ -859,3 +859,9 @@ All names validated server-side in `POST /api/events`.
 Every catalog app has a public /learn/<slug> introduction with plain-language copy owned by apps/hub/lib/app-landings.ts. Exact catalog subdomains at their root show that introduction when routed to Hub. Open links use the canonical Hub app route and its existing authentication. See [landing-page steering](../APP-LANDINGS.md).
 
 Protocolio editor → authenticated Hub generate/validate/health endpoints → separate Protocolio renderer and its MongoDB. SDK source belongs to the Protocolio repository; Sorye consumes a versioned archive. Browser generation no longer falls back to direct engine access. See PROTOCOLIO.md for deployment and credentials.
+
+## Independent app subdomain deployment
+
+The deployment files in `deploy/` provide one image and Dockyard registration per catalog app. Eleven remote images contain their compiled federation assets at `/remote/`; the remaining images are gateways to Hub-native or externally embedded apps, not extracted implementations. Each gateway redirects `/` to `/apps/<slug>` and forwards authenticated pages and APIs to the single Hub. Contact remains a presentation page. Public introductions remain at `/learn/<slug>/<locale>`. Existing direct-to-Hub subdomain routing still serves introductions until ingress is switched to the app gateway.
+
+Hub owns sessions, workspace authorization and records. Gateways have no persistent application data. Hub `.data` is mounted on a named volume; back it up before replacement. App landing descriptions were reviewed: capabilities and limitations remain accurate; deployment changes do not add product features.

@@ -188,3 +188,20 @@ Hub language selector ? browser-owned sorye:locale localStorage ? same-document 
 Public landing pages use /learn/<slug>/<locale> for en, de, sk, hu and es. Each URL renders translated text and metadata on the server, has a self-canonical URL and hreflang alternatives, and is listed in the sitemap. Language links preserve the app. Unqualified landing URLs and catalog subdomain roots select the best supported Accept-Language preference (English fallback) with a private, non-cacheable temporary redirect; esp redirects to es. The URL owns landing language, independently of the workspace browser preference. Unsupported languages return 404. New apps must add all five translations; preserve limitations in every translation.
 
 Protocolio editor → authenticated Hub generate/validate/health endpoints → separate Protocolio renderer and its MongoDB. SDK source belongs to the Protocolio repository; Sorye consumes a versioned archive. Browser generation no longer falls back to direct engine access. See PROTOCOLIO.md for deployment and credentials.
+
+## Independent app subdomain deployment
+
+The deployment files in `deploy/` provide one image and Dockyard registration per catalog app. Eleven remote images contain their compiled federation assets at `/remote/`; the remaining images are gateways to Hub-native or externally embedded apps, not extracted implementations. Each gateway redirects `/` to `/apps/<slug>` and forwards authenticated pages and APIs to the single Hub. Contact remains a presentation page. Public introductions remain at `/learn/<slug>/<locale>`. Existing direct-to-Hub subdomain routing still serves introductions until ingress is switched to the app gateway.
+
+Hub owns sessions, workspace authorization and records. Gateways have no persistent application data. Hub `.data` is mounted on a named volume; back it up before replacement. App landing descriptions were reviewed: capabilities and limitations remain accurate; deployment changes do not add product features.
+
+## Target Hub and Rodrigo boundary (migration pending)
+
+```mermaid
+flowchart LR
+    Apps[App frontends] <-->|requests and authorized results or updates| Hub[Sorye Hub: browser session and API gateway]
+    Hub <-->|signed versioned service calls| Rodrigo[Rodrigo: domain operations and durable event spine]
+    Rodrigo <--> Dependencies[Databases, storage and external services]
+```
+
+Hub communicates with both apps and Rodrigo. Apps never bypass Hub to call Rodrigo or one another. The browser platform kernel remains UI integration; Rodrigo's target event spine owns durable backend event processing. Current domain stores, events and jobs still run in Hub; only the Rodrigo capability call is integrated, and Rodrigo reports dataReady false. Hub's persistent volume preserves those current records until a verified one-writer migration. This target diagram does not change the current state owners listed above. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).

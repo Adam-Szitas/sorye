@@ -1,0 +1,23 @@
+# Set a reviewed immutable Hub image and target-owned env file on the app VM.
+# This healthcheck proves the web process responds; check DB/remotes separately.
+name: sorye-hub
+services:
+  hub:
+    image: ${SORYE_HUB_IMAGE:?Set SORYE_HUB_IMAGE to registry/repo@sha256:digest}
+    restart: unless-stopped
+    init: true
+    env_file: ${SORYE_HUB_ENV_FILE:?Set the target-owned Hub environment file}
+    ports: ["127.0.0.1:${SORYE_HUB_PORT:-3000}:3000"]
+    volumes:
+      - hub_data:/app/apps/hub/.data
+    mem_limit: 2g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  hub_data:

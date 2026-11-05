@@ -1,5 +1,7 @@
 # Agent guide — Sorye monorepo
 
+**Architecture steering:** Apps talk to Hub; Hub talks to Rodrigo. Keep Hub as the browser/session and API gateway. Rodrigo is the intended owner of backend domain operations, fetching, durable events and service coordination. Existing Hub implementations are migration work, not a reason to add permanent backend ownership there. Read [HUB-RODRIGO-BOUNDARY.md](HUB-RODRIGO-BOUNDARY.md); distinguish current behavior from target behavior in changes and reports.
+
 Quick orientation for AI coding agents. First read the repository-root `AGENTS.md`, then read these references in order:
 
 1. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Hub, Module Federation, events, relay, storage, Docker boot order. Public diagram: `/architecture`

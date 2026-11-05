@@ -1,5 +1,7 @@
 # Sorye Core Architecture
 
+**Required boundary:** Apps communicate with Sorye Hub; Hub communicates with Rodrigo. Hub is the browser/session and API gateway; Rodrigo is the intended backend owner for domain operations, fetching, the durable event spine and service coordination. Existing Hub stores and events below describe the current migration state. See [Apps, Hub and Rodrigo](HUB-RODRIGO-BOUNDARY.md).
+
 This document describes how the Sorye platform is structured for developers and AI agents working in the monorepo. Read this first before touching Hub APIs, micro-frontends, or cross-app flows.
 
 The same flows are drawn on the public **Architecture** page at `/architecture` (no sign-in). This file is the source of truth for paths, APIs, and what is live versus still a container to add.
@@ -9,6 +11,8 @@ For the compact, static user-flow and app-integration map, see [APP-BEHAVIOR-TRE
 ## Mental model
 
 **Rodrigo service boundary:** the Rust backend is developed and released from the separate `D:\projects\rodrigo` repository. Sorye currently calls only its authenticated capability endpoint through `GET /api/backend/capabilities`; domain data remains in the existing Hub stores. Rodrigo's PostgreSQL, MongoDB, Redis and S3 interfaces are intentionally unimplemented in this stage. See [RODRIGO.md](./RODRIGO.md) for the versioned contract and setup.
+
+**Target data boundary:** Sorye browser apps call Hub; Hub authenticates and forwards protected data operations through a signed API to Rodrigo; Rodrigo owns Sorye product database/storage access. The diagram and store paths below describe current behavior until the domain APIs, adapters, identity bootstrap and one-writer migrations are implemented. Protocolio's separate MongoDB is an explicit remaining exception to an all-DB-through-Rodrigo rule.
 
 Sorye is a **workspace OS**: users sign in once, pick apps from a catalog, and run them inside a shared shell. Apps are mostly **Module Federation remotes** loaded by the **Hub** (Next.js). Shared contracts live in **`@sorye/types`**. Cross-app behavior uses **workspace events**, **Relay routing**, **handoffs**, and **notifications** — all orchestrated by Hub APIs.
 
@@ -431,3 +435,9 @@ From the host, `DATABASE_URL` uses `localhost`. From the Hub container it uses h
 See also: [SECURITY.md](./SECURITY.md), [apps/APPS.md](./apps/APPS.md).
 
 Protocolio renderer deployment and SDK ownership are described in [PROTOCOLIO.md](./PROTOCOLIO.md). The PDF engine remains a separate service; Sorye owns the editor and authenticated API bridge.
+
+## Independent app subdomain deployment
+
+The deployment files in `deploy/` provide one image and Dockyard registration per catalog app. Eleven remote images contain their compiled federation assets at `/remote/`; the remaining images are gateways to Hub-native or externally embedded apps, not extracted implementations. Each gateway redirects `/` to `/apps/<slug>` and forwards authenticated pages and APIs to the single Hub. Contact remains a presentation page. Public introductions remain at `/learn/<slug>/<locale>`. Existing direct-to-Hub subdomain routing still serves introductions until ingress is switched to the app gateway.
+
+Hub owns sessions, workspace authorization and records. Gateways have no persistent application data. Hub `.data` is mounted on a named volume; back it up before replacement. App landing descriptions were reviewed: capabilities and limitations remain accurate; deployment changes do not add product features.

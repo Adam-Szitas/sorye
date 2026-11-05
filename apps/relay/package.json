@@ -14,7 +14,8 @@
     "@sorye/telemetry": "workspace:*",
     "@sorye/types": "workspace:*",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "@sorye/platform": "workspace:*"
   },
   "devDependencies": {
     "@module-federation/vite": "^1.2.7",

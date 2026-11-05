@@ -1,0 +1,15 @@
+name: sorye-dashboard
+services:
+  web:
+    image: ${SORYE_APP_IMAGE:?Set immutable app image}
+    restart: unless-stopped
+    environment:
+      HUB_UPSTREAM: ${HUB_UPSTREAM:?Set reachable internal Hub URL}
+    ports: ["127.0.0.1:${SORYE_APP_PORT:-8100}:8080"]
+    mem_limit: 128m
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
