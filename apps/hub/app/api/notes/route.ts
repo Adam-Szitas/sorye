@@ -5,8 +5,7 @@ import {
   putWorkspaceDoc,
 } from '@/lib/store/workspace-docs';
 import { NextResponse } from 'next/server';
-import { WorkspaceDocConflict } from '@/lib/store/workspace-doc-conflict';
-import { WorkspaceDatabaseUnavailableError } from '@/lib/workspace-db';
+import { documentRouteError } from '@/lib/document-route-error';
 
 export async function GET() {
   const session = await ensureHubUser();
@@ -14,17 +13,18 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const result = await getWorkspaceDoc(
-    session.user.id,
-    session.workspace.id,
-    'notes',
-  );
+  let result;
+  try {
+    result = await getWorkspaceDoc(session.user.id, session.workspace.id, 'notes', session);
+  } catch (error) {
+    return documentRouteError(error);
+  }
   if (result.access === 'denied') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   if (!result.doc) {
-    return NextResponse.json({ notes: [], empty: true, revision: 0 });
+    return NextResponse.json({ notes: [], empty: true, revision: result.revision ?? 0 });
   }
 
   try {
@@ -33,7 +33,7 @@ export async function GET() {
       empty: false, revision: result.doc.revision,
     });
   } catch {
-    return NextResponse.json({ notes: [], empty: true, revision: 0 });
+    return NextResponse.json({ error: 'Stored document is invalid. Contact an administrator.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
@@ -62,20 +62,15 @@ export async function PUT(req: Request) {
   let saved;
   try {
     saved = await putWorkspaceDoc(
-    session.user.id,
-    session.workspace.id,
-    'notes',
-    { notes },
-    { migrate: body.migrate === true, expectedRevision: body.expectedRevision },
-  );
+      session.user.id,
+      session.workspace.id,
+      'notes',
+      { notes },
+      { migrate: body.migrate === true, expectedRevision: body.expectedRevision },
+      session,
+    );
   } catch (err) {
-    if (err instanceof WorkspaceDocConflict) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
-    if (err instanceof WorkspaceDatabaseUnavailableError) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
-    }
-    throw err;
+    return documentRouteError(err);
   }
   if (!saved) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -87,6 +82,6 @@ export async function PUT(req: Request) {
       empty: false, revision: saved.revision,
     });
   } catch {
-    return NextResponse.json({ notes, empty: false, revision: saved.revision });
+    return NextResponse.json({ error: 'Stored document is invalid. Contact an administrator.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
   }
 }

@@ -1,58 +1,61 @@
 # Rodrigo backend integration
 
-**Ownership clarification:** Hub must retain both its app-facing interface and its signed Rodrigo-facing interface. Backend domain operations and the durable event spine belong in Rodrigo after migration. See [Apps, Hub and Rodrigo](HUB-RODRIGO-BOUNDARY.md) for target flows, current gaps and release ordering.
+Rodrigo is a separately deployable backend in `D:\projects\rodrigo`. Its Rust source, provider adapters, images, monitoring and authoritative HTTP contract live there. Sorye contains the production signer, typed service client, shared DTOs and reviewed schema snapshot.
 
-Rodrigo is implemented in the **separate Git repository `D:\projects\rodrigo`**. Its Rust source, Docker image, monitoring stack, tests and authoritative API contract live there. This Sorye repository contains only the Next.js caller, TypeScript types and a versioned contract snapshot. Existing Hub data paths have not moved.
+```mermaid
+flowchart LR
+  Apps[Sorye apps] --> Hub[Hub: session and workspace authorization]
+  Hub -->|Live signed capabilities and admin topology| Rodrigo[Rodrigo]
+  Hub -->|Tasks/Calendar: explicit verified owner| Rodrigo
+  Rodrigo --> Providers[Optional PostgreSQL / MySQL / MongoDB / Redis / S3]
+```
 
-The current integration is `GET /api/backend/capabilities`: Hub resolves the authenticated session, signs the request, calls Rodrigo and validates the HTTP v1 response. All four planned adapters report `not_implemented`; `dataReady` is false and document routes return HTTP 503 `adapter_not_configured`. This is the explicitly requested Rust-service-only stage. No PostgreSQL, MongoDB, Redis or S3 adapter is installed or connected by Rodrigo.
+**Current ownership:** `/api/backend/capabilities` and platform-admin-only `/api/backend/topology` are the live Hub integrations. Tasks and Calendar can use explicit per-workspace Rodrigo ownership after verified migration. Unmapped documents, Notes, events, identity, jobs, notifications and handoffs retain Hub stores. Protocolio's independent MongoDB is also unchanged. Publishing/configuring Rodrigo does not move data or events. See [the behavior map](APP-BEHAVIOR-TREE.md) and [ownership boundary](HUB-RODRIGO-BOUNDARY.md).
 
-## Target data flow and migration boundary
+## Available Rodrigo contracts
 
-The intended production data path is **Sorye apps → Hub → Rodrigo → databases/storage**. Browser apps use Hub's same-origin authenticated APIs. Hub remains the UI host, session edge and typed API gateway. Rodrigo becomes the sole owner of Sorye product data operations and database credentials. Hub must not silently fall back to a direct database when Rodrigo is unavailable.
+HTTP v1 is retained. The reviewed 1.1 schema adds deletion, atomic snapshots, durable document SSE, Redis cache, named S3 blobs and topology. `packages/types/src/rodrigo.ts` includes the corresponding DTOs. The original four capability keys remain compatible; MySQL appears in `/v1/topology`. Unconfigured adapters report `not_configured`; `dataReady` requires all document kinds mapped and healthy configured dependencies.
 
-This is **not current behavior**. `lib/ensure-user.ts` still reads/writes user and workspace state through Hub stores; `lib/store/`, `lib/jobs.ts` and `lib/workspace-db.ts` directly access JSON/Postgres/workspace databases. Rodrigo v1 requires a workspace-scoped signed assertion, so moving identity storage first requires a separate signed `session:resolve` bootstrap contract: Hub verifies the login subject, Rodrigo resolves the authorized workspace and membership, and only then does Hub sign workspace-scoped requests. Never trust a browser-supplied workspace ID. Migrate one domain at a time with one authoritative writer, parity and outage tests, and no silent dual write. Keep Hub DB credentials until the replacement paths are proven, then remove them. Update both app behavior maps when the live state owner changes.
+- Documents: GET/PUT/DELETE `/v1/documents/{tasks|notes|calendar}`. PUT uses `{expectedRevision,payload}`; DELETE uses `{expectedRevision}`. Exactly one provider owns each kind. Conditional conflicts return 409; deletion keeps a revision tombstone.
+- Snapshots: GET `/v1/snapshots/{kind}` returns `{revision,document}` atomically, including tombstone revision.
+- Events: GET `/v1/events/{kind}/{after}` returns SSE `document.changed`, revision ID and `{revision,deleted}`. Changes commit with documents. Last 1,000 revisions per workspace/kind are retained. Delivery is at-least-once by replay within retention, with no global/cross-provider ordering or consumer acknowledgements.
+- Cache: GET/PUT/DELETE `/v1/cache/{uuid}`, 64 KiB values and 1–3,600-second TTL; Redis is disposable, never durable ownership.
+- Blobs: GET/PUT/DELETE `/v1/blobs/{configured-store}/{uuid}`, 256 KiB immutable objects. Update by creating a new UUID and conditionally replacing the owning reference. Never reuse deleted IDs. No transaction spans S3 and document metadata.
 
-The independent Protocolio PDF engine still uses MongoDB for its token/user/log store. If the rule is literally that Rodrigo owns **all** database requests, Protocolio must become a stateless renderer or delegate that persistence to Rodrigo; merely routing the editor through Hub does not remove its MongoDB dependency. Hub and Rodrigo should remain independently deployable, with a compatible contract and digest pair recorded for each release.
+Unconfigured operations fail explicitly. There is no silent fallback or cross-database atomic transaction. Generic event publication, durable jobs, lease coordination, arbitrary SaaS connectors and multipart uploads are not implemented by these APIs.
 
-## Target boundaries
+## Signing and streaming
 
-Next.js owns browser sessions and resolves the authenticated user and active workspace. Rodrigo owns domain operations, database access, cache coordination and file metadata/storage operations behind a versioned HTTP contract. Database credentials stay on Rodrigo's VM. Browsers never submit database endpoints, SQL or Redis commands.
+Hub must resolve user/workspace from its authenticated server session, validate app access and domain inputs, then call `signRodrigoRequest` with exact method/path/body bytes. Rodrigo verifies Ed25519 algorithm/key ID, issuer, audience, subject, workspace, scope, expiry, issue time and digest. Assertions expire within 30 seconds. The private key belongs only to Hub; public keys go to Rodrigo. Production requires HTTPS; redirects are rejected. Browser payloads cannot choose workspace, provider URL, SQL, Redis commands or paths.
 
-Next.js calls Rodrigo using short-lived, audience-bound signed assertions with issuer, subject, workspace, operation scope, expiry and unique request identity. Rodrigo validates these before choosing a server-configured workspace data owner. Signing keys support rotation; the private key remains with Next.js. Production service traffic uses TLS. Authorization tests must include wrong audience, expired signatures, insufficient operation scope and workspace mismatch.
+Scopes: `capabilities:read`, `documents:read`, `documents:write`, `documents:delete`, `events:read`, `cache:read`, `cache:write`, `blobs:read`, `blobs:write`. Errors preserve generated request IDs and machine codes. Never log assertions or payloads.
 
-## Planned adapter requirements
+For future Hub event forwarding, reauthorize and freshly sign the cursor path on every reconnect. Do not forward browser `Last-Event-ID` upstream: Rodrigo rejects unsigned cursor headers. Streams last at most 25 seconds and never beyond assertion expiry, with five-second keepalives and 32 subscribers per replica. Deduplicate revisions and persist a cursor only after processing. On 410 or `stream.error: cursor_expired`, fetch a snapshot, replace local state, then resume after its revision. Disable ingress buffering and bound reconnect/backpressure at Hub. This document does not change the current browser event route.
 
-The HTTP API is the stable boundary. Its OpenAPI schema and shared JSON fixtures must drive compatibility tests in both TypeScript and Rust. Replacing Rodrigo must preserve status codes, payloads, revision semantics, authorization and failure behavior, rather than merely matching endpoint names.
+Lost responses/timeouts can have committed outcomes. Read a snapshot and reconcile; never blindly retry mutations. `jti` is not a replay database. Cache/blob operations have no durable idempotency ledger.
 
-The current service defines interfaces for documents, cache, coordination and streaming blobs. Future domain modules and durable jobs must remain behind explicit interfaces. Database adapters advertise capabilities such as atomic conditional writes, transactions, ordered pagination and durable jobs. An adapter that cannot satisfy a domain's required capabilities is rejected at startup. SQL and NoSQL stores are not presumed interchangeable for transactions or query semantics.
+## Migration and release
 
-Deployment configuration maps named connections to service endpoints on database, Redis and storage VMs. Workspace routing uses trusted server configuration. A failed configured database never falls back to another owner. Connection pools, operation deadlines, concurrent work, request/response sizes and retry budgets are bounded per dependency.
+Identity stays in `ensure-user.ts`/Hub stores until a separately reviewed signed session-resolution contract exists. Rodrigo's current requests require an already-authorized workspace. Never invent that workspace from browser input. Move one domain by quiescing writes, exporting/importing with revision reconciliation, switching the Hub route to the sole Rodrigo writer, proving parity/outage recovery, and then removing old credentials. Update both behavior maps with each live owner change. Do not add dual writes or a hidden Hub fallback.
 
-The planned Redis adapter will own disposable cache and coordination only. Durable user records and acknowledged jobs require durable database ownership. Cache failure must have an explicit per-operation policy; authorization never depends on a stale permissive cache entry. The file interface provides a future streaming blob boundary; its S3 implementation and metadata ownership are deferred.
+Rodrigo supplies separate stable/canary Dockyard Compose registrations and a Forgejo publishing workflow. Both channels share the same owner map and stores; ingress controls weights. Schema migrations use expand/contract and are separate from app startup. Record compatible Hub/Rodrigo digests and schema version. Image rollback is not data rollback.
 
-## Current API and future document semantics
+Prometheus/Grafana metrics and a redacting Alloy → Loki logging service live in Rodrigo's repository. Loki is separate from application databases, with seven-day configured retention; operational logging is best effort, not the durable event journal. See Rodrigo's `docs/DEPLOYMENT.md`, `docs/OPERATIONS.md` and `VERIFICATION.md` for details and measured limits.
 
-- `GET /health/live`: process liveness without dependency details.
-- `GET /health/ready`: service initialization is ready, with `dataReady: false`; this does not assert database readiness.
-- `GET /v1/capabilities`: authenticated contract version and supported operations.
-- `GET /v1/documents/{kind}`: authenticated stub returning 503 `adapter_not_configured`; future adapters will return a workspace document and revision.
-- `PUT /v1/documents/{kind}`: validates payload and expected revision, then returns 503 `adapter_not_configured`. Future adapters must provide atomic conditional updates with HTTP 409 on conflict. Initial kinds: tasks, notes, calendar.
-- Separate private metrics listener: Prometheus metrics with bounded labels.
+## Setup and checks
 
-Errors have stable machine-readable codes and request IDs. Dependency errors return 503, overload returns 429, unsupported operations return explicit capability errors. Internal connection strings and provider errors never enter client responses. Writes are not automatically retried unless their operation is idempotent or has a durable idempotency record.
+For capability-only development, run `node scripts/setup.mjs` and `docker compose up -d --build --wait` in Rodrigo. API: loopback 8088; Grafana: loopback 13000, user `admin`, initial password in `.local/rodrigo/grafana-password.txt`. Provider tests have a separate isolated Compose stack; they do not touch customer data.
 
-## Monitoring and release evidence
+Set Hub's server-only `RODRIGO_BASE_URL`, `RODRIGO_KEY_ID`, `RODRIGO_PRIVATE_KEY_FILE`, then restart Hub. Local development allows loopback HTTP; production requires HTTPS. These settings do not automatically switch domain ownership.
 
-Prometheus currently collects request rate/status, latency histograms, in-flight work, Linux process CPU/RSS and adapter-readiness gauges. Grafana provides a provisioned dashboard. Pool waits, dependency failures and queue age require future adapters and workers; they are not implemented metrics. Dashboards and metrics listeners stay on management networks and require authenticated access when exposed. Logs are structured and redact tokens, credentials and document bodies.
+Build Rodrigo with `cargo build --locked`, then run `pnpm rodrigo:test` in Sorye. The test launches the real executable using the production TypeScript signer and fresh keys. `RODRIGO_TEST_BINARY` selects a release artifact; default points to the sibling debug binary. Shared JSON snapshots and types must stay aligned with Rodrigo's `contracts/`. Run Hub TypeScript validation when those types change. Production capacity, real TLS topology, restore/failover and traffic splitting require deployment-specific evidence beyond local tests.
 
-Before routing a domain through Rodrigo, prove signed-call compatibility, cross-workspace rejection, atomic stale-write conflicts, dependency outage behavior, restart recovery and equivalent saved data using an isolated database. Migration uses one authoritative writer and an explicit cutover; no silent dual writes. Load tests measure p95/p99 latency, memory and queue/pool saturation against an agreed traffic target. No language choice alone establishes capacity or security.
+## Hub client coverage and cutover prerequisites
 
-## Local operation and independent releases
+Hub routes import the server-only `apps/hub/lib/rodrigo/client.ts` entry point. The Node transport validates capabilities, topology, atomic snapshots (including deletion tombstones), conditional document writes and deletes. It preserves backend status, machine code and request ID in `RodrigoResponseError`, bounds requests to Rodrigo's 256 KiB limit, bounds responses, uses a three-second timeout and rejects redirects. It never retries mutations or falls back to another store. Callers must authorize app access and derive identity from the server session before invoking it.
 
-In the Rodrigo repository, run `node scripts/setup.mjs`, then `docker compose up -d --build --wait`. API health is at `http://127.0.0.1:8088/health/ready`; Grafana is at `http://127.0.0.1:13000`. The generated Grafana administrator password is in Rodrigo's ignored `.local/rodrigo/grafana-password.txt`; username is `admin`. The backend README contains the VM/TLS deployment boundary, key rotation, monitoring limits and adapter roadmap.
+The admin topology route reveals configured provider names and stream limits, never connection strings or credentials. It returns 401 without a session, 403 for non-admin users, and 503 for an unavailable or incompatible backend. Cache, blob and SSE forwarding are not implemented in Hub. Tasks and Calendar routes use snapshots and conditional writes when their workspace/kind has an explicit verified Rodrigo owner. Notes remains on Hub because its 512 KB accepted document size exceeds Rodrigo's 256 KiB request limit.
 
-Set `RODRIGO_BASE_URL`, `RODRIGO_KEY_ID` and `RODRIGO_PRIVATE_KEY_FILE` in Hub's server environment. Local development permits loopback HTTP; production requires HTTPS. Restart Hub after changing them. No domain operation switches automatically when these settings are enabled.
+Before activating a Tasks or Calendar owner, quiesce writes, migrate and reconcile existing records and revisions, verify authorization and conflict parity against configured providers, and prove restart/outage recovery. Retain tombstone revisions when rendering an empty document; resetting them to zero would cause permanent write conflicts. Resolve unknown write outcomes by reading an atomic snapshot. Identity bootstrap and general event publication still require Rodrigo contracts.
 
-The authoritative schema is Rodrigo's `contracts/rodrigo.openapi.json`. `packages/types/contracts` is the reviewed Sorye snapshot. Update that snapshot and the runtime response validator together when the contract changes. A replacement backend must pass the same HTTP tests; matching a Rust interface alone is insufficient.
-
-Build Rodrigo with `cargo build --locked` in its repository. In Sorye run `pnpm rodrigo:test` to exercise the real binary using the production TypeScript signer and fresh test keys. `RODRIGO_TEST_BINARY` selects a release artifact; the local default points to the sibling repository's debug binary. Rust tests, formatting and Clippy run independently in Rodrigo. These checks do not migrate or access user data.
+Public app landing copy was reviewed for this internal integration change and remains accurate: no new customer-facing storage or event feature is advertised. With RODRIGO_TEST_POSTGRES_URL pointing to a disposable database, tests verify the export/import command, payload parity, 16 concurrent writes (one success, 15 conflicts), isolation, tombstones, restart recovery and service outages without fallback. These local checks do not establish production capacity or customer-record parity. See [the migration runbook](RODRIGO-MIGRATION.md).

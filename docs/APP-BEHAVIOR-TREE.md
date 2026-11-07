@@ -56,7 +56,7 @@ flowchart TD
     API --> Auth[Authenticate with ensureHubUser]
     Auth --> Scope[Derive workspace from server session]
     Scope --> Validate[Validate route input and app permissions]
-    Validate --> Store[Hub store / service]
+    Validate --> Store[Configured owner: Hub or migrated Tasks/Calendar via Rodrigo]
     Store --> Durable[(Postgres or Hub .data metadata)]
     Store --> BlobStore[(Workspace-scoped Drive blob store)]
     Durable --> Result[Scoped response to caller]
@@ -140,23 +140,45 @@ flowchart TD
 
 The package map derives its visible app nodes from the authenticated workspace session; it does not accept plan or workspace identifiers from the browser. GPU controls are platform-admin-only. Prompt and PDF content are excluded from the audit log. The free-VRAM setting is an admission reserve, not a hard allocator limit. Ollama model unload does not stop its daemon; vLLM requires the service operator to stop its service.
 
-## Rodrigo capability boundary
+## Rodrigo discovery boundary
 
 ```mermaid
 flowchart LR
     Browser[Authenticated browser] --> Capability[Hub /api/backend/capabilities]
-    Capability --> Session[Hub derives user and workspace]
+    Browser --> Topology[Hub /api/backend/topology: platform admin only]
+    Topology --> Session[Hub derives user and workspace]
+    Capability --> Session
     Session --> Assertion[Short-lived signed method/path/body assertion]
     Assertion --> Rodrigo[Independent Rodrigo Rust service]
     Rodrigo --> Verify[Verify signature, scope and request bounds]
-    Verify --> Status[HTTP v1 capabilities: dataReady false]
+    Verify --> Status[HTTP v1 capabilities or topology: configured provider readiness]
     Rodrigo --> Metrics[Private metrics listener]
     Metrics --> Prometheus[Prometheus]
     Prometheus --> Grafana[Authenticated Grafana UI]
-    Rodrigo -.-> Planned[Document/cache/blob interfaces; adapters not implemented]
+    Rodrigo -. migration pending .-> Providers[Optional PostgreSQL/MySQL/MongoDB documents; Redis cache; S3 blobs; durable change streams]
 ```
 
-Rodrigo is a separate repository and service. The Hub capability endpoint returns 503 if Rodrigo is unavailable or incompatible; it does not switch data owners. PostgreSQL, MongoDB, Redis and S3 adapters remain unimplemented. Existing Tasks/Notes/Calendar and other domain flows still use the Hub stores described above. Local Docker monitoring belongs to the Rodrigo repository. See [RODRIGO.md](./RODRIGO.md).
+Rodrigo is a separate repository and service. The Hub capability and topology endpoints return 503 if Rodrigo is unavailable or incompatible; it does not switch data owners. Rodrigo now implements optional PostgreSQL/MySQL/MongoDB document stores, Redis caching, S3-compatible storage and durable resumable document streams. Unconfigured providers report not_configured; dataReady requires all document owners and healthy configured dependencies. Unmapped Tasks/Calendar workspaces, Notes and other domain flows use Hub stores. Explicitly migrated Tasks/Calendar documents use Rodrigo through the routing flow below. Prometheus/Grafana and a separate Alloy/Loki logging service belong to Rodrigo. See [RODRIGO.md](./RODRIGO.md).
+
+## Tasks and Calendar document ownership
+
+```mermaid
+flowchart TD
+    UI[Tasks or Calendar] --> API[Same-origin Hub API]
+    API --> Access[Server session, workspace membership and enabled app]
+    Access --> Owner{Server-configured workspace/kind owner}
+    Owner -->|unmapped| Hub[Existing Hub or workspace database]
+    Owner -->|frozen| Freeze[Read Hub; writes return 503 and keep draft]
+    Owner -->|rodrigo| Signed[Signed snapshot or conditional write]
+    Signed --> Rust[Rodrigo sole document writer]
+    Rust --> Rev[Translate revision using verified import offset]
+    Rev --> UI
+    Rust -->|stale revision| Conflict[409; preserve draft]
+    Rust -->|unavailable| Failure[503; preserve draft; no Hub fallback]
+    Rust -->|tombstone| Empty[Empty document with retained revision]
+```
+
+Server-only `RODRIGO_DOCUMENT_OWNERS` selects one owner per workspace/kind. Missing entries use Hub; malformed configuration fails closed. All document routes check membership and enabled app access. Frozen sources remain readable but reject mutations, including browser legacy imports. Operators drain every writer, export and verify the source, conditionally import into a pristine Rodrigo document, and deploy the receipt's revision offset to every replica before resuming writes. Imports never change ownership automatically. Revisions remain monotonic across migration and deletion; legacy imports cannot resurrect deleted data. Invalid stored data returns 503 instead of a writable empty document. Notes remains Hub-owned pending a compatible document-size contract. Identity, general events and handoffs remain in Hub.
 
 ## State ownership at a glance
 
@@ -172,7 +194,8 @@ Rodrigo is a separate repository and service. The Hub capability endpoint return
 | OCR multi-document selection and comparison | OCR remote | App-owned `localStorage` record |
 | Tasks/Notes/Calendar stale-save draft | Respective remote | App-specific `localStorage` until the user downloads or discards it; never automatically replaces the latest server document |
 | Protocolio template and editor mode | Protocolio remote | App-owned `localStorage` draft |
-| Shared records and app workflows | Hub APIs and stores | Postgres or `.data`, depending on configured store |
+| Tasks/Calendar records | Hub gateway; configured Hub or Rodrigo owner | Per-workspace owner; verified revision offset persists in deployment configuration |
+| Other shared records and app workflows | Hub APIs and stores | Postgres or `.data`, depending on configured store |
 | Event delivery and structured handoffs | Hub | Workspace-scoped Hub stores; target app consumes/polls |
 
 When a feature changes where state lives or how long it survives, update this table and the state branch above. Do not imply that all app state survives a full browser restart: that is true only where the app explicitly persists it.
@@ -204,4 +227,4 @@ flowchart LR
     Rodrigo <--> Dependencies[Databases, storage and external services]
 ```
 
-Hub communicates with both apps and Rodrigo. Apps never bypass Hub to call Rodrigo or one another. The browser platform kernel remains UI integration; Rodrigo's target event spine owns durable backend event processing. Current domain stores, events and jobs still run in Hub; only the Rodrigo capability call is integrated, and Rodrigo reports dataReady false. Hub's persistent volume preserves those current records until a verified one-writer migration. This target diagram does not change the current state owners listed above. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).
+Hub communicates with both apps and Rodrigo. Apps never bypass Hub to call Rodrigo or one another. The browser platform kernel remains UI integration. Rodrigo provides durable document change streams; general job/event processing still requires separate contracts. Discovery and explicit Tasks/Calendar forwarding are integrated. Unmigrated stores, general events and jobs still run in Hub. Rodrigo readiness depends on its configured providers and does not prove migration. Hub's persistent volume preserves current records until a verified one-writer migration. This target diagram does not change the current state owners listed above. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).

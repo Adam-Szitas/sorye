@@ -9,6 +9,7 @@ Security helpers live in `apps/hub/lib/security.ts`. This document summarizes th
 | Hub UI + most APIs | Google session via Auth.js; `ensureHubUser()`. Local **only:** `AUTH_DEV_BYPASS=true` + `NODE_ENV=development` seeds a workspace user (see below). |
 | Embed iframe | HMAC embed cookie; origin allowlist on bootstrap |
 | Admin subscription API | `x-admin-secret` (timing-safe compare) — no session |
+| Backend topology API | Server session plus `isPlatformAdmin`; signed server-derived workspace claims to Rodrigo; no-store responses. |
 | Reports API | Session + platform admin (`ADMIN_EMAILS`, timing-safe email compare) |
 | Public | Login, OAuth callbacks, embed bootstrap (key-gated), Contact (`/contact`, `/apps/contact`), Site (`/s/[slug]`, published blocks only) |
 
@@ -116,3 +117,7 @@ When extending APIs:
 Public app introductions at /learn/[slug] and catalog subdomain roots expose static catalog copy only. App routes and APIs retain their authentication and workspace boundaries.
 
 Protocolio production calls require PROTOCOLIO_SERVICE_TOKEN, provisioned through the engine token system. Browser generation and validation use Hub; no direct generation fallback. Both Hub template routes bound request bodies to 2 MB before parsing. Local Compose exposes the renderer on loopback only and does not publish MongoDB.
+
+### Rodrigo document forwarding
+
+Tasks, Notes and Calendar APIs enforce workspace membership and enabled app access before storage. For migrated Tasks/Calendar documents, server-only ownership configuration selects Rodrigo and the server session supplies signed identity. Browser inputs cannot choose owner, revision offset or backend origin. Frozen writes return 503. Outages never switch writers; conflicts remain 409. Migration exports contain private workspace data and require restricted backup access. Notes cannot select Rodrigo until its larger document limit is supported.

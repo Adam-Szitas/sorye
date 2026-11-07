@@ -8,6 +8,7 @@ import { resolve, join } from 'node:path';
 import { test } from 'node:test';
 import { signRodrigoRequest } from '../lib/rodrigo/sign-request';
 import type { RodrigoCapabilities } from '@sorye/types';
+import { getRodrigoCapabilities, getRodrigoTopology, getRodrigoSnapshot, putRodrigoDocument, deleteRodrigoDocument, RodrigoResponseError, RodrigoUnavailableError } from '../lib/rodrigo/service-client';
 
 test('Next.js signer interoperates with the real Rodrigo HTTP server', { timeout: 30000 }, async (t) => {
   const root = resolve(process.cwd(), '../..');
@@ -17,10 +18,17 @@ test('Next.js signer interoperates with the real Rodrigo HTTP server', { timeout
   const directory = await mkdtemp(join(tmpdir(), 'rodrigo-contract-'));
   const publicKeys = join(directory, 'keys.json');
   await writeFile(publicKeys, JSON.stringify({ 'test-only': publicKey }));
+  const privateKeyFile = join(directory, 'private.pem');
+  await writeFile(privateKeyFile, privateKeyPem);
+  const originalEnv = { ...process.env };
+  const childEnv = { ...process.env };
+  for (const key of Object.keys(childEnv)) {
+    if (key.startsWith('RODRIGO_')) delete childEnv[key];
+  }
   const binary = process.env.RODRIGO_TEST_BINARY ?? join(root, '../rodrigo/target/debug', process.platform === 'win32' ? 'rodrigo.exe' : 'rodrigo');
   const child = spawn(binary, [], {
     windowsHide: true,
-    env: { ...process.env, RODRIGO_PUBLIC_KEYS_FILE: publicKeys, RODRIGO_LISTEN: '127.0.0.1:0', RODRIGO_METRICS_LISTEN: '127.0.0.1:0' },
+    env: { ...childEnv, RODRIGO_PUBLIC_KEYS_FILE: publicKeys, RODRIGO_LISTEN: '127.0.0.1:0', RODRIGO_METRICS_LISTEN: '127.0.0.1:0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const exited = once(child, 'close');
@@ -46,6 +54,33 @@ test('Next.js signer interoperates with the real Rodrigo HTTP server', { timeout
       const token = signRodrigoRequest({ userId: 'contract-user', workspaceId: 'contract-workspace', scope, method, path, body: signedBody, keyId: 'test-only', privateKeyPem, now });
       return fetch(`${origin}${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, ...(method === 'GET' ? {} : { body }), signal: AbortSignal.timeout(5000) });
     };
+    process.env.RODRIGO_BASE_URL = origin;
+    process.env.RODRIGO_PRIVATE_KEY_FILE = privateKeyFile;
+    process.env.RODRIGO_KEY_ID = 'test-only';
+    const context = { userId: 'contract-user', workspaceId: 'contract-workspace' };
+    await t.test('production client validates capabilities and topology', async () => {
+      const capabilities = await getRodrigoCapabilities(context);
+      assert.equal(capabilities.dataReady, false);
+      const topology = await getRodrigoTopology(context);
+      assert.deepEqual(topology.documentOwners, {});
+      assert.deepEqual(topology.documentProviders, []);
+      assert.equal(topology.events.retainedRevisions, 1000);
+    });
+    await t.test('production document client preserves unconfigured errors and request IDs', async () => {
+      for (const operation of [
+        () => getRodrigoSnapshot(context, 'tasks'),
+        () => putRodrigoDocument(context, 'notes', { expectedRevision: 0, payload: { text: 'áλ📄' } }),
+        () => deleteRodrigoDocument(context, 'calendar', { expectedRevision: 1 }),
+      ]) {
+        await assert.rejects(operation, (error: unknown) => {
+          assert.ok(error instanceof RodrigoResponseError);
+          assert.equal(error.status, 503);
+          assert.equal(error.code, 'adapter_not_configured');
+          assert.match(error.requestId, /^[0-9a-f-]{36}$/);
+          return true;
+        });
+      }
+    });
     await t.test('capabilities match the shared fixture and expose no active adapters', async () => {
       const response = await call('/v1/capabilities', 'capabilities:read');
       assert.equal(response.status, 200);
@@ -81,7 +116,40 @@ test('Next.js signer interoperates with the real Rodrigo HTTP server', { timeout
       assert.equal(response.status, 503);
       assert.equal((await response.json()).error.code, 'adapter_not_configured');
     });
+    await t.test('client retains tombstones and rejects inconsistent snapshots', async (t) => {
+      const mocked = t.mock.method(globalThis, 'fetch', async () => Response.json({ revision: 7, document: null }));
+      assert.deepEqual(await getRodrigoSnapshot(context, 'tasks'), { revision: 7, document: null });
+      mocked.mock.mockImplementation(async () => Response.json({ revision: 7, document: { revision: 6, payload: {} } }));
+      await assert.rejects(() => getRodrigoSnapshot(context, 'tasks'), RodrigoUnavailableError);
+    });
+    await t.test('conflicts retain machine codes and lost writes are never retried', async (t) => {
+      const requestId = '48a9da43-9b66-4d88-96c9-3413b4ae3049';
+      const mocked = t.mock.method(globalThis, 'fetch', async () => Response.json({ error: { code: 'revision_conflict', requestId } }, { status: 409 }));
+      await assert.rejects(() => putRodrigoDocument(context, 'tasks', { expectedRevision: 1, payload: {} }),
+        (error: unknown) => error instanceof RodrigoResponseError && error.status === 409 && error.requestId === requestId);
+      assert.equal(mocked.mock.callCount(), 1);
+      mocked.mock.mockImplementation(async () => { throw new Error('response lost after commit'); });
+      await assert.rejects(() => putRodrigoDocument(context, 'tasks', { expectedRevision: 1, payload: {} }), RodrigoUnavailableError);
+      assert.equal(mocked.mock.callCount(), 2);
+      const options = mocked.mock.calls[1].arguments[1] as RequestInit;
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.cache, 'no-store');
+      assert.ok(options.signal);
+    });
+    await t.test('client bounds responses and rejects unsafe revision and path inputs before sending', async (t) => {
+      const mocked = t.mock.method(globalThis, 'fetch', async () => new Response('x'.repeat(65537)));
+      await assert.rejects(() => getRodrigoCapabilities(context), RodrigoUnavailableError);
+      await assert.rejects(() => putRodrigoDocument(context, 'tasks', { expectedRevision: Number.MAX_SAFE_INTEGER, payload: {} }));
+      assert.throws(() => getRodrigoSnapshot(context, '../topology' as 'tasks'));
+      assert.throws(() => deleteRodrigoDocument(context, 'tasks', { expectedRevision: 0 }));
+      await assert.rejects(() => putRodrigoDocument(context, 'notes', { expectedRevision: 0, payload: { text: 'x'.repeat(262144) } }), RodrigoUnavailableError);
+      assert.equal(mocked.mock.callCount(), 1);
+    });
   } finally {
+    for (const key of ['RODRIGO_BASE_URL', 'RODRIGO_PRIVATE_KEY_FILE', 'RODRIGO_KEY_ID']) {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    }
     child.kill();
     await exited;
     await rm(directory, { recursive: true, force: true });

@@ -58,6 +58,7 @@ Hub        →  record notification  →  Badges + toasts + bell
 - Workspace CRUD (personal + team), subscription limits
 - App launcher, split-pane workspace, dock, status bar
 - All `/api/*` routes consumed by remotes
+- Signed Rodrigo discovery: authenticated `/api/backend/capabilities` and platform-admin-only `/api/backend/topology`. Tasks and Calendar can use a verified per-workspace Rodrigo owner; Notes and other stores remain in Hub; see [Rodrigo](../RODRIGO.md).
 - Module Federation host (`MicroAppLoader`)
 - Embed (`embed.js`, `/embed/[slug]`)
 - Notification center, toasts, per-app badges
@@ -865,3 +866,7 @@ Protocolio editor → authenticated Hub generate/validate/health endpoints → s
 The deployment files in `deploy/` provide one image and Dockyard registration per catalog app. Eleven remote images contain their compiled federation assets at `/remote/`; the remaining images are gateways to Hub-native or externally embedded apps, not extracted implementations. Each gateway redirects `/` to `/apps/<slug>` and forwards authenticated pages and APIs to the single Hub. Contact remains a presentation page. Public introductions remain at `/learn/<slug>/<locale>`. Existing direct-to-Hub subdomain routing still serves introductions until ingress is switched to the app gateway.
 
 Hub owns sessions, workspace authorization and records. Gateways have no persistent application data. Hub `.data` is mounted on a named volume; back it up before replacement. App landing descriptions were reviewed: capabilities and limitations remain accurate; deployment changes do not add product features.
+
+## Tasks and Calendar storage cutover
+
+Both apps continue calling Hub. After verified per-workspace migration, Hub forwards their document reads/writes to Rodrigo; unmapped workspaces keep their existing store. Conflicts preserve drafts, failures return 503 without fallback, and tombstones retain revisions. Notes remains Hub-owned because its size limit exceeds Rodrigo's contract. Catalog IDs, mounts and federation wiring are unchanged. Public landing copy for Tasks, Calendar and Notes was reviewed and remains accurate for this internal storage change. See [the runbook](../RODRIGO-MIGRATION.md).
