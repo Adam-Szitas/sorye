@@ -26,3 +26,7 @@ Before editing, compare the proposed work with the behavior map and relevant sou
 ## Keep app landing pages current
 
 Follow [App landing page steering](docs/APP-LANDINGS.md) for every app change. Update the belonging landing page in the same change; every new app must include a complete landing page.
+
+## Keep main READMEs readable and visual
+
+Follow [README structure steering](docs/README-STEERING.md) whenever creating or substantially updating a repository, app, or package `README.md`. Begin with a brief human-first overview and visible explanation of the current app flow, then provide a deeper app-specific explanation and visual. Keep diagrams accurate to current behavior and link to focused technical guides.

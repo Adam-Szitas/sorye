@@ -1,5 +1,32 @@
 # App images and Dockyard
 
+## How the services fit together
+
+Forgejo Actions builds immutable container images and pushes them to the Forgejo registry. Dockyard promotes a chosen image digest to a VM's Docker Engine over SSH. The CI runner builds and publishes; it does not host production containers or deploy automatically.
+
+```text
+Forgejo source
+    │ dispatch build
+    ▼
+CI runner ── build/push ──> Forgejo container registry
+                                  │ immutable digest
+                                  ▼
+                         Dockyard over SSH
+                                  │ pull + replace
+              ┌───────────────────┴───────────────────┐
+              ▼                                       ▼
+         App VM Docker                            Data VM Docker
+         Hub + gateways                           PostgreSQL / services
+              │                                       ▲
+              └──────── private network ──────────────┘
+```
+
+Hub is the browser-facing entry point and owns sessions, workspace access and the current Hub-backed data paths. Federation remotes are built and deployed as separate images; Hub loads them from their configured HTTPS `remoteEntry.js` URLs. App gateways provide per-app hostnames and forward requests to Hub. Apps share behavior through Hub APIs, platform events and handoffs rather than calling each other directly. Rodrigo is a separate backend release; Hub's versioned service contract is the boundary for backend operations as that integration is completed.
+
+PostgreSQL and other stateful services can run on a separate VM. Hub and workers connect over the private network. Give databases persistent volumes and independent backups; deploy database schema changes explicitly. Dockyard deploys a registered Compose service and its image; it does not provision VMs, networks, DNS/TLS, databases, credentials or migrations. Keep stateful services in separate registrations from stateless app images so app promotion and rollback do not restart or replace databases.
+
+For each release, review the action's image digest, then promote that digest to the intended registration with `dockyard ship <ssh-alias> <app> <registry/image@sha256:digest>` (or run `dockyard deploy <app> <registry/image@sha256:digest>` on the target). Each registration is an independent release unit. Check service health and application behavior after promotion; image rollback does not roll back database data.
+
 **Hub is the app-facing gateway, not the intended domain backend.** The target is apps <-> Hub <-> Rodrigo. Existing Hub data/event code remains pending migration. This workflow does not build Rodrigo; release it separately and record compatible Hub/Rodrigo digests and contract versions. See [ownership, current gaps and release ordering](../docs/HUB-RODRIGO-BOUNDARY.md).
 
 Run the Forgejo publish workflow with the existing registry credentials and remote URL variables. Set each `NEXT_PUBLIC_<APP>_REMOTE` to `https://<slug>.sorye.app/remote/remoteEntry.js`. These are Hub build inputs. The workflow publishes Hub plus twenty app images and prints their registry digests. Use the printed digest, never a mutable tag, for promotion. The build runner architecture must match the target VM.
