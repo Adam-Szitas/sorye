@@ -24,11 +24,7 @@ export function LanguageSelector({ placement = 'page' }: { placement?: 'page' | 
       </label>
       <select
         id={selectId}
-        className={
-          navbar
-            ? 'rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]'
-            : 'rounded border border-slate-600 bg-slate-900 p-1 text-white'
-        }
+        className="hub-language-select"
         autoComplete="language"
         value={locale}
         onChange={(event) => setLocale(event.target.value as typeof locale)}

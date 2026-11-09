@@ -1,4 +1,5 @@
 import {
+  isTaskAttachmentList,
   isTaskDriveFileId,
   normalizeLegacyCalendarEvent,
   type CalendarEvent,
@@ -127,10 +128,22 @@ export function parseTasksBoard(raw: unknown): TasksBoard {
     const statusId = seenStatusIds.has(task.statusId)
       ? task.statusId
       : fallbackStatusId;
-    if (Object.hasOwn(task, 'driveFileId') && !isTaskDriveFileId(task.driveFileId)) {
-      throw new Error('Task photo reference is invalid');
+    const legacy = Object.hasOwn(task, 'driveFileId');
+    const listed = Object.hasOwn(task, 'attachmentIds');
+    if (legacy && listed) throw new Error('Task image references are ambiguous');
+    let attachmentIds: string[] | undefined;
+    if (listed) {
+      if (!isTaskAttachmentList(task.attachmentIds)) throw new Error('Task image references are invalid');
+      attachmentIds = task.attachmentIds;
+    } else if (legacy) {
+      if (!isTaskDriveFileId(task.driveFileId)) throw new Error('Task photo reference is invalid');
+      attachmentIds = [task.driveFileId];
     }
-    return { ...task, id, title, statusId };
+    const next: TaskItem = { ...task, id, title, statusId };
+    delete next.driveFileId;
+    if (attachmentIds) next.attachmentIds = attachmentIds;
+    else delete next.attachmentIds;
+    return next;
   });
 
   return { statuses: normalizedStatuses, tasks: normalizedTasks };

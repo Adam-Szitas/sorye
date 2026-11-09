@@ -350,7 +350,8 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       steps: [
         'Add a task from the board toolbar.',
         'Drag cards between columns, or use the status control on a card.',
-        'Click a task to edit its label, description, or photo. Photos are kept in Drive under Tasks.',
+        'Click a task to open its ticket. Copy the id to share it with a coworker in this workspace.',
+        'Paste notes or images into the ticket. Images are kept in Drive under Tasks.',
         'Open Statuses to rename, reorder, or add workflow columns.',
       ],
     },

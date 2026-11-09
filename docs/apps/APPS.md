@@ -299,7 +299,7 @@ Lightweight note editor. Notes are workspace-scoped on Hub (`GET`/`PUT /api/note
 
 ## Purpose
 
-Kanban board with configurable workflow columns. Drag-and-drop cards between columns; the status control on a card selects a column. Clicking a card opens an editor for the label and description. A description can include one photo, dropped or chosen in that editor. The photo bytes are a Hub Drive file in the Tasks section (`sourceAppId: tasks`). The task stores `driveFileId` only. Rodrigo owns the board and does not store the bytes. The board is workspace-scoped: `GET /api/tasks` reads Rodrigo, and writes are v2 `taskBoard` actions. `PUT /api/tasks` is disabled. Search, the new-task field, and the board/statuses tab are private signals (`@sorye/platform` `createAppStore`). Events go through `kernel.emit` → `POST /api/events`.
+Kanban board with configurable workflow columns. Drag-and-drop cards between columns; the status control on a card selects a column. Clicking a card stays on the board and opens a ticket dialog: the task id, summary, description, status, and images. The id is the task's existing board id (`task-` plus eight hex characters, or an older seed id such as `task-seed-1`). It is unique on that workspace board. Copy puts the id on the clipboard. A coworker with the same workspace membership and Tasks enabled opens it at `/apps/tasks?ticket=<id>` or by pasting the id into Open ticket. The query does not select a workspace. An unknown id, or a user without Tasks access, fails closed. The description accepts pasted text. Pasted or dropped images, up to eight JPEG/PNG/WebP/GIF files of 5 MB each, are Hub Drive files in the Tasks section (`sourceAppId: tasks`). The task stores `attachmentIds` only. A previously saved `driveFileId` is read as one image and rewritten as `attachmentIds` on the next board save. Rodrigo owns the board and does not store the bytes. The board is workspace-scoped: `GET /api/tasks` reads Rodrigo, and writes are v2 `taskBoard` actions. `PUT /api/tasks` is disabled. Search, the new-task field, the open-ticket field, and the board/statuses tab are private signals (`@sorye/platform` `createAppStore`). Events go through `kernel.emit` → `POST /api/events`.
 
 Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on port 3005 (Vite `index.html`), the same entry uses a standalone kernel. Set `VITE_HUB_ORIGIN=http://localhost:3000` so that tab can send the Hub session cookie. `?standalone=1` forces the standalone client even when Hub passed a kernel.
 
@@ -308,8 +308,8 @@ Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Board, card UI, and task editor |
-| `src/task-editor.tsx` | Modal for label, description, and a photo |
-| `src/task-photo.ts` | Drive upload into the Tasks section |
+| `src/task-editor.tsx` | Ticket dialog: id, summary, description, status, and images |
+| `src/task-photo.ts` | Drive upload of task images into the Tasks section |
 | `src/tasks-ui.ts` | Private signal store (search, tab, new-task field) |
 | `src/tasks-storage.ts` | Queued Hub v2 task board client |
 | `src/emit-event.ts` | `kernel.emit` for `sorye.task.created`, `updated`, `moved` |
@@ -320,7 +320,7 @@ Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on
 
 - **Emits:** Task lifecycle events (high-signal for Relay)
 - **Typical Relay route:** Tasks → Messenger `#events`
-- **Hub APIs:** `GET /api/tasks` and `POST /api/backend/actions/batch` for the board. `PUT /api/tasks` returns 410. Task photos use `POST /api/files` with `sourceAppId=tasks` and are shown from `GET /api/files/{id}?inline=1`. `POST /api/events` via `kernel.emit`. On port 3005 those URLs are prefixed with `VITE_HUB_ORIGIN` when it differs from the page origin.
+- **Hub APIs:** `GET /api/tasks` and `POST /api/backend/actions/batch` for the board. `PUT /api/tasks` returns 410. Task images use `POST /api/files` with `sourceAppId=tasks` and are shown from `GET /api/files/{id}?inline=1`. `POST /api/events` via `kernel.emit`. On port 3005 those URLs are prefixed with `VITE_HUB_ORIGIN` when it differs from the page origin. `/apps/tasks?ticket=<id>` opens that ticket in the current workspace.
 
 ---
 
@@ -570,7 +570,7 @@ Connected cloud storage appears as named virtual folders here. Browsing, uploads
 ## Storage
 
 - Disk: `apps/hub/.data/files/{workspaceId}/{uuid}` (uuid is the storage filename)
-- Tasks photos use the same bytes and metadata, with `sourceAppId: tasks`, so Drive lists them in the Tasks section rather than the Drive root. Rodrigo does not store those bytes.
+- Task images use the same bytes and metadata, with `sourceAppId: tasks`, so Drive lists them in the Tasks section rather than the Drive root. A ticket stores up to eight of those file ids. Rodrigo does not store those bytes.
 - Metadata: `apps/hub/.data/files-meta.json` — no file bytes
 - `workspaceId` from `ensureHubUser()` only. Paths are `workspaceId + uuid`; user-supplied path segments, `..`, and absolute paths are rejected. Download/delete resolve the path and require it stay under that workspace directory.
 

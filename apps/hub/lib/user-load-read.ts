@@ -19,9 +19,17 @@ export type PersonalLoadGate<T> =
 export async function memberScopes(session: HubSession): Promise<UserLoadWorkspace[]> {
   const scopes: UserLoadWorkspace[] = [];
   const seen = new Set<string>();
-  for (const summary of session.workspaces) {
-    if (!summary?.id || seen.has(summary.id)) continue;
-    const checked = await getHubSessionForWorkspace(session.user.id, summary.id);
+  const candidates = [
+    ...new Set(session.workspaces.map((summary) => summary?.id).filter((id): id is string => Boolean(id))),
+  ];
+  // Every workspace is still re-checked against the store; the checks run
+  // together instead of waiting on one another. Order follows the session.
+  const checks = await Promise.all(
+    candidates.map((id) => getHubSessionForWorkspace(session.user.id, id)),
+  );
+  for (const [index, checked] of checks.entries()) {
+    const summary = { id: candidates[index] };
+    if (seen.has(summary.id)) continue;
     if (!checked) continue;
     if (checked.user.id !== session.user.id) continue;
     if (checked.workspace.id !== summary.id) continue;
@@ -46,12 +54,16 @@ export async function readPartitionedLoad<T>(
   read: (scope: UserLoadWorkspace) => Promise<PartitionItem<T>[]>,
   gate: PersonalLoadGate<T>,
 ): Promise<UserLoadPartition<T>> {
-  const packageIds = new Set(await viewerPersonalPackageAppIds(session));
+  // Independent server-side lookups; both finish before anything is read.
+  const [personalPackage, memberships] = await Promise.all([
+    viewerPersonalPackageAppIds(session),
+    memberScopes(session),
+  ]);
+  const packageIds = new Set(personalPackage);
   const personalAllowed =
     'appId' in gate
       ? packageIds.has(gate.appId)
       : gate.personalApps.some((appId) => packageIds.has(appId));
-  const memberships = await memberScopes(session);
   const readable = personalAllowed
     ? memberships
     : memberships.filter((scope) => scope.kind !== 'personal');

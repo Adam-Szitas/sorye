@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { StudioModelStats, StudioTooMuchReport } from '@sorye/types';
+import { applyTurntable, setMaterialWireframe } from './inspection-mode';
+import { installStudioIndexGuard, isIndexBufferTypeError, type StudioWebGpuBackend } from './index-buffer-guard';
 import {
   FrameBudgetMonitor,
   checkMeshBudget,
@@ -43,6 +45,9 @@ export class StudioStage {
   private disposed = false;
   private studioMaterial: THREE.MeshPhysicalMaterial | null = null;
   private sizeObserver: ResizeObserver | null = null;
+  private wireframe = false;
+  private turntable = false;
+  private removeIndexGuard: (() => void) | null = null;
   private home = {
     position: new THREE.Vector3(2.4, 1.6, 2.8),
     target: new THREE.Vector3(0, 0.35, 0),
@@ -112,6 +117,10 @@ export class StudioStage {
     this.scene = scene;
     this.camera = camera;
     this.controls = controls;
+    this.controls.autoRotate = this.turntable;
+    this.applyWireframe();
+    this.removeIndexGuard?.();
+    this.removeIndexGuard = installStudioIndexGuard(renderer.backend as unknown as StudioWebGpuBackend);
     this.running = true;
     this.frameMonitor.reset();
     this.applySize(renderer, camera);
@@ -217,27 +226,36 @@ export class StudioStage {
         return;
       }
     }
+    if (this.controls) this.controls.autoRotate = this.turntable;
     this.controls?.update();
-    return this.renderer.render(this.scene, this.camera);
+    try {
+      this.renderer.render(this.scene, this.camera);
+    } catch (error) {
+      if (!isIndexBufferTypeError(error)) throw error;
+    }
   }
 
   setWireframe(on: boolean) {
-    if (this.studioMaterial) this.studioMaterial.wireframe = on;
-    this.model?.traverse((child) => {
-      if (!isMesh(child)) return;
-      const mat = child.material;
-      if (Array.isArray(mat)) {
-        for (const m of mat) {
-          if ('wireframe' in m) m.wireframe = on;
-        }
-      } else if ('wireframe' in mat) {
-        mat.wireframe = on;
-      }
-    });
+    this.wireframe = on;
+    this.applyWireframe();
   }
 
   setAutoRotate(on: boolean) {
-    if (this.controls) this.controls.autoRotate = on;
+    this.turntable = applyTurntable(this.controls, on);
+  }
+
+  private applyWireframe() {
+    const on = this.wireframe;
+    if (this.studioMaterial) setMaterialWireframe(this.studioMaterial, on);
+    this.scene?.traverse((child) => {
+      if (!isMesh(child)) return;
+      const material = child.material;
+      if (Array.isArray(material)) {
+        for (const entry of material) setMaterialWireframe(entry, on);
+      } else if (material) {
+        setMaterialWireframe(material, on);
+      }
+    });
   }
 
   resetView() {
@@ -288,6 +306,7 @@ export class StudioStage {
       clearcoatRoughness: 0.4,
       envMapIntensity: 0.6,
       side: THREE.DoubleSide,
+      wireframe: this.wireframe,
     });
 
     const bare = object.userData.studioGeometry as THREE.BufferGeometry | undefined;
@@ -316,6 +335,7 @@ export class StudioStage {
 
     this.scene?.add(root);
     this.model = root;
+    this.applyWireframe();
     this.frameMonitor.reset();
     this.resize();
     this.fitToModel();
@@ -364,6 +384,8 @@ export class StudioStage {
     this.studioMaterial?.dispose();
     this.studioMaterial = null;
     this.disposeSceneGraph();
+    this.removeIndexGuard?.();
+    this.removeIndexGuard = null;
     if (this.renderer) {
       this.renderer.setAnimationLoop(null);
       this.renderer.dispose();
@@ -384,6 +406,8 @@ export class StudioStage {
     this.studioMaterial?.dispose();
     this.studioMaterial = null;
     this.disposeSceneGraph();
+    this.removeIndexGuard?.();
+    this.removeIndexGuard = null;
     if (this.renderer) {
       this.renderer.setAnimationLoop(null);
       this.renderer.dispose();

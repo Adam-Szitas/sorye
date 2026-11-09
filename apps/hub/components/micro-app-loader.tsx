@@ -37,6 +37,46 @@ function ensureRemote(remoteName: string, entry: string) {
   registeredEntries.set(remoteName, entry);
 }
 
+/** In-flight remote loads, so a preload and the mount share one download. */
+const pendingRemoteLoads = new Map<string, Promise<unknown>>();
+
+function loadRemoteModule(
+  remoteName: string,
+  exposedModule: string,
+  entry: string,
+): Promise<unknown> {
+  const moduleId = `${remoteName}/${exposedModule.replace(/^\.\//, '')}`;
+  const key = `${entry}|${moduleId}`;
+  const pending = pendingRemoteLoads.get(key);
+  if (pending) return pending;
+
+  const load = Promise.resolve()
+    .then(() => {
+      ensureRemote(remoteName, entry);
+      return loadRemote<unknown>(moduleId);
+    })
+    // Only in-flight loads are shared. Afterwards the federation runtime
+    // answers from its own module cache, and a failed load can be retried.
+    .finally(() => pendingRemoteLoads.delete(key));
+  pendingRemoteLoads.set(key, load);
+  return load;
+}
+
+/**
+ * Start downloading a remote before it is known whether it will be mounted.
+ * This fetches code only: nothing renders and no kernel client is created
+ * until `MicroAppLoader` is mounted, which callers do after their access check.
+ */
+export function preloadMicroApp(config: MicroFrontendConfig): void {
+  if (typeof window === 'undefined') return;
+  // The mount path reports load errors; a failed preload is not an error state.
+  void loadRemoteModule(
+    config.remoteName,
+    config.exposedModule,
+    resolveRemoteEntry(config),
+  ).catch(() => {});
+}
+
 function resolveMount(mod: unknown): RemoteMount | null {
   if (!mod) return null;
   if (typeof mod === 'function') return mod as RemoteMount;
@@ -86,9 +126,7 @@ function MicroAppMount({ config, appId, framework = 'react' }: MicroAppLoaderPro
       setMountFn(null);
 
       try {
-        ensureRemote(remoteName, remoteEntry);
-        const moduleId = `${remoteName}/${exposedModule.replace(/^\.\//, '')}`;
-        const mod = await loadRemote<unknown>(moduleId);
+        const mod = await loadRemoteModule(remoteName, exposedModule, remoteEntry);
         const resolved = resolveMount(mod);
 
         if (!resolved) {

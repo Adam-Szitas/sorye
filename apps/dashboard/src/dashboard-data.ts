@@ -1,6 +1,5 @@
 import {
-  CALENDAR_LOCAL_STORAGE_KEY,
-  NOTES_LOCAL_STORAGE_KEY,
+  normalizeLegacyCalendarEvent,
   TASKS_LOCAL_STORAGE_KEY,
   type CalendarEvent,
   type EmbedWidget,
@@ -69,12 +68,67 @@ function countUpcomingEvents(events: CalendarEvent[]): number {
 
   let count = 0;
   for (const event of events) {
+    if (!Array.isArray(event.dates)) continue;
     for (const dateKey of event.dates) {
       const d = new Date(`${dateKey}T12:00:00`);
       if (d >= today && d <= horizon) count += 1;
     }
   }
   return count;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function isNote(value: unknown): value is Note {
+  const record = asRecord(value);
+  return Boolean(
+    record
+    && typeof record.id === 'string'
+    && typeof record.title === 'string'
+    && typeof record.body === 'string'
+    && typeof record.updatedAt === 'string',
+  );
+}
+
+/** Notes and calendar are Rodrigo collection pages (`items`), not the old document arrays. */
+function notesFromPayload(data: unknown): Note[] {
+  const record = asRecord(data);
+  if (!record) return [];
+  if (Array.isArray(record.notes)) return record.notes.filter(isNote);
+  if (!Array.isArray(record.items)) return [];
+  const notes: Note[] = [];
+  for (const item of record.items) {
+    const row = asRecord(item);
+    const resource = asRecord(row?.resource);
+    if (!resource) continue;
+    const note = {
+      id: typeof resource.id === 'string' ? resource.id : row?.resourceId,
+      title: resource.title,
+      body: resource.body,
+      updatedAt: resource.updatedAt,
+    };
+    if (isNote(note)) notes.push(note);
+  }
+  return notes;
+}
+
+function eventsFromPayload(data: unknown): CalendarEvent[] {
+  const record = asRecord(data);
+  if (!record) return [];
+  const raw = Array.isArray(record.events)
+    ? record.events
+    : Array.isArray(record.items)
+      ? record.items.map((item) => asRecord(asRecord(item)?.resource))
+      : [];
+  const events: CalendarEvent[] = [];
+  for (const item of raw) {
+    const event = normalizeLegacyCalendarEvent(item);
+    if (event) events.push(event);
+  }
+  return events;
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -116,53 +170,12 @@ async function migrateTasksIfNeeded(): Promise<TasksBoard | null> {
   return data.board;
 }
 
-async function migrateNotesIfNeeded(): Promise<Note[]> {
-  const data = await fetchJson<{ notes: Note[]; empty: boolean }>('/api/notes');
-  if (!data) return [];
-  if (data.empty) {
-    const legacy = safeParse<Note[]>(
-      localStorage.getItem(NOTES_LOCAL_STORAGE_KEY),
-      [],
-    );
-    if (legacy.length > 0) {
-      const migrated = await fetchJson<{ notes: Note[] }>('/api/notes', {
-        method: 'PUT',
-        body: JSON.stringify({ notes: legacy, migrate: true }),
-      });
-      localStorage.removeItem(NOTES_LOCAL_STORAGE_KEY);
-      return migrated?.notes ?? legacy;
-    }
-    return data.notes;
-  }
-  localStorage.removeItem(NOTES_LOCAL_STORAGE_KEY);
-  return data.notes;
+async function readNotes(): Promise<Note[]> {
+  return notesFromPayload(await fetchJson<unknown>('/api/notes'));
 }
 
-async function migrateCalendarIfNeeded(): Promise<CalendarEvent[]> {
-  const data = await fetchJson<{ events: CalendarEvent[]; empty: boolean }>(
-    '/api/calendar',
-  );
-  if (!data) return [];
-  if (data.empty) {
-    const legacy = safeParse<CalendarEvent[]>(
-      localStorage.getItem(CALENDAR_LOCAL_STORAGE_KEY),
-      [],
-    );
-    if (legacy.length > 0) {
-      const migrated = await fetchJson<{ events: CalendarEvent[] }>(
-        '/api/calendar',
-        {
-          method: 'PUT',
-          body: JSON.stringify({ events: legacy, migrate: true }),
-        },
-      );
-      localStorage.removeItem(CALENDAR_LOCAL_STORAGE_KEY);
-      return migrated?.events ?? legacy;
-    }
-    return data.events;
-  }
-  localStorage.removeItem(CALENDAR_LOCAL_STORAGE_KEY);
-  return data.events;
+async function readCalendarEvents(): Promise<CalendarEvent[]> {
+  return eventsFromPayload(await fetchJson<unknown>('/api/calendar'));
 }
 
 function buildSnapshots(
@@ -170,18 +183,20 @@ function buildSnapshots(
   notes: Note[],
   events: CalendarEvent[],
 ): LocalAppSnapshots {
-  const tasks = board?.tasks ?? [];
+  const tasks = Array.isArray(board?.tasks) ? board.tasks : [];
+  const noteList = Array.isArray(notes) ? notes : [];
+  const eventList = Array.isArray(events) ? events : [];
   const openTasks = tasks.filter((t) => t.statusId !== 'status-done').length;
   const relay = safeParse<{
     messages?: Array<{ createdAt: string; title: string; sourceAppId: string }>;
   }>(localStorage.getItem('sorye:relay:config'), {});
 
   return {
-    calendarEvents: events.length,
-    upcomingEvents: countUpcomingEvents(events),
+    calendarEvents: eventList.length,
+    upcomingEvents: countUpcomingEvents(eventList),
     openTasks,
     totalTasks: tasks.length,
-    notes: notes.length,
+    notes: noteList.length,
     relayMessages: relay.messages?.length ?? 0,
   };
 }
@@ -210,7 +225,7 @@ function buildActivityFeed(
     });
   }
 
-  for (const note of notes) {
+  for (const note of Array.isArray(notes) ? notes : []) {
     items.push({
       id: `note-${note.id}`,
       at: note.updatedAt,
@@ -236,8 +251,8 @@ function buildActivityFeed(
     });
   }
 
-  for (const event of events) {
-    const date = event.dates[0];
+  for (const event of Array.isArray(events) ? events : []) {
+    const date = Array.isArray(event.dates) ? event.dates[0] : undefined;
     if (!date || !event.title) continue;
     items.push({
       id: `cal-${event.id}`,
@@ -365,8 +380,8 @@ export async function loadDashboardData(): Promise<DashboardData> {
 
   const [board, notes, calendarEvents] = await Promise.all([
     migrateTasksIfNeeded(),
-    migrateNotesIfNeeded(),
-    migrateCalendarIfNeeded(),
+    readNotes(),
+    readCalendarEvents(),
   ]);
 
   const [notesDoc, tasksDoc, calendarDoc, relayDoc] = await Promise.all([

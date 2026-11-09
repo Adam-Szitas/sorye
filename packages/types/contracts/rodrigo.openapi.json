@@ -3980,7 +3980,18 @@
           "driveFileId": {
             "type": "string",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-            "description": "Optional Hub Drive file id for a photo in the Tasks section. Rodrigo stores this id only; the bytes stay in Hub Drive."
+            "description": "Legacy single Hub Drive file id for a Tasks-section image. Rodrigo stores this id only; the bytes stay in Hub Drive. New tickets use attachmentIds. A task must not include both fields."
+          },
+          "attachmentIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "description": "Hub Drive file ids for images in the Tasks section. Rodrigo stores these ids only; the bytes stay in Hub Drive. Omit when the ticket has no images. Do not send this together with driveFileId.",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            }
           }
         }
       },
@@ -4153,7 +4164,18 @@
                 "driveFileId": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-                  "description": "Optional Hub Drive file id for a photo in the Tasks section. Rodrigo stores this id only; the bytes stay in Hub Drive."
+                  "description": "Legacy single Hub Drive file id for a Tasks-section image. Rodrigo stores this id only; the bytes stay in Hub Drive. New tickets use attachmentIds. A task must not include both fields."
+                },
+                "attachmentIds": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "description": "Hub Drive file ids for images in the Tasks section. Rodrigo stores these ids only; the bytes stay in Hub Drive. Omit when the ticket has no images. Do not send this together with driveFileId.",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                  }
                 }
               }
             }

@@ -1,7 +1,7 @@
 'use client';
 
 import { ExternalAppFrame } from '@/components/external-app-frame';
-import { MicroAppLoader } from '@/components/micro-app-loader';
+import { MicroAppLoader, preloadMicroApp } from '@/components/micro-app-loader';
 import { StandaloneAppBar } from '@/components/standalone-app-bar';
 import { HubNativeAppBody } from '@/components/hub-native-app';
 import { AppUsageGuide } from '@/components/app-usage-guide';
@@ -27,6 +27,17 @@ export default function MicroAppPage() {
   useEffect(() => {
     const catalogApp = getAppBySlug(APP_CATALOG, params.slug);
     setApp(catalogApp ?? null);
+
+    // Download the remote while the workspace check is in flight. This only
+    // fetches code: nothing below renders until `allowed` is true, and apps
+    // the catalog already rules out or reserves for admins are not fetched.
+    if (
+      catalogApp?.microFrontend &&
+      (catalogApp.status === 'available' || catalogApp.status === 'beta') &&
+      catalogApp.adminOnly !== true
+    ) {
+      preloadMicroApp(catalogApp.microFrontend);
+    }
 
     async function checkAccess() {
       const res = await fetch('/api/workspace', { credentials: 'include' });

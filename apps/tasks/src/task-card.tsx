@@ -1,4 +1,5 @@
 import { Select } from '@sorye/sdk/react';
+import { taskImageIds } from '@sorye/types';
 import type { TaskItem, TaskStatus } from './status-handler';
 import { taskPhotoUrl } from './task-photo';
 
@@ -11,7 +12,8 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, statuses, onOpen, onMove, onRemove }: TaskCardProps) {
-  const photo = taskPhotoUrl(task.driveFileId);
+  const images = taskImageIds(task);
+  const photo = taskPhotoUrl(images[0]);
 
   return (
     <article
@@ -35,6 +37,7 @@ export function TaskCard({ task, statuses, onOpen, onMove, onRemove }: TaskCardP
     >
       <div className="task-card-top">
         <button type="button" className="task-card-title" onClick={() => onOpen(task.id)}>
+          <span className="task-card-id">{task.id}</span>
           {task.title}
         </button>
         <button
@@ -51,6 +54,7 @@ export function TaskCard({ task, statuses, onOpen, onMove, onRemove }: TaskCardP
       {photo ? (
         <img className="task-card-photo" src={photo} alt="" width={320} height={180} decoding="async" draggable={false} />
       ) : null}
+      {images.length > 1 ? <p className="task-card-id">{images.length} images</p> : null}
       {task.body ? <p className="task-card-preview">{task.body}</p> : null}
 
       <div data-no-drag="">

@@ -44,7 +44,10 @@ function buildMetrics(
     APP_CATALOG,
     session.workspace.selectedAppIds,
   );
-  const connCount = session.workspace.connectedApps.length;
+  const connections = Array.isArray(session.workspace.connectedApps)
+    ? session.workspace.connectedApps
+    : [];
+  const connCount = connections.length;
 
   return [
     {
@@ -159,6 +162,9 @@ export default function App() {
   const metrics =
     session && snapshots ? buildMetrics(session, snapshots, widgets.length) : [];
   const installedApps = session ? getInstalledApps(session) : [];
+  const connections = session && Array.isArray(session.workspace.connectedApps)
+    ? session.workspace.connectedApps
+    : [];
 
   return (
     <div className="dashboard">
@@ -322,7 +328,7 @@ export default function App() {
 
               <article className="panel panel-wide">
                 <h2>API connections</h2>
-                {session.workspace.connectedApps.length === 0 ? (
+                {connections.length === 0 ? (
                   <>
                     <p className="panel-hint">
                       Outbound API connectors live under Hub → Connections →
@@ -338,7 +344,7 @@ export default function App() {
                     </button>
                   </>
                 ) : (
-                  session.workspace.connectedApps.map((conn) => (
+                  connections.map((conn) => (
                     <div key={conn.id} className="connection-placeholder">
                       <div>
                         <strong>{conn.name}</strong>

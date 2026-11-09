@@ -1,4 +1,4 @@
-import { isTaskDriveFileId } from '@sorye/types';
+import { isTaskAttachmentList, isTaskDriveFileId } from '@sorye/types';
 import { z } from 'zod';
 import { parseTasksBoard } from '@/lib/workspace-docs-validate';
 
@@ -26,11 +26,19 @@ function timestamp(value: unknown) {
 }
 function arrStrings(v: Obj, key: string, count: number, length: number) { return Array.isArray(v[key]) && v[key].length <= count && v[key].every((x) => typeof x === 'string' && x.length > 0 && x.length <= length); }
 function siteSlug(value: unknown) { return typeof value === 'string' && value.length <= 64 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value); }
+function taskImagesOk(p: Obj) {
+  const legacy = Object.hasOwn(p, 'driveFileId');
+  const listed = Object.hasOwn(p, 'attachmentIds');
+  if (legacy && listed) return false;
+  if (legacy && !isTaskDriveFileId(p.driveFileId)) return false;
+  if (listed && !isTaskAttachmentList(p.attachmentIds)) return false;
+  return true;
+}
 function validPayload(app: string, resource: string, op: string, p: Obj, resourceId: string): boolean {
   if (op === 'delete') return ['tasks:task', 'notes:note', 'calendar:event', 'canvas:board'].includes(`${app}:${resource}`) && Object.keys(p).length === 0;
   const upd = () => timestamp(p.updatedAt);
   switch (`${app}:${resource}:${op}`) {
-    case 'tasks:task:create': case 'tasks:task:update': return exact(p, ['id','title','body','statusId','createdAt','updatedAt'], ['driveFileId']) && p.id === resourceId && str(p,'title',1,500) && str(p,'body',0,20000) && str(p,'statusId',1,128) && (p.driveFileId === undefined || isTaskDriveFileId(p.driveFileId)) && timestamp(p.createdAt) && upd();
+    case 'tasks:task:create': case 'tasks:task:update': return exact(p, ['id','title','body','statusId','createdAt','updatedAt'], ['driveFileId','attachmentIds']) && taskImagesOk(p) && p.id === resourceId && str(p,'title',1,500) && str(p,'body',0,20000) && str(p,'statusId',1,128) && timestamp(p.createdAt) && upd();
     case 'tasks:taskBoard:create': case 'tasks:taskBoard:update': {
       if (!exact(p,['statuses','tasks']) || !Array.isArray(p.statuses) || !Array.isArray(p.tasks) || p.statuses.length < 1 || p.statuses.length > 30 || p.tasks.length > 500) return false;
       const ids = new Set<string>();
@@ -38,7 +46,7 @@ function validPayload(app: string, resource: string, op: string, p: Obj, resourc
         if (!exact(s,['id','name','color','order']) || !str(s,'id',1,128) || !str(s,'name',1,128) || !str(s,'color',1,32) || !Number.isInteger(s.order) || (s.order as number) < 0 || (s.order as number) > 1000 || ids.has(s.id as string)) return false;
         ids.add(s.id as string);
       }
-      return p.tasks.every((t) => exact(t,['id','title','body','statusId','createdAt','updatedAt'], ['driveFileId']) && str(t,'id',1,160) && str(t,'title',1,500) && str(t,'body',0,20000) && typeof t.statusId === 'string' && ids.has(t.statusId) && (t.driveFileId === undefined || isTaskDriveFileId(t.driveFileId)) && timestamp(t.createdAt) && timestamp(t.updatedAt));
+      return p.tasks.every((t) => exact(t,['id','title','body','statusId','createdAt','updatedAt'], ['driveFileId','attachmentIds']) && taskImagesOk(t) && str(t,'id',1,160) && str(t,'title',1,500) && str(t,'body',0,20000) && typeof t.statusId === 'string' && ids.has(t.statusId) && timestamp(t.createdAt) && timestamp(t.updatedAt));
     }
     case 'notes:note:create': case 'notes:note:update': return exact(p,['id','title','body','updatedAt']) && p.id === resourceId && str(p,'title',0,500) && str(p,'body',0,100000) && upd();
     case 'calendar:event:create': case 'calendar:event:update': return exact(p,['id','title','kind','dates'],['startTime','endTime']) && p.id === resourceId && str(p,'title',1,500) && ['timed','allDay','multiDate'].includes(String(p.kind)) && Array.isArray(p.dates) && p.dates.length > 0 && p.dates.length <= 366 && p.dates.every((d) => typeof d === 'string' && isCalendarDate(d)) && ['startTime','endTime'].every((k) => p[k] === undefined || (typeof p[k] === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(p[k] as string)));

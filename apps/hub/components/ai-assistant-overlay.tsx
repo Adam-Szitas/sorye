@@ -94,10 +94,14 @@ export function AiAssistantOverlay({
   const [busy, setBusy] = useState(false);
   const [gpuNotice, setGpuNotice] = useState<string | null>(null);
 
-  const loadContext = useCallback(async () => {
+  const loadLocalPreference = useCallback(() => {
     const localPref = readLocalGpuPreference();
     setPreference(localPref);
     void probeWebGpu(localPref.webGpuPowerPreference).then(setWebGpu);
+  }, []);
+
+  const loadContext = useCallback(async () => {
+    loadLocalPreference();
 
     try {
       const [toolsRes, prefRes] = await Promise.all([
@@ -125,15 +129,18 @@ export function AiAssistantOverlay({
     } catch {
       // Keep local preference if server is temporarily unreachable.
     }
-  }, []);
+  }, [loadLocalPreference]);
 
+  // The shell mounts this overlay closed on every page. The tool list and the
+  // server preference are only read when it opens (effect below), so they do
+  // not compete with the calls the page itself needs.
   useEffect(() => {
-    void loadContext();
+    loadLocalPreference();
     return subscribeGpuPreference((next) => {
       setPreference(next);
       void probeWebGpu(next.webGpuPowerPreference).then(setWebGpu);
     });
-  }, [loadContext]);
+  }, [loadLocalPreference]);
 
   useEffect(() => {
     if (!open) return;

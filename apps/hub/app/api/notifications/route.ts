@@ -38,9 +38,16 @@ export async function GET() {
   const otherUnread = [...load.personal, ...load.work]
     .filter((group) => group.workspace.id !== session.workspace.id)
     .reduce((sum, group) => sum + group.items.filter((item) => !item.value.read).length, 0);
+  const unreadByApp: Record<string, number> = {};
+  let currentUnread = 0;
+  for (const notice of notifications) {
+    if (notice.read) continue;
+    unreadByApp[notice.appId] = (unreadByApp[notice.appId] ?? 0) + 1;
+    currentUnread += 1;
+  }
 
   return NextResponse.json(
-    { ...snapshot, notifications, load, unreadTotal: snapshot.unreadTotal + otherUnread },
+    { ...snapshot, notifications, load, unreadByApp, unreadTotal: currentUnread + otherUnread },
     { headers: { ...timings.headers(), 'Cache-Control': 'private, no-store' } },
   );
 }

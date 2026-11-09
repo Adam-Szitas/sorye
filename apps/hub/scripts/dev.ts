@@ -2,10 +2,13 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadHubEnv } from '../lib/workers/load-hub-env';
+import { startRouteManifestShim } from './route-loadable-manifests';
 
 loadHubEnv();
 
 const hubRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Removes a fixed 200 ms wait from every route-handler request in Turbopack dev.
+const stopRouteManifestShim = startRouteManifestShim(hubRoot);
 const postgres = process.env.STORE_DRIVER === 'postgres';
 let stopping = false;
 let workerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -28,7 +31,8 @@ function stopChild(child: ChildProcess | null) {
   child.kill('SIGTERM');
 }
 
-const next = start('next', ['dev', '--turbopack', '--port', '3000']);
+// Extra arguments go to `next dev`, e.g. `--hostname 0.0.0.0` inside the sandbox container.
+const next = start('next', ['dev', '--turbopack', '--port', '3000', ...process.argv.slice(2)]);
 let worker: ChildProcess | null = null;
 
 function startWorker() {
@@ -47,6 +51,7 @@ if (postgres) startWorker();
 function stop(code: number) {
   if (stopping) return;
   stopping = true;
+  stopRouteManifestShim();
   if (workerTimer) clearTimeout(workerTimer);
   stopChild(worker);
   stopChild(next);

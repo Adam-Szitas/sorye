@@ -13,6 +13,7 @@ export function createNotesStorage() {
   let load: UserLoadPartition<Note> | undefined;
   let workspace: UserLoadWorkspace | undefined;
   const queues = new Map<string, DurableActionQueue<RodrigoAction>>();
+  let commitTail: Promise<void> = Promise.resolve();
   const conflictDraftKey = () => `sorye:notes:conflict-draft:v1:${activeScope ?? 'unscoped'}`;
 
   class ApiError extends Error { constructor(readonly status: number, message: string) { super(message); } }
@@ -100,6 +101,18 @@ export function createNotesStorage() {
   async function loadNotes(): Promise<Note[]> { return (await loadSnapshot()).notes; }
 
   async function saveNotes(next: Note[]): Promise<Note[]> {
+    const previous = commitTail;
+    let release: () => void = () => undefined;
+    commitTail = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await commitNotes(next);
+    } finally {
+      release();
+    }
+  }
+
+  async function commitNotes(next: Note[]): Promise<Note[]> {
     const q = await getQueue();
     const nextById = new Map(next.map((note) => [note.id, note]));
     const actions: RodrigoAction[] = [];

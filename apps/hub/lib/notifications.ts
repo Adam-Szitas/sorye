@@ -6,8 +6,9 @@ import {
   type WorkspaceNotification,
 } from '@sorye/types';
 import {
-  countMessengerUnread,
+  listMessengerUnreadNotices,
   markMessengerRead,
+  markMessengerUnreadNotices,
 } from '@/lib/messenger-unread';
 import { jsonDataFile } from '@/lib/store/json-file';
 
@@ -153,28 +154,32 @@ export async function getNotificationSnapshot(input: {
     readReadState(input.workspaceId),
     getNotificationSettings(input.workspaceId, input.userId),
   ]);
-  const notifications = (store[input.workspaceId] ?? [])
-    .filter((notice) => !notice.userId || notice.userId === input.userId)
-    .slice(0, input.limit ?? 50);
   const readIds = readIdsForUser(readStore, input.workspaceId, input.userId);
+  const messengerNotices = await listMessengerUnreadNotices(input.userId, input.workspaceId);
+  const stored = (store[input.workspaceId] ?? [])
+    .filter((notice) => !notice.userId || notice.userId === input.userId);
+  const notifications = [
+    ...messengerNotices.map((notice) => ({
+      id: notice.id,
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      appId: 'messenger',
+      title: notice.title,
+      body: notice.body,
+      channelId: notice.channelId,
+      createdAt: notice.createdAt,
+    })),
+    ...stored,
+  ].slice(0, input.limit ?? 50);
   const { unreadByApp, unreadTotal } = unreadCounts(notifications, readIds);
-
-  const messengerUnread = await countMessengerUnread(
-    input.userId,
-    input.workspaceId,
-  );
-  if (messengerUnread > 0) {
-    unreadByApp.messenger = (unreadByApp.messenger ?? 0) + messengerUnread;
-  }
-  const mergedUnreadTotal = unreadTotal + messengerUnread;
 
   return {
     notifications: notifications.map((n) => ({
       ...n,
-      read: readIds.has(n.id),
+      read: n.id.startsWith('msgu:') ? false : readIds.has(n.id),
     })),
     unreadByApp,
-    unreadTotal: mergedUnreadTotal,
+    unreadTotal,
     settings,
   };
 }
@@ -189,10 +194,20 @@ export async function markNotificationsRead(input: {
   const notificationsStore = await readNotifications(input.workspaceId);
   const notifications = notificationsStore[input.workspaceId] ?? [];
 
+  const requestedIds = input.notificationIds ?? [];
+  const messengerNoticeIds = requestedIds.filter((id) => id.startsWith('msgu:'));
+  const storedIds = requestedIds.filter((id) => !id.startsWith('msgu:'));
+
   if (input.all || input.appId === 'messenger') {
     await markMessengerRead({
       userId: input.userId,
       workspaceId: input.workspaceId,
+    });
+  } else if (messengerNoticeIds.length > 0) {
+    await markMessengerUnreadNotices({
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      noticeIds: messengerNoticeIds,
     });
   }
 
@@ -205,8 +220,8 @@ export async function markNotificationsRead(input: {
       for (const n of notifications) {
         if (n.appId === input.appId) readIds.add(n.id);
       }
-    } else if (input.notificationIds) {
-      for (const id of input.notificationIds) readIds.add(id);
+    } else if (storedIds.length > 0) {
+      for (const id of storedIds) readIds.add(id);
     }
 
     readStore[input.workspaceId] = {

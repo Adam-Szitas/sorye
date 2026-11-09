@@ -76,12 +76,24 @@
 }
 
 .btn-primary,
+.btn-ghost,
 .btn-danger {
   border: none;
   border-radius: 0.75rem;
   font: inherit;
   font-weight: 500;
   cursor: pointer;
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1f5f9;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .btn-sm {
@@ -125,6 +137,14 @@
   color: inherit;
   padding: 0.55rem 0.75rem;
   font: inherit;
+  font-size: 1rem;
+  min-height: 2.75rem;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible {
+  outline: 3px solid #fbbf24;
+  outline-offset: 2px;
 }
 
 .field textarea {
@@ -204,6 +224,11 @@
   line-height: 1.4;
 }
 
+.notes-editor-panel {
+  display: flex;
+  flex-direction: column;
+}
+
 .notes-editor-toolbar {
   display: flex;
   align-items: flex-end;
@@ -242,6 +267,13 @@
   color: #64748b;
 }
 
+.notes-list-empty {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #94a3b8;
+}
+
 .notes-empty {
   display: flex;
   flex-direction: column;
@@ -255,4 +287,33 @@
 
 .notes-empty p {
   margin: 0;
+}
+
+.notes-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.notes-status {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.notes-status[role='alert'] {
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+}
+
+.notes-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
 import { useKernel, useSignalValue, UserLoadSections } from '@sorye/platform/react';
-import type { TaskItem, UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
+import { findTaskByTicketId, taskImageIds, ticketIdFromInput, type TaskItem, type UserLoadPartition, type UserLoadWorkspace } from '@sorye/types';
 import { StatusHandler, taskMatchesQuery } from './status-handler';
 import { createDefaultBoard, createTasksStorage } from './tasks-storage';
 import { KanbanBoard } from './kanban-board';
@@ -13,6 +13,15 @@ import { createTasksUi } from './tasks-ui';
 import type { TasksBoard } from './tasks-storage';
 import type { KernelClient } from '@sorye/platform';
 import './styles.css';
+
+function writeTicketSearch(id: string | null) {
+  const url = new URL(window.location.href);
+  if (id) url.searchParams.set('ticket', id);
+  else url.searchParams.delete('ticket');
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (current !== next) window.history.replaceState(window.history.state, '', next);
+}
 
 function emitTaskDiff(kernel: KernelClient, prev: TasksBoard, next: TasksBoard) {
   const prevById = new Map(prev.tasks.map((t) => [t.id, t]));
@@ -38,7 +47,8 @@ function emitTaskDiff(kernel: KernelClient, prev: TasksBoard, next: TasksBoard) 
       });
       continue;
     }
-    if (before.title !== task.title || before.body !== task.body || before.driveFileId !== task.driveFileId) {
+    const sameImages = taskImageIds(before).join('\0') === taskImageIds(task).join('\0');
+    if (before.title !== task.title || before.body !== task.body || !sameImages) {
       void emitTaskEvent(kernel, 'sorye.task.updated', {
         title: `Task updated: ${task.title}`,
         appId: 'tasks',
@@ -67,6 +77,9 @@ export default function App() {
   const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
   const [taskLoad, setTaskLoad] = useState<UserLoadPartition<TaskItem> | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [ticketQuery, setTicketQuery] = useState('');
+  const [ticketError, setTicketError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [taskWorkspace, setTaskWorkspace] = useState<UserLoadWorkspace | null>(null);
 
   const refreshQueueState = useCallback(async () => {
@@ -100,8 +113,11 @@ export default function App() {
         setLoadState('ready');
         await refreshQueueState();
       })
-      .catch(() => {
-        if (!cancelled) setLoadState('error');
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error && err.message ? err.message : 'Could not load tasks from the workspace.');
+          setLoadState('error');
+        }
       });
     return () => {
       cancelled = true;
@@ -207,6 +223,39 @@ export default function App() {
     }
   }, [board, handler, kernel, refreshQueueState, saveBoard, storage]);
 
+  const openTicket = useCallback((raw: string) => {
+    const id = ticketIdFromInput(raw);
+    if (!id) {
+      setTicketError('Enter a ticket id from this workspace.');
+      setEditingId(null);
+      return;
+    }
+    const task = findTaskByTicketId(board.tasks, id);
+    if (!task) {
+      setTicketError(id.length > 80 ? 'No task with that id is on this workspace board.' : `No task with id “${id}” is on this workspace board.`);
+      setEditingId(null);
+      return;
+    }
+    setTicketError(null);
+    ui.state.panel.value = 'board';
+    setEditingId(task.id);
+    writeTicketSearch(task.id);
+  }, [board.tasks, ui]);
+
+  const openedTicket = useRef<string | null>(null);
+  useEffect(() => {
+    if (loadState !== 'ready') return;
+    const raw = new URLSearchParams(window.location.search).get('ticket');
+    if (!raw) {
+      openedTicket.current = null;
+      return;
+    }
+    const id = ticketIdFromInput(raw);
+    if (!id || openedTicket.current === id) return;
+    openedTicket.current = id;
+    openTicket(raw);
+  }, [loadState, openTicket]);
+
   const editingTask = board.tasks.find((task) => task.id === editingId) ?? null;
 
   const addTask = () => {
@@ -253,7 +302,7 @@ export default function App() {
       ) : null}
       {loadState === 'error' ? (
         <p className="search-results-meta" role="alert">
-          Could not load tasks from the workspace.
+          {loadError ?? 'Could not load tasks from the workspace.'}
         </p>
       ) : null}
       {saveError ? (
@@ -332,6 +381,30 @@ export default function App() {
             ) : null}
           </div>
 
+          <form
+            className="tasks-toolbar"
+            onSubmit={(event) => {
+              event.preventDefault();
+              openTicket(ticketQuery);
+            }}
+          >
+            <label className="field field-grow">
+              Open ticket
+              <input
+                type="text"
+                placeholder="Paste a ticket id"
+                value={ticketQuery}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setTicketQuery(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="btn-ghost">Open</button>
+          </form>
+          {ticketError ? (
+            <p className="search-results-meta" role="alert">{ticketError}</p>
+          ) : null}
+
           <div className="tasks-toolbar">
             <label className="field field-grow">
               New task
@@ -356,14 +429,18 @@ export default function App() {
             handler={handler}
             searchQuery={searchQuery}
             onChange={apply}
-            onOpen={setEditingId}
+            onOpen={openTicket}
           />
           {editingTask ? (
             <TaskEditor
               key={editingTask.id}
               task={editingTask}
+              statuses={handler.getStatuses()}
               onPersist={persistTask}
-              onClose={() => setEditingId(null)}
+              onClose={() => {
+                setEditingId(null);
+                writeTicketSearch(null);
+              }}
             />
           ) : null}
         </>

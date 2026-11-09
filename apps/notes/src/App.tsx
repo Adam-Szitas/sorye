@@ -6,6 +6,8 @@ import { createNotesStorage, type Note } from './notes-storage';
 import { emitWorkspaceEvent } from './emit-event';
 import './styles.css';
 
+const DRAFT_SAVE_MS = 450;
+
 function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short',
@@ -13,6 +15,24 @@ function formatWhen(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function NoteButton({
+  note,
+  active,
+  onClick,
+}: {
+  note: Note;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={active ? 'active' : undefined} onClick={onClick}>
+      <strong>{note.title || 'Untitled'}</strong>
+      <span>{formatWhen(note.updatedAt)}</span>
+      <p>{note.body.slice(0, 80) || 'Empty note'}</p>
+    </button>
+  );
 }
 
 export default function App() {
@@ -31,6 +51,7 @@ export default function App() {
   const emitTimer = useRef<number | null>(null);
   const persistTimer = useRef<number | null>(null);
   const pendingNotes = useRef<Note[] | null>(null);
+  const flushDraftRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +76,10 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => () => { if (emitTimer.current) window.clearTimeout(emitTimer.current); }, []);
+  useEffect(() => () => {
+    if (emitTimer.current) window.clearTimeout(emitTimer.current);
+    flushDraftRef.current();
+  }, []);
 
   useEffect(() => {
     const flushBestEffort = async () => {
@@ -65,12 +89,13 @@ export default function App() {
     };
     const unregister = registerPendingActionFlusher('notes', flushBestEffort);
     const refreshPending = () => { void storage.queueState().then(setQueueStatus).catch(() => undefined); };
-    const onVisibility = () => { if (document.visibilityState === 'hidden') flushBestEffort(); else refreshPending(); };
-    window.addEventListener('pagehide', flushBestEffort);
+    const onVisibility = () => { if (document.visibilityState === 'hidden') { flushDraftRef.current(); flushBestEffort(); } else refreshPending(); };
+    const onPageHide = () => { flushDraftRef.current(); flushBestEffort(); };
+    window.addEventListener('pagehide', onPageHide);
     window.addEventListener('sorye:logout-flush', flushBestEffort);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      window.removeEventListener('pagehide', flushBestEffort);
+      window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('sorye:logout-flush', flushBestEffort);
       document.removeEventListener('visibilitychange', onVisibility);
       unregister();
@@ -103,18 +128,46 @@ export default function App() {
     setActiveId(noteId);
   };
 
-  const persist = useCallback((next: Note[], _immediate = false) => {
+  const persist = useCallback((next: Note[], immediate = false) => {
     setNotes(next);
-    // Save immediately: saveNotes durably queues action IDs before its first network send.
-    void saveNotes(next).then(
-        () => { setSaveError(null); setConflictDraftAvailable(false); return storage.queueState(); },
+    pendingNotes.current = next;
+    // Clear a previous failure while the draft is still being typed.
+    if (!immediate) setSaveError(null);
+    if (persistTimer.current) window.clearTimeout(persistTimer.current);
+    persistTimer.current = window.setTimeout(() => {
+      persistTimer.current = null;
+      const snapshot = pendingNotes.current;
+      if (!snapshot) return;
+      pendingNotes.current = null;
+      void saveNotes(snapshot).then(
+        () => {
+          if (pendingNotes.current) return null;
+          setSaveError(null);
+          setConflictDraftAvailable(false);
+          return storage.queueState();
+        },
         (err: unknown) => {
+          if (pendingNotes.current) return null;
           setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
           setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
           return storage.queueState();
         },
-      ).then(setQueueStatus).catch(() => undefined);
+      ).then((status) => {
+        if (status) setQueueStatus(status);
+      }).catch(() => undefined);
+    }, immediate ? 0 : DRAFT_SAVE_MS);
   }, [saveNotes, storage]);
+
+  flushDraftRef.current = () => {
+    if (persistTimer.current) {
+      window.clearTimeout(persistTimer.current);
+      persistTimer.current = null;
+    }
+    const snapshot = pendingNotes.current;
+    if (!snapshot) return;
+    pendingNotes.current = null;
+    void saveNotes(snapshot);
+  };
 
   const resendPending = async () => {
     try {
@@ -203,6 +256,9 @@ export default function App() {
     setActiveId(next[0]?.id ?? null);
   };
 
+  const attention = queueStatus.pending + queueStatus.failed + queueStatus.conflicts + queueStatus.rejected;
+  const saveStatusId = saveError ? 'note-save-status' : undefined;
+
   return (
     <div className="notes-app">
       {loadState === 'loading' ? (
@@ -212,21 +268,6 @@ export default function App() {
         <p className="notes-empty" role="alert">
           Could not load notes from the workspace.
         </p>
-      ) : null}
-      {saveError ? (
-        <div className="notes-empty" role="alert">
-          {saveError}
-          {conflictDraftAvailable ? <div className="notes-list-toolbar">
-            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
-            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
-          </div> : null}
-        </div>
-      ) : null}
-      {queueStatus.pending + queueStatus.failed + queueStatus.conflicts + queueStatus.rejected > 0 ? (
-        <div className="notes-empty" role="status">
-          {queueStatus.pending + queueStatus.failed} note action(s) await Rodrigo; {queueStatus.conflicts} conflict(s); {queueStatus.rejected} rejected.
-          {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
-        </div>
       ) : null}
 
       {loadState === 'ready' ? (
@@ -248,32 +289,47 @@ export default function App() {
                   <ul className="notes-list">
                     {items.map((item) => (
                       <li key={`${item.workspaceId}:${item.value.id}`}>
-                        <button
-                          type="button"
-                          className={item.value.id === activeId && item.workspaceId === workspaceId ? 'active' : undefined}
+                        <NoteButton
+                          note={item.value}
+                          active={item.value.id === activeId && item.workspaceId === workspaceId}
                           onClick={() => void openListed(item.workspaceId, item.value.id)}
-                        >
-                          <strong>{item.value.title || 'Untitled'}</strong>
-                          <span>{formatWhen(item.value.updatedAt)}</span>
-                          <p>{item.value.body.slice(0, 80) || 'Empty note'}</p>
-                        </button>
+                        />
                       </li>
                     ))}
                   </ul>
                 )}
               />
-            ) : null}
+            ) : notes.length > 0 ? (
+              <ul className="notes-list">
+                {notes.map((note) => (
+                  <li key={note.id}>
+                    <NoteButton
+                      note={note}
+                      active={note.id === activeId}
+                      onClick={() => setActiveId(note.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="notes-list-empty">No notes in this workspace.</p>
+            )}
           </section>
 
           <section className="notes-panel notes-editor-panel">
             {activeNote ? (
               <>
                 <div className="notes-editor-toolbar">
-                  <label className="field field-grow">
+                  <label className="field field-grow" htmlFor="note-title">
                     Title
                     <input
+                      id="note-title"
+                      name="title"
                       type="text"
+                      autoComplete="off"
+                      enterKeyHint="next"
                       value={activeNote.title}
+                      aria-describedby={saveStatusId}
                       onChange={(e) => updateActive({ title: e.target.value })}
                     />
                   </label>
@@ -282,10 +338,13 @@ export default function App() {
                   </button>
                 </div>
 
-                <label className="field">
+                <label className="field" htmlFor="note-body">
                   Body
                   <textarea
+                    id="note-body"
+                    name="body"
                     value={activeNote.body}
+                    aria-describedby={saveStatusId}
                     onChange={(e) => updateActive({ body: e.target.value })}
                     placeholder="Write your note..."
                     rows={14}
@@ -304,6 +363,26 @@ export default function App() {
                 </button>
               </div>
             )}
+
+            {saveError || attention > 0 ? (
+              <div className="notes-alerts" aria-live="polite">
+                {saveError ? (
+                  <div className="notes-status" id="note-save-status" role="alert">
+                    {saveError}
+                    {conflictDraftAvailable ? <div className="notes-status-actions">
+                      <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
+                      <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+                    </div> : null}
+                  </div>
+                ) : null}
+                {attention > 0 ? (
+                  <div className="notes-status" role="status">
+                    {queueStatus.pending + queueStatus.failed} note action(s) await Rodrigo; {queueStatus.conflicts} conflict(s); {queueStatus.rejected} rejected.
+                    {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

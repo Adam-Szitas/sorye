@@ -92,6 +92,10 @@ export function NotificationCenter() {
   if (!centerOpen) return null;
 
   const toastApps = toastAppOptions(settings);
+  const groupedCount = [...load.personal, ...load.work].reduce(
+    (sum, group) => sum + group.items.length,
+    0,
+  );
 
   return (
     <>
@@ -183,13 +187,7 @@ export function NotificationCenter() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {load.personal.length + load.work.length === 0 ? (
-            <p className="p-4 text-center text-sm text-[var(--color-text-muted)]">
-              {notifications.length === 0
-                ? 'No notifications yet. Turn on App events and use OCR, Tasks, or Calendar — activity will show here and on app badges.'
-                : 'No personal or work notices.'}
-            </p>
-          ) : (
+          {groupedCount > 0 ? (
             <UserLoadSections
               load={load}
               empty="No notices in this workspace."
@@ -207,6 +205,21 @@ export function NotificationCenter() {
                 </ul>
               )}
             />
+          ) : notifications.length > 0 ? (
+            <ul>
+              {notifications.map((item) => (
+                <li key={item.id}>
+                  <NoticeButton
+                    item={item}
+                    onOpen={() => openNotification(item)}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="p-4 text-center text-sm text-[var(--color-text-muted)]">
+              No notifications yet. Turn on App events and use OCR, Tasks, or Calendar — activity will show here and on app badges.
+            </p>
           )}
         </div>
       </aside>

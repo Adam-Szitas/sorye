@@ -34,7 +34,12 @@ function load(file, mocks = {}) {
     if (name in mocks) return mocks[name];
     if (name === '@/lib/store/json-file') return { jsonDataFile };
     if (name === '@/lib/messenger-unread') {
-      return { countMessengerUnread: async () => 0, markMessengerRead: async () => {} };
+      return {
+        countMessengerUnread: async () => 0,
+        listMessengerUnreadNotices: async () => [],
+        markMessengerRead: async () => {},
+        markMessengerUnreadNotices: async () => {},
+      };
     }
     if (name === '@/lib/store/ocr-analyses') return mocks.ocr;
     if (name === '@sorye/types') return load('../../../../packages/types/src/notifications.ts', mocks);

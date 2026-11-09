@@ -1,5 +1,7 @@
 import {
   createDefaultTasksBoard,
+  taskForStorage,
+  taskImageIds,
   type TaskItem,
   type TaskStatus,
   type TasksBoard,
@@ -8,7 +10,18 @@ import {
 export type { TaskItem, TaskStatus, TasksBoard };
 
 export type StatusPatch = Partial<Pick<TaskStatus, 'name' | 'color'>>;
-export type TaskPatch = Partial<Pick<TaskItem, 'title' | 'body' | 'driveFileId'>>;
+export type TaskPatch = Partial<Pick<TaskItem, 'title' | 'body' | 'statusId' | 'attachmentIds'>>;
+
+/** Stable board id. Retries when the short id is already on this workspace board. */
+export function allocateTaskId(existing: ReadonlySet<string>, next: () => string = () => crypto.randomUUID()): string {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const id = `task-${next().slice(0, 8)}`;
+    if (!existing.has(id)) return id;
+  }
+  const id = `task-${next()}`;
+  if (existing.has(id)) throw new Error('Could not allocate a unique task id');
+  return id;
+}
 
 const STATUS_COLORS = [
   '#64748b',
@@ -39,9 +52,12 @@ function touchTask(task: TaskItem): TaskItem {
   return { ...task, updatedAt: new Date().toISOString() };
 }
 
-function applyTaskPatch(task: TaskItem, patch: TaskPatch): TaskItem {
-  const next = touchTask({ ...task, ...patch });
-  if ('driveFileId' in patch && patch.driveFileId === undefined) delete next.driveFileId;
+function applyTaskPatch(task: TaskItem, patch: TaskPatch, statusId: string): TaskItem {
+  const images = 'attachmentIds' in patch ? (patch.attachmentIds ?? []) : taskImageIds(task);
+  const next: TaskItem = touchTask({ ...task, ...patch, statusId });
+  delete next.driveFileId;
+  if (images.length > 0) next.attachmentIds = [...images];
+  else delete next.attachmentIds;
   return next;
 }
 
@@ -85,7 +101,7 @@ export class StatusHandler {
       ...this.board,
       tasks: this.board.tasks.map((task) =>
         task.id === taskId
-          ? touchTask({ ...task, statusId })
+          ? taskForStorage(touchTask({ ...task, statusId }))
           : task,
       ),
     });
@@ -103,7 +119,7 @@ export class StatusHandler {
 
     const now = new Date().toISOString();
     const task: TaskItem = {
-      id: `task-${crypto.randomUUID().slice(0, 8)}`,
+      id: allocateTaskId(new Set(this.board.tasks.map((item) => item.id))),
       title: trimmed,
       body: '',
       statusId: targetStatus.id,
@@ -120,9 +136,11 @@ export class StatusHandler {
   updateTask(taskId: string, patch: TaskPatch): StatusHandler {
     return new StatusHandler({
       ...this.board,
-      tasks: this.board.tasks.map((task) =>
-        task.id === taskId ? applyTaskPatch(task, patch) : task,
-      ),
+      tasks: this.board.tasks.map((task) => {
+        if (task.id !== taskId) return task;
+        const statusId = patch.statusId && this.getStatus(patch.statusId) ? patch.statusId : task.statusId;
+        return applyTaskPatch(task, patch, statusId);
+      }),
     });
   }
 

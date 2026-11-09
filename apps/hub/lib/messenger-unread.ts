@@ -1,4 +1,4 @@
-import { messengerReadSummary } from '@/lib/store/messenger-summary';
+import { listMessengerUnreadPreviews, messengerReadSummary } from '@/lib/store/messenger-summary';
 import { jsonDataFile } from '@/lib/store/json-file';
 
 /** workspaceId → userId → channelId → last-read ISO timestamp */
@@ -20,6 +20,61 @@ function readMap(
   userId: string,
 ): Record<string, string> {
   return store[workspaceId]?.[userId] ?? {};
+}
+
+const MESSENGER_NOTICE_PREFIX = 'msgu:';
+
+export async function listMessengerUnreadNotices(
+  userId: string,
+  workspaceId: string,
+): Promise<Array<{ id: string; channelId: string; title: string; body: string; createdAt: string }>> {
+  const store = await readStore(workspaceId);
+  const previews = await listMessengerUnreadPreviews(
+    userId,
+    workspaceId,
+    readMap(store, workspaceId, userId),
+  );
+  return previews.map((item) => ({
+    id: `${MESSENGER_NOTICE_PREFIX}${item.id}`,
+    channelId: item.channelId,
+    title: item.channelName.slice(0, 200) || 'Messenger',
+    body: item.body,
+    createdAt: item.createdAt,
+  }));
+}
+
+export async function markMessengerUnreadNotices(input: {
+  userId: string;
+  workspaceId: string;
+  noticeIds: string[];
+}): Promise<void> {
+  const wanted = new Set(
+    input.noticeIds
+      .filter((id) => id.startsWith(MESSENGER_NOTICE_PREFIX))
+      .map((id) => id.slice(MESSENGER_NOTICE_PREFIX.length))
+      .filter((id) => id.length > 0 && id.length <= 160),
+  );
+  if (wanted.size === 0) return;
+  const store = await readStore(input.workspaceId);
+  const previews = await listMessengerUnreadPreviews(
+    input.userId,
+    input.workspaceId,
+    readMap(store, input.workspaceId, input.userId),
+  );
+  const through = new Map<string, string>();
+  for (const item of previews) {
+    if (!wanted.has(item.id)) continue;
+    const previous = through.get(item.channelId);
+    if (!previous || item.createdAt > previous) through.set(item.channelId, item.createdAt);
+  }
+  for (const [channelId, stamp] of through) {
+    await markMessengerRead({
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      channelId,
+      through: stamp,
+    });
+  }
 }
 
 export async function countMessengerUnread(

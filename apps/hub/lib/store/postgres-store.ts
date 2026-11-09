@@ -40,11 +40,15 @@ async function loadWorkspaceRow(
   memberIds: string[],
 ): Promise<Workspace | null> {
   const db = getDb();
-  const [row] = await db
-    .select()
-    .from(schema.workspaces)
-    .where(eq(schema.workspaces.id, workspaceId))
-    .limit(1);
+  // Two independent reads keyed by the same workspace id: one wait, not two.
+  const [[row], connectedApps] = await Promise.all([
+    db
+      .select()
+      .from(schema.workspaces)
+      .where(eq(schema.workspaces.id, workspaceId))
+      .limit(1),
+    loadConnections(workspaceId),
+  ]);
 
   if (!row) return null;
 
@@ -75,16 +79,21 @@ async function loadWorkspaceRow(
     stripeCustomerId: row.stripeCustomerId ?? undefined,
     stripeSubscriptionId: row.stripeSubscriptionId ?? undefined,
     selectedAppIds: row.selectedAppIds,
-    connectedApps: await loadConnections(row.id),
+    connectedApps,
     storage,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-async function loadTeamWorkspaceIds(userId: string): Promise<string[]> {
+/** Team workspaces the user is a member of, read from the membership table. */
+async function loadTeamWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
   const db = getDb();
-  const rows = await db
-    .select({ id: schema.workspaces.id })
+  return db
+    .select({
+      id: schema.workspaces.id,
+      kind: schema.workspaces.kind,
+      name: schema.workspaces.name,
+    })
     .from(schema.workspaceMembers)
     .innerJoin(
       schema.workspaces,
@@ -96,8 +105,48 @@ async function loadTeamWorkspaceIds(userId: string): Promise<string[]> {
         eq(schema.workspaces.kind, 'team'),
       ),
     );
+}
 
+async function loadTeamWorkspaceIds(userId: string): Promise<string[]> {
+  const rows = await loadTeamWorkspaces(userId);
   return rows.map((row) => row.id);
+}
+
+async function loadWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummary | undefined> {
+  const [row] = await getDb()
+    .select({
+      id: schema.workspaces.id,
+      kind: schema.workspaces.kind,
+      name: schema.workspaces.name,
+    })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return row;
+}
+
+function hubUserFromRow(
+  userRow: typeof schema.users.$inferSelect,
+  teams: WorkspaceSummary[],
+): HubUser {
+  return {
+    id: userRow.id,
+    email: userRow.email,
+    displayName: userRow.displayName,
+    image: userRow.image ?? undefined,
+    personalWorkspaceId: userRow.personalWorkspaceId,
+    teamWorkspaceIds: teams.map((team) => team.id),
+    activeWorkspaceId: userRow.activeWorkspaceId,
+    isAdmin: userRow.isAdmin,
+  };
+}
+
+/** Personal workspace first, then team memberships, as the session has always listed them. */
+function workspaceSummaries(
+  personal: WorkspaceSummary | undefined,
+  teams: WorkspaceSummary[],
+): WorkspaceSummary[] {
+  return personal ? [personal, ...teams] : [...teams];
 }
 
 async function loadMemberIds(workspaceId: string): Promise<string[]> {
@@ -111,41 +160,30 @@ async function loadMemberIds(workspaceId: string): Promise<string[]> {
 }
 
 async function buildHubUser(userRow: typeof schema.users.$inferSelect): Promise<HubUser> {
-  return {
-    id: userRow.id,
-    email: userRow.email,
-    displayName: userRow.displayName,
-    image: userRow.image ?? undefined,
-    personalWorkspaceId: userRow.personalWorkspaceId,
-    teamWorkspaceIds: await loadTeamWorkspaceIds(userRow.id),
-    activeWorkspaceId: userRow.activeWorkspaceId,
-    isAdmin: userRow.isAdmin,
-  };
+  return hubUserFromRow(userRow, await loadTeamWorkspaces(userRow.id));
 }
 
+/**
+ * The session reads do not depend on one another, so they run as one concurrent
+ * wave. Run in sequence they cost one database round trip each, plus one per
+ * workspace, on every authenticated request.
+ */
 async function buildSession(
   userRow: typeof schema.users.$inferSelect,
 ): Promise<HubSession | null> {
-  const user = await buildHubUser(userRow);
-  const memberIds = await loadMemberIds(user.activeWorkspaceId);
-  const workspace = await loadWorkspaceRow(user.activeWorkspaceId, memberIds);
+  const [teams, personal, memberIds, workspace] = await Promise.all([
+    loadTeamWorkspaces(userRow.id),
+    loadWorkspaceSummary(userRow.personalWorkspaceId),
+    loadMemberIds(userRow.activeWorkspaceId),
+    loadWorkspaceRow(userRow.activeWorkspaceId, []),
+  ]);
   if (!workspace) return null;
 
-  const summaries: WorkspaceSummary[] = [];
-  for (const id of [user.personalWorkspaceId, ...user.teamWorkspaceIds]) {
-    const [row] = await getDb()
-      .select({
-        id: schema.workspaces.id,
-        kind: schema.workspaces.kind,
-        name: schema.workspaces.name,
-      })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, id))
-      .limit(1);
-    if (row) summaries.push(row);
-  }
-
-  return { user, workspace, workspaces: summaries };
+  return {
+    user: hubUserFromRow(userRow, teams),
+    workspace: { ...workspace, memberIds },
+    workspaces: workspaceSummaries(personal, teams),
+  };
 }
 
 export async function getOrCreateUser(input: {
@@ -246,39 +284,31 @@ export async function getHubSessionForWorkspace(
   workspaceId: string,
 ): Promise<HubSession | null> {
   const db = getDb();
-  const [userRow] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.id, userId))
-    .limit(1);
+  // The user and the membership list are read first, together. Nothing about
+  // the workspace is loaded until membership has been confirmed.
+  const [[userRow], memberIds] = await Promise.all([
+    db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1),
+    loadMemberIds(workspaceId),
+  ]);
 
   if (!userRow) return null;
-
-  const memberIds = await loadMemberIds(workspaceId);
   if (!memberIds.includes(userId)) return null;
 
-  const workspace = await loadWorkspaceRow(workspaceId, memberIds);
+  const [workspace, teams, personal] = await Promise.all([
+    loadWorkspaceRow(workspaceId, memberIds),
+    loadTeamWorkspaces(userRow.id),
+    loadWorkspaceSummary(userRow.personalWorkspaceId),
+  ]);
   if (!workspace) return null;
 
-  const user = await buildHubUser(userRow);
-  const summaries: WorkspaceSummary[] = [];
-  for (const id of [user.personalWorkspaceId, ...user.teamWorkspaceIds]) {
-    const [row] = await db
-      .select({
-        id: schema.workspaces.id,
-        kind: schema.workspaces.kind,
-        name: schema.workspaces.name,
-      })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, id))
-      .limit(1);
-    if (row) summaries.push(row);
-  }
-
   return {
-    user: { ...user, activeWorkspaceId: workspaceId },
+    user: { ...hubUserFromRow(userRow, teams), activeWorkspaceId: workspaceId },
     workspace,
-    workspaces: summaries,
+    workspaces: workspaceSummaries(personal, teams),
   };
 }
 

@@ -1,6 +1,7 @@
 import {
   isTaskDriveFileId,
   isTaskPhotoMime,
+  TASK_ATTACHMENT_MAX,
   TASK_PHOTO_MAX_BYTES,
 } from '@sorye/types';
 import { hubApiPath } from './hub-origin';
@@ -16,6 +17,44 @@ export function taskPhotoRejection(file: File): string | null {
     return `Photos must be under ${Math.floor(TASK_PHOTO_MAX_BYTES / (1024 * 1024))} MB.`;
   }
   return null;
+}
+
+/** Accept a batch of images or reject the whole batch. Non-images are not stored. */
+export function takeTaskImages(current: number, files: readonly File[]): { accepted: File[]; error: string | null } {
+  if (files.length === 0) return { accepted: [], error: null };
+  if (files.some((file) => file.type && !isTaskPhotoMime(file.type))) {
+    return { accepted: [], error: 'Only JPEG, PNG, WebP, or GIF images can be added.' };
+  }
+  for (const file of files) {
+    const rejection = taskPhotoRejection(file);
+    if (rejection) return { accepted: [], error: rejection };
+  }
+  if (current + files.length > TASK_ATTACHMENT_MAX) {
+    return { accepted: [], error: `A ticket can hold ${TASK_ATTACHMENT_MAX} images.` };
+  }
+  return { accepted: [...files], error: null };
+}
+
+export function imageFilesFromTransfer(data: DataTransfer | null): { images: File[]; rejected: boolean } {
+  if (!data) return { images: [], rejected: false };
+  const images: File[] = [];
+  let rejected = false;
+  const items = data.items ? [...data.items] : [];
+  if (items.length > 0) {
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (!file) continue;
+      if (!item.type || item.type.startsWith('image/') || !file.type || file.type.startsWith('image/')) images.push(file);
+      else rejected = true;
+    }
+  } else {
+    for (const file of data.files) {
+      if (!file.type || file.type.startsWith('image/')) images.push(file);
+      else rejected = true;
+    }
+  }
+  return { images, rejected };
 }
 
 export async function uploadTaskPhoto(file: File): Promise<string> {

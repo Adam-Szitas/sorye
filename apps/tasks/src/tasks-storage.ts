@@ -1,6 +1,7 @@
 import {
   TASKS_LOCAL_STORAGE_KEY,
   createDefaultTasksBoard,
+  taskForStorage,
   type RodrigoAction,
   type RodrigoActionBatchResult,
   type TaskItem,
@@ -53,6 +54,9 @@ export function createTasksStorage() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const code = typeof data.error?.code === 'string' ? data.error.code : 'request_failed';
+      if (response.status === 401 || response.status === 403 || code === 'unauthorized' || code === 'app_access_denied') {
+        throw new ApiError(response.status, 'You do not have access to Tasks in this workspace.');
+      }
       throw new ApiError(response.status, code === 'rodrigo_unavailable' || response.status >= 500
         ? 'Rodrigo could not confirm this change. Your task action remains safely queued in this browser.'
         : `Task action failed (${code}).`);
@@ -161,11 +165,12 @@ export function createTasksStorage() {
 
   async function saveBoard(board: TasksBoard): Promise<TasksBoard> {
     const scope = activeScope ?? await readScope();
+    const stored: TasksBoard = { ...board, tasks: board.tasks.map(taskForStorage) };
     const action: RodrigoAction = {
       actionId: crypto.randomUUID(), appId: 'tasks', resourceType: 'taskBoard',
       operation: revision === 0 ? 'create' : 'update', resourceId: 'main',
       ...(revision === 0 ? {} : { expectedRevision: revision }),
-      payloadVersion: 1, payload: board as unknown as Record<string, unknown>, occurredAt: new Date().toISOString(),
+      payloadVersion: 1, payload: stored as unknown as Record<string, unknown>, occurredAt: new Date().toISOString(),
     };
     await enqueueTaskAction(scope, action);
     const run = queue.then(() => flush(scope, new Set([action.actionId])));
@@ -176,7 +181,7 @@ export function createTasksStorage() {
     if (row?.status === 'conflict') throw new ApiError(409, row.error ?? 'The task board changed in another session. Reload and reconcile.');
     if (row) throw new ApiError(503, row.error ?? 'Rodrigo has not confirmed this task change.');
     clearConflictDraft();
-    return board;
+    return stored;
   }
 
   async function resendPending(): Promise<void> {
