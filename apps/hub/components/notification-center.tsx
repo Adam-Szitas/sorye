@@ -1,11 +1,12 @@
 'use client';
-import { TranslatedText } from '@sorye/platform/react';
+import { TranslatedText, UserLoadSections } from '@sorye/platform/react';
 
 
 import {
   APP_CATALOG,
   NOTIFIABLE_APP_IDS,
   type NotificationCenterSettings,
+  type WorkspaceNotificationItem,
 } from '@sorye/types';
 import { useNotifications } from '@/lib/use-notifications';
 
@@ -34,11 +35,53 @@ function toastAppOptions(settings: NotificationCenterSettings) {
   }));
 }
 
+function NoticeButton({
+  item,
+  onOpen,
+}: {
+  item: WorkspaceNotificationItem;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`mb-1 w-full rounded-xl border p-3 text-left transition hover:bg-white/6 ${
+        item.read
+          ? 'border-white/6 bg-white/2 opacity-80'
+          : 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5'
+      }`}
+      onClick={onOpen}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-accent)]">
+          {appName(item.appId)}
+          {!item.read ? (
+            <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] align-middle" />
+          ) : null}
+        </span>
+        <time className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
+          {formatWhen(item.createdAt)}
+        </time>
+      </div>
+      <p className="mt-1 text-sm font-medium">{item.title}</p>
+      {item.body ? (
+        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+          {item.body}
+        </p>
+      ) : null}
+      <p className="mt-2 text-[10px] text-[var(--color-accent)]">
+        Open {appName(item.appId)} →
+      </p>
+    </button>
+  );
+}
+
 export function NotificationCenter() {
   const {
     centerOpen,
     closeCenter,
     notifications,
+    load,
     unreadTotal,
     settings,
     markAllRead,
@@ -139,49 +182,33 @@ export function NotificationCenter() {
           ) : null}
         </div>
 
-        <ul className="min-h-0 flex-1 overflow-y-auto p-2">
-          {notifications.length === 0 ? (
-            <li className="p-4 text-center text-sm text-[var(--color-text-muted)]">
-              No notifications yet. Turn on App events and use OCR, Tasks, or
-              Calendar — activity will show here and on app badges.
-            </li>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {load.personal.length + load.work.length === 0 ? (
+            <p className="p-4 text-center text-sm text-[var(--color-text-muted)]">
+              {notifications.length === 0
+                ? 'No notifications yet. Turn on App events and use OCR, Tasks, or Calendar — activity will show here and on app badges.'
+                : 'No personal or work notices.'}
+            </p>
           ) : (
-            notifications.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className={`mb-1 w-full rounded-xl border p-3 text-left transition hover:bg-white/6 ${
-                    item.read
-                      ? 'border-white/6 bg-white/2 opacity-80'
-                      : 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5'
-                  }`}
-                  onClick={() => openNotification(item)}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-accent)]">
-                      {appName(item.appId)}
-                      {!item.read ? (
-                        <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] align-middle" />
-                      ) : null}
-                    </span>
-                    <time className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
-                      {formatWhen(item.createdAt)}
-                    </time>
-                  </div>
-                  <p className="mt-1 text-sm font-medium">{item.title}</p>
-                  {item.body ? (
-                    <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                      {item.body}
-                    </p>
-                  ) : null}
-                  <p className="mt-2 text-[10px] text-[var(--color-accent)]">
-                    Open {appName(item.appId)} →
-                  </p>
-                </button>
-              </li>
-            ))
+            <UserLoadSections
+              load={load}
+              empty="No notices in this workspace."
+              heading="h3"
+              renderItems={(items) => (
+                <ul>
+                  {items.map((item) => (
+                    <li key={item.value.id}>
+                      <NoticeButton
+                        item={item.value}
+                        onOpen={() => openNotification(item.value)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
           )}
-        </ul>
+        </div>
       </aside>
     </>
   );

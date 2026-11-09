@@ -3,6 +3,8 @@ import {
   createDefaultRelayConfig,
   type RelayBroadcastMessage,
   type RelayConfig,
+  type RelayMessage,
+  type UserLoadPartition,
 } from '@sorye/types';
 
 const STORAGE_KEY = 'sorye:relay:config';
@@ -126,6 +128,7 @@ export interface RelayApiSnapshot {
   config: RelayConfig;
   eventsEnabled: boolean;
   deliverToMessengerEvents: boolean;
+  load?: UserLoadPartition<RelayMessage>;
 }
 
 export async function fetchRelayConfig(): Promise<RelayApiSnapshot | null> {

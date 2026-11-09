@@ -4,6 +4,7 @@ import { AppCatalogBrowser } from '@/components/app-catalog';
 import { AppContact } from '@/components/app-contact';
 import { AppFiles } from '@/components/app-files';
 import { AppMail } from '@/components/app-mail';
+import { AppOperator } from '@/components/app-operator';
 import { AppReports } from '@/components/app-reports';
 import { AppSite } from '@/components/app-site';
 import { AppStorefront } from '@/components/app-storefront';
@@ -25,6 +26,9 @@ export function HubNativeAppBody({
   }
   if (app.id === 'reports') {
     return <AppReports />;
+  }
+  if (app.id === 'operator') {
+    return <AppOperator />;
   }
   if (app.id === 'storefront') {
     return <AppStorefront />;

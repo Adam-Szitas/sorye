@@ -1,4 +1,5 @@
 import {
+  isTaskDriveFileId,
   normalizeLegacyCalendarEvent,
   type CalendarEvent,
   type Note,
@@ -126,6 +127,9 @@ export function parseTasksBoard(raw: unknown): TasksBoard {
     const statusId = seenStatusIds.has(task.statusId)
       ? task.statusId
       : fallbackStatusId;
+    if (Object.hasOwn(task, 'driveFileId') && !isTaskDriveFileId(task.driveFileId)) {
+      throw new Error('Task photo reference is invalid');
+    }
     return { ...task, id, title, statusId };
   });
 

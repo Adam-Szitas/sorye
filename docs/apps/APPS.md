@@ -25,6 +25,51 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 | Drive | — | Hub-native | [Drive](#drive) |
 | Site | — | Hub-native, public section builder | [Site](#site) |
 | Reports | — | Hub-native, admins only | [Reports](#reports) |
+| Operator | — | Hub-native, platform operator only | [Operator](#operator) |
+
+## Durable data cutover status
+
+The intended boundary is **app → Hub → Rodrigo**. Hub remains the browser-facing session, authorization, validation, and API layer; apps do not call Rodrigo or databases directly. The cutover is partial and pre-production. See the [durable contract status](../RODRIGO-DATA-CONTRACT.md) and [switching runbook](../RODRIGO-DATABASE-SWITCHING-RUNBOOK.md).
+
+| App or slice | Current durable path | Remaining coverage |
+|---|---|---|
+| Tasks, Notes, Calendar | Hub v2 actions and reads; app-owned scoped IndexedDB queues; old resource mutation endpoints disabled | Calendar/Notes event notifications still use Hub; end-to-end outage/restart certification remains required |
+| Canvas | Rodrigo v2 board resources and queued mutations | Realtime invalidation remains Hub-owned; nested payload validation and app-specific end-to-end coverage remain |
+| Site | Rodrigo v2 page editing, queued mutations, and anonymous published reads | Relay publish events are not emitted. Unpublished and unknown slugs are 404 |
+| Storefront | Rodrigo v2 product resources, enquiry creates, and queued mutations | Status transitions are not a Hub workflow. Seed products cannot be ordered |
+| Workspace profile | Rodrigo v2 profile read and name update | Membership, app access, team settings, and other account policy remain Hub-owned |
+| Messenger | Rodrigo v2 channels and text messages; channel-authorized timeline reads and queued writes | Attachments, read receipts, reactions if enabled, and event delivery remain uncovered |
+| All other catalog apps and Hub-native features | Existing Hub or app-specific paths | Not yet migrated; do not treat their data as Rodrigo-authoritative |
+
+The table records active implementation slices, not rollout certification. Each app is complete only when every durable write/read path, its authorization boundary, retries/conflicts, outage behavior, and disposable-PostgreSQL end-to-end checks are covered.
+
+## Personal and Work lists
+
+A member who belongs to a personal workspace and one or more team workspaces sees those two sections inside the app. The lists come from `partitionUserLoad` in `apps/hub/lib/user-load.ts`. Hub builds the groups from `session.workspaces` and rechecks each id with `getHubSessionForWorkspace`. The client does not send a workspace id for the read. `mergeUserLoad` in the same file concatenates personal, then teams by name. List UIs do not call it and no response includes it.
+
+Each row keeps its workspace id, name, and kind. The UI labels are **Personal** and **Work**. Several teams stay grouped by team name under Work. A side the user does not belong to is omitted. An empty side they do belong to shows a short empty state. Opening a row switches through `POST /api/workspace/team` when the row's workspace is not active, then reloads that item. New notes, events, channels, tasks, and uploads still write to the active workspace.
+
+| App | List |
+|-----|------|
+| Messenger | Channels the user joined, or was invited to by a non-empty `memberIds` list. A channel with an empty `memberIds` list is workspace-open (`#general`, `#random`, `#events`); there is no invite table. Direct messages require membership. |
+| Calendar | Events. |
+| Notes | Notes. The editor still saves the active workspace document. |
+| Tasks | Tasks from other workspaces are listed; the board remains the active workspace. |
+| Drive | Files. The active workspace stays in the file table. |
+| Notifications | Personal notices and team notices. Operator broadcasts stay on their own banner. |
+| Relay | Messages. Config writes stay on the active workspace. |
+| Canvas | Boards. Opening a board switches first; create and delete stay on the active workspace. |
+| OCR | Library and search hits. No extra OCR job is started to build the list. |
+| Dashboard | Recent activity and Work by app. Metric cards stay on the active workspace. |
+| DevKit and Connections | Embed widgets. The embed iframe still runs only the widget key's workspace. |
+| Mail | Sorye mailbox messages. Connected IMAP stays on the active account and is not synced for every workspace. |
+| Storefront | The signed-in user's orders. The shop catalog stays on the active workspace. |
+| Site | Saved pages. The editor stays on the active workspace and does not invent an empty draft for the other side. |
+| Studio | Drive files whose `sourceAppId` is `studio`. |
+| Protocolio | Browser drafts keyed by workspace id (`sorye:protocolio:draft:v1:<workspaceId>`). The old unscoped key is copied into the active workspace once. |
+| Contact, Catalog, SUSM, ESPM | No member data. They do not render the two sections. |
+| Operator | Platform-admin dashboard. It is not a member data app. |
+| Reports | Active-workspace event charts. It has no member-activity list, so it is not split, and operator series are not added to it. |
 
 ## Communication principles
 
@@ -58,7 +103,7 @@ Hub        →  record notification  →  Badges + toasts + bell
 - Workspace CRUD (personal + team), subscription limits
 - App launcher, split-pane workspace, dock, status bar
 - All `/api/*` routes consumed by remotes
-- Signed Rodrigo discovery: authenticated `/api/backend/capabilities` and platform-admin-only `/api/backend/topology`. Tasks and Calendar can use a verified per-workspace Rodrigo owner; Notes and other stores remain in Hub; see [Rodrigo](../RODRIGO.md).
+- Signed Rodrigo discovery: authenticated `/api/backend/capabilities` and platform-admin-only `/api/backend/topology`. The live v2 slices are listed in the cutover table above; see [Rodrigo](../RODRIGO.md).
 - Module Federation host (`MicroAppLoader`)
 - Embed (`embed.js`, `/embed/[slug]`)
 - Notification center, toasts, per-app badges
@@ -71,6 +116,7 @@ Hub        →  record notification  →  Badges + toasts + bell
 | `components/hub-shell.tsx` | Main UI orchestration |
 | `components/app-catalog.tsx` | Hub-native Catalog |
 | `components/app-reports.tsx` | Hub-native Reports (admins) |
+| `components/app-operator.tsx` | Hub-native Operator (platform operator) |
 | `components/app-contact.tsx` | Public Contact page (try Protocolio / Canvas) |
 | `components/app-storefront.tsx` | Hub-native Storefront (enquiry cart) |
 | `components/app-mail.tsx` | Hub-native Mail mailbox + compose host |
@@ -106,13 +152,14 @@ Hub is the **hub** (literal): it receives events, stores handoffs, posts to Mess
 
 ## Purpose
 
-Browse every entry in `APP_CATALOG` by category. Open installed apps or jump to the App Library to enable more.
+Browse every entry in `APP_CATALOG` by category. Each sold app shows its yearly share of one stack's electricity. The shares sum to the yearly subscription that covers the shared host and the OCR GPU allowance. Catalog, Reports, and Operator show as included. Open installed apps or jump to the App Library to enable more.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
-| `packages/types/src/apps.ts` | Source of truth (`APP_CATALOG`, `alwaysAvailable`) |
+| `packages/types/src/apps.ts` | Source of truth (`APP_CATALOG`, `alwaysAvailable`, `costWeight`) |
+| `packages/types/src/running-cost.ts` | Yearly electricity floor and per-app split |
 | `apps/hub/components/app-catalog.tsx` | Catalog UI |
 | `.cursor/rules/app-catalog.mdc` | Agents must update the catalog when apps change |
 
@@ -252,7 +299,7 @@ Lightweight note editor. Notes are workspace-scoped on Hub (`GET`/`PUT /api/note
 
 ## Purpose
 
-Kanban board with configurable workflow columns. Drag-and-drop cards; status editor for column names/order. The board is workspace-scoped on Hub (`GET`/`PUT /api/tasks`). A one-time migrate copies leftover `sorye:tasks:board` localStorage when the server doc is empty. Search, the new-task field, and the board/statuses tab are private signals (`@sorye/platform` `createAppStore`). The header reads workspace name and user display name from the kernel. Events go through `kernel.emit` → `POST /api/events`.
+Kanban board with configurable workflow columns. Drag-and-drop cards between columns; the status control on a card selects a column. Clicking a card opens an editor for the label and description. A description can include one photo, dropped or chosen in that editor. The photo bytes are a Hub Drive file in the Tasks section (`sourceAppId: tasks`). The task stores `driveFileId` only. Rodrigo owns the board and does not store the bytes. The board is workspace-scoped: `GET /api/tasks` reads Rodrigo, and writes are v2 `taskBoard` actions. `PUT /api/tasks` is disabled. Search, the new-task field, and the board/statuses tab are private signals (`@sorye/platform` `createAppStore`). Events go through `kernel.emit` → `POST /api/events`.
 
 Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on port 3005 (Vite `index.html`), the same entry uses a standalone kernel. Set `VITE_HUB_ORIGIN=http://localhost:3000` so that tab can send the Hub session cookie. `?standalone=1` forces the standalone client even when Hub passed a kernel.
 
@@ -260,9 +307,11 @@ Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | Board + card UI |
+| `src/App.tsx` | Board, card UI, and task editor |
+| `src/task-editor.tsx` | Modal for label, description, and a photo |
+| `src/task-photo.ts` | Drive upload into the Tasks section |
 | `src/tasks-ui.ts` | Private signal store (search, tab, new-task field) |
-| `src/tasks-storage.ts` | Hub API client + localStorage migrate |
+| `src/tasks-storage.ts` | Queued Hub v2 task board client |
 | `src/emit-event.ts` | `kernel.emit` for `sorye.task.created`, `updated`, `moved` |
 | `src/mount.tsx` | MF entry. Accepts the Hub kernel or connects standalone |
 | `src/hub-origin.ts` | Reads `VITE_HUB_ORIGIN` |
@@ -271,7 +320,7 @@ Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on
 
 - **Emits:** Task lifecycle events (high-signal for Relay)
 - **Typical Relay route:** Tasks → Messenger `#events`
-- **Hub APIs:** `GET`/`PUT /api/tasks`, `POST /api/events` (via `kernel.emit`). On port 3005 those URLs are prefixed with `VITE_HUB_ORIGIN` when it differs from the page origin.
+- **Hub APIs:** `GET /api/tasks` and `POST /api/backend/actions/batch` for the board. `PUT /api/tasks` returns 410. Task photos use `POST /api/files` with `sourceAppId=tasks` and are shown from `GET /api/files/{id}?inline=1`. `POST /api/events` via `kernel.emit`. On port 3005 those URLs are prefixed with `VITE_HUB_ORIGIN` when it differs from the page origin.
 
 ---
 
@@ -452,6 +501,7 @@ Workspace chat: public channels, DMs, image uploads (compressed client-side). **
 - **Badges:** Unread chat + `#events` merged into Hub launcher badge via `messenger-unread.ts`
 - **Events feature flag:** Bootstrap response includes `events.eligible/enabled/alive`
 - **Forward to Mail:** One click on a message `POST /api/mail/forward` then dispatches `sorye:mail:compose` so Hub opens the compose modal (in-workspace send only)
+- **Name ping:** Typing a name in the composer (with or without `@`) suggests people in that channel's workspace. Choosing one inserts `@[Name](userId)`. Sending notifies that person in the same Personal or Work scope and opens this channel. A personal ping is omitted when Messenger is not in that person's personal subscription.
 
 ## Security
 
@@ -520,6 +570,7 @@ Connected cloud storage appears as named virtual folders here. Browsing, uploads
 ## Storage
 
 - Disk: `apps/hub/.data/files/{workspaceId}/{uuid}` (uuid is the storage filename)
+- Tasks photos use the same bytes and metadata, with `sourceAppId: tasks`, so Drive lists them in the Tasks section rather than the Drive root. Rodrigo does not store those bytes.
 - Metadata: `apps/hub/.data/files-meta.json` — no file bytes
 - `workspaceId` from `ensureHubUser()` only. Paths are `workspaceId + uuid`; user-supplied path segments, `..`, and absolute paths are rejected. Download/delete resolve the path and require it stay under that workspace directory.
 
@@ -559,7 +610,7 @@ Connected cloud storage appears as named virtual folders here. Browsing, uploads
 
 Upload PDF → browser layout matrix (columns/rows) for review, CSV, or Protocolio.
 
-**Analyze with Qwen** uploads the same PDF to Hub. Node reads each page as **one list of visible lines** (no column matrix) and flattens those lines into one document-wide line vector with page offsets. Each stored line is the text on the page, including spaces, digits, and units; a figure with no text is `[IMAGE]`. Hub stores that listing first (`status: extracting`), then asks Qwen3 8B for pattern JSON and updates the same row without rewriting the lines. When that row is finished, OCR shows a reading and links to `/apps/ocr/reading/{id}`. The PDF bytes are not stored. **Stored tables** searches the latest 50 extractions (`POST /api/ocr/analyses/query`) by UTC date, file name, JSON field name, code, and amount, without returning the page transcript. A table can be renamed with `PATCH /api/ocr/analyses/{id}`.
+**Analyze with Qwen** uploads the same PDF to Hub. Node reads each page as **one list of visible lines** (no column matrix) and flattens those lines into one document-wide line vector with page offsets. Each stored line is the text on the page, including spaces, digits, and units; a figure with no text is `[IMAGE]`. Hub stores that listing first (`status: extracting`), then either asks the Hub Server GPU (`Qwen3 8B`) for pattern JSON or, when the user selects **My GPU (WebGPU)**, returns the stored rows so the browser WebGPU pipeline normalizes the table and submits the pattern to `PATCH /api/ocr/analyses/{id}/pattern` without rewriting the lines. When that row is finished, OCR shows a reading and links to `/apps/ocr/reading/{id}`. The PDF bytes are not stored. **Stored tables** searches the latest 50 extractions (`POST /api/ocr/analyses/query`) by UTC date, file name, JSON field name, code, and amount, without returning the page transcript. A table can be renamed with `PATCH /api/ocr/analyses/{id}`.
 
 ## Key files
 
@@ -579,13 +630,13 @@ Upload PDF → browser layout matrix (columns/rows) for review, CSV, or Protocol
 | `apps/hub/lib/ocr/vector.ts` | Document-wide line vector and per-page completeness |
 | `apps/hub/lib/ocr/analyze.ts` | Qwen prompt + pattern JSON |
 | `apps/hub/app/api/ocr/analyze/route.ts` | Upload, read, store |
-| `apps/hub/app/apps/ocr/reading/[id]/page.tsx` | Printable HTML reading of one stored analysis |
+| `apps/hub/app/apps/ocr/reading/[id]/page.tsx` | Printable HTML reading of one stored analysis. Page chrome is `StandaloneAppBar` (language switcher and Hub menu link) from `packages/platform/src/chrome.tsx` |
 | `packages/types/src/ocr-ai.ts` | Row transcript + pattern contract |
 | `packages/db` `ocr_analyses` | Postgres table |
 
 ## Processing model
 
-The **layout matrix stays in the browser**. Analyze with Qwen sends the PDF to Hub (`POST /api/ocr/analyze`, 64 MB, 500 pages). A transcript that fits the model context is one request. Longer documents are read in slices; a slice that hits the output limit is split and read again. Long documents stay on `extracting` and continue through `POST /api/ocr/analyses/{id}/continue`. Hub writes `ocr_analyses`. With `STORE_DRIVER=json` the same record lands in `apps/hub/.data/ocr-analyses.json` until Postgres is on.
+The **layout matrix stays in the browser**. Analyze with Qwen sends the PDF to Hub (`POST /api/ocr/analyze`, 64 MB, 500 pages). In Postgres mode that returns `202 { jobId }` and the OCR worker finishes the job even if the user leaves OCR. While OCR is mounted it polls `GET /api/jobs/:id`. When the job completes or fails, Hub writes a notification for the user who started it, in that workspace only. Clicking the notification opens OCR on the stored analysis (success) or the existing error (failure). Opening OCR again calls `GET /api/ocr/active`, which uses the server session and ignores a client workspace id: a finished job is shown immediately, and a still-running job resumes polling. Leaving OCR does not cancel the job. A client WebGPU pass finishes in the open browser tab; the patched analysis is what OCR shows if the user comes back within Hub. A transcript that fits the model context is one request. Longer documents are read in slices; a slice that hits the output limit is split and read again. Long documents stay on `extracting` and continue through `POST /api/ocr/analyses/{id}/continue`. Hub writes `ocr_analyses`. With `STORE_DRIVER=json` the same record lands in `apps/hub/.data/ocr-analyses.json` until Postgres is on.
 
 All three Hub settings (`OCR_LLM_PROVIDER`, `OCR_LLM_BASE_URL`, `OCR_LLM_MODEL`) are required, with no defaults. Hub checks the running server and configured model before inference. If configuration is missing/invalid or Qwen is down, the LLM is excluded and the lines are still stored (`status: "rows_only"`) and image markers are copied into the pattern JSON.
 
@@ -636,7 +687,8 @@ Hub on the host uses `127.0.0.1`. Hub inside Compose uses `http://qwen3:8000`. `
 
 - **Emits:** When the browser scan completes (`analyzed`) and when ready for Protocolio (`ready`). Analyze with Qwen emits `analyzed` again with the stored id.
 - **Handoffs OUT:** `POST /api/handoffs` with `kind: 'pdf-template'` to Protocolio
-- **Hub:** `POST /api/ocr/analyze`, `GET /api/ocr/analyses`, `GET /api/ocr/analyses/:id`
+- **Hub:** `POST /api/ocr/analyze` (`202 { jobId }` on Postgres), `GET /api/jobs/:id` while mounted, `GET/POST /api/ocr/active` to restore the latest session job, `GET /api/ocr/analyses`, `GET /api/ocr/analyses/:id`
+- **Notifications:** job completion is recorded by the Hub worker, not by the OCR remote. The existing Hub notification center opens OCR with the analysis id.
 - **Typical Relay route:** OCR → Messenger `#events` + optional webhook
 
 ---
@@ -721,7 +773,7 @@ Same pattern as SUSM — external beta product in iframe shell.
 
 ## Purpose
 
-Workspace members browse a small seed catalog of SMB/ops kits, add them to a cart, and place an **enquiry / order request**. No Stripe. Orders persist per workspace in Hub JSON (`.data/storefront-*.json`). `workspaceId` comes from `ensureHubUser()` only.
+Workspace members browse the workspace catalog, add saved products to a cart, and place an **enquiry**. No Stripe. Products and enquiries are Rodrigo v2 resources. The signed-in member is the order owner; the browser cannot choose that owner. Seed kits are display defaults until an owner saves them. `workspaceId` comes from `ensureHubUser()` only.
 
 ## Key files
 
@@ -736,11 +788,11 @@ Workspace members browse a small seed catalog of SMB/ops kits, add them to a car
 
 ## Communications
 
-- `GET /api/storefront/products` — seeds six kits on first visit
-- `POST /api/storefront/products` — upsert a product for this workspace (size-capped)
-- `GET /api/storefront/orders?mine=1` — current user’s order requests
-- `POST /api/storefront/orders` — place enquiry; emits `sorye.storefront.order_placed`
-- Relay source `storefront`; Reports funnel includes order_placed
+- `GET /api/storefront/products` — Rodrigo products, or the six seed kits when none are saved
+- `POST /api/storefront/products` — disabled (410). Owners queue product edits
+- `GET /api/storefront/orders` — current member’s `requested` enquiries, filtered by Rodrigo’s verified actor
+- `POST /api/storefront/orders` — disabled (410). Members queue enquiry creates. Status changes and `sorye.storefront.order_placed` are not live
+- Relay source `storefront` remains for other events; this enquiry path does not emit `order_placed`
 
 ---
 
@@ -753,7 +805,7 @@ Workspace members browse a small seed catalog of SMB/ops kits, add them to a car
 
 ## Purpose
 
-A shareable **section/block** page for **this workspace**. Logged-in members add, reorder, or remove blocks and toggle **Published**. Visitors with the URL see only those published blocks — never Reports, Mail, members, events, or storefront orders.
+A shareable **section/block** page for **this workspace**. Logged-in owners add, reorder, or remove blocks and toggle **Published**. Visitors with the URL see only those published blocks — never Reports, Mail, members, events, or storefront orders. The public read uses Rodrigo’s slug index and a reserved Hub service assertion.
 
 **Block types:** Hero (heading, offer, CTA), About (length-capped text), Links (https), Storefront (this workspace’s product names/prices), Contact (button to `/contact` or mailto). Optional hero image URLs are https-only (`assertSafePublicHttpsUrl`); unsafe URLs are skipped.
 
@@ -767,17 +819,17 @@ Starters: Company landing, Shop-front, Hiring. Slug is derived from the workspac
 | `packages/types/src/site.ts` | Block types, templates, length caps |
 | `apps/hub/components/app-site.tsx` | Section builder + copy URL |
 | `apps/hub/components/site-public-view.tsx` | Public block renderer |
-| `apps/hub/lib/site.ts` | JSON store (`.data/site-pages.json`) |
+| `apps/hub/lib/site.ts` | Public projection and legacy JSON helpers. `/s/[slug]` does not read the JSON store |
 | `apps/hub/app/api/site/route.ts` | `GET/PUT /api/site` |
 | `apps/hub/app/s/[slug]/page.tsx` | Public page |
 | `apps/hub/middleware.ts` | `/s/[slug]` is public |
 
 ## Communications
 
-- `GET /api/site` — draft or saved page for the session workspace
-- `PUT /api/site` — save `displayName` + `blocks`; first publish emits `sorye.site.published`
-- Public `GET /s/[slug]` — published blocks only; lookup by slug; storefront products attached server-side
-- Relay source `site`; Reports funnel includes `sorye.site.published`
+- `GET /api/site` — Rodrigo page for the session workspace, or a local draft shape when none is saved
+- `PUT /api/site` — disabled (410). Owners queue page edits, including the published flag
+- Public `GET /s/[slug]` — published blocks only; slug lookup is signed with the reserved public-site grant; active USD product cards are attached when a shop block is present. Unknown, unpublished, and unsafe pages are 404. A Rodrigo outage is an unavailable page, not a Hub JSON fallback
+- `sorye.site.published` is not emitted by this save
 - No first-run `AppUsageGuide`
 
 ---
@@ -808,6 +860,41 @@ Workspace-scoped operational graphs for platform admins (`ADMIN_EMAILS` / `HubUs
 - `GET /api/reports?days=7|14|30|90` — session cookie; `workspaceId` from `ensureHubUser()`
 - Reads event stats recorded on `POST /api/events`
 - Failed-delivery counts from existing Relay activity (no extra payload log)
+
+---
+
+# Operator
+
+**Path:** Hub-native (`apps/hub/components/app-operator.tsx`) — not a Vite remote  
+**Catalog id:** `operator`  
+**Always on for the platform operator:** `alwaysAvailable: true` + `adminOnly: true` — no plan slot; hidden from member launcher, dock, picker, and Catalog tiles.
+
+## Purpose
+
+Platform-operator dashboard for `isPlatformAdmin` (`ADMIN_EMAILS` / `HubUser.isAdmin` when that list is empty). It is separate from Reports, which stays a workspace event chart, and from Dashboard, which workspace members can open. Operator shows health, activity, usage counts, app load, grouped errors, workspace plans, and notices. It does not show document bodies, prompts, OCR rows, or message contents, and it does not charge a card.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/apps.ts` | Catalog entry (`adminOnly`, `alwaysAvailable`) |
+| `packages/types/src/operator.ts` | Snapshot contract |
+| `apps/hub/components/app-operator.tsx` | Operator UI inside the Hub shell |
+| `apps/hub/components/operator-notice-banner.tsx` | Message text only, for signed-in users |
+| `apps/hub/app/api/operator/route.ts` | `GET /api/operator` |
+| `apps/hub/app/api/operator/plan/route.ts` | `POST /api/operator/plan` |
+| `apps/hub/app/api/operator/notices/route.ts` | Operator notice composer |
+| `apps/hub/app/api/notices/route.ts` | Member message text and dismiss |
+| `apps/hub/lib/operator/` | Access, bounded metrics, plans, notices, cached health |
+| `apps/hub/lib/platform-admin.ts` | Admin gate |
+
+## Communications
+
+- `GET /api/operator` — platform admin only; pre-aggregated counts, health, plans, and notice records
+- `POST /api/operator/plan` — platform admin only; workspace id is checked in the workspace store after `isPlatformAdmin`
+- `GET/POST /api/operator/notices` — platform admin composer
+- `GET/POST /api/notices` — signed-in user; `{ id, message }` when the audience and date window match; dismiss is per user
+- Metrics are queued and dropped on overflow. User routes do not wait for them and do not run health probes
 
 ---
 
@@ -867,6 +954,6 @@ The deployment files in `deploy/` provide one image and Dockyard registration pe
 
 Hub owns sessions, workspace authorization and records. Gateways have no persistent application data. Hub `.data` is mounted on a named volume; back it up before replacement. App landing descriptions were reviewed: capabilities and limitations remain accurate; deployment changes do not add product features.
 
-## Tasks and Calendar storage cutover
+## Tasks, Notes, and Calendar storage cutover
 
-Both apps continue calling Hub. After verified per-workspace migration, Hub forwards their document reads/writes to Rodrigo; unmapped workspaces keep their existing store. Conflicts preserve drafts, failures return 503 without fallback, and tombstones retain revisions. Notes remains Hub-owned because its size limit exceeds Rodrigo's contract. Catalog IDs, mounts and federation wiring are unchanged. Public landing copy for Tasks, Calendar and Notes was reviewed and remains accurate for this internal storage change. See [the runbook](../RODRIGO-MIGRATION.md).
+These slices call Hub, which authorizes and signs v2 operations to Rodrigo. Their old resource mutation endpoints are disabled, and queued browser mutations remain in app-owned IndexedDB until Rodrigo confirms commit or duplicate. The previous per-workspace legacy forwarding and Notes size-limit description is obsolete. Event notification writes remain Hub-owned. Catalog IDs, mounts, and federation wiring are unchanged. See the [no-migration runbook](../RODRIGO-DATABASE-SWITCHING-RUNBOOK.md).

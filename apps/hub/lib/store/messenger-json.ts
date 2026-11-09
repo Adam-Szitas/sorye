@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import {
   dmChannelId,
+  withMessengerMentions,
   type MessengerChannel,
   type MessengerMessage,
   type MessengerMessageKind,
@@ -36,8 +37,8 @@ async function assertMember(userId: string, workspaceId: string) {
 }
 
 function canSeeChannel(channel: MessengerChannel, userId: string) {
-  if (channel.kind === 'channel') return true;
-  return channel.memberIds.includes(userId);
+  if (channel.memberIds.length > 0) return channel.memberIds.includes(userId);
+  return channel.kind === 'channel';
 }
 
 function missingDefaultNames(
@@ -142,15 +143,27 @@ export async function postSystemMessage(
   });
 }
 
+export async function getMessengerChannel(
+  workspaceId: string,
+  channelId: string,
+): Promise<MessengerChannel | null> {
+  const store = await readStore();
+  const channel = store.channels[channelId];
+  if (!channel || channel.workspaceId !== workspaceId) return null;
+  return channel;
+}
+
 export async function bootstrapMessenger(
   userId: string,
   workspaceId: string,
-  options?: { includeMessages?: boolean },
+  options?: { includeMessages?: boolean; seedDefaults?: boolean },
 ) {
   const session = await assertMember(userId, workspaceId);
   if (!session) return null;
 
-  const store = await ensureDefaults(workspaceId, userId);
+  const store = options?.seedDefaults === false
+    ? await readStore()
+    : await ensureDefaults(workspaceId, userId);
   const members = await getWorkspaceMembers(workspaceId);
 
   const channels = Object.values(store.channels)
@@ -288,7 +301,7 @@ export async function postMessage(
     };
 
     store.messages[message.id] = message;
-    return message;
+    return withMessengerMentions(message);
   });
 }
 
@@ -308,8 +321,8 @@ export async function listMessages(
   }
   if (!canSeeChannel(channel, userId)) return { status: 'forbidden' };
 
-  const channelMessages = Object.values(store.messages).filter(
-    (m) => m.channelId === channelId,
-  );
+  const channelMessages = Object.values(store.messages)
+    .filter((m) => m.channelId === channelId)
+    .map((message) => withMessengerMentions(message));
   return paginateChannelMessages(channelMessages, query);
 }

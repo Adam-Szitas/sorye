@@ -2,16 +2,24 @@ import { getDb } from '@sorye/db';
 import * as schema from '@sorye/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { WorkspaceDocConflict, type WorkspaceDocWriteOptions } from './workspace-doc-conflict';
-import { getHubSession } from './postgres-store';
+import { getHubSession, getHubSessionForWorkspace } from './postgres-store';
 import type {
   WorkspaceAppDoc,
   WorkspaceDocKind,
   WorkspaceDocRead,
 } from './workspace-docs-json';
 
-async function assertMember(userId: string, workspaceId: string) {
+async function assertActiveMember(userId: string, workspaceId: string) {
   const session = await getHubSession(userId);
   if (!session) return null;
+  if (session.workspace.id !== workspaceId) return null;
+  if (!session.workspace.memberIds.includes(userId)) return null;
+  return session;
+}
+
+async function assertReadableMember(userId: string, workspaceId: string) {
+  const session = await getHubSessionForWorkspace(userId, workspaceId);
+  if (!session || session.user.id !== userId) return null;
   if (session.workspace.id !== workspaceId) return null;
   if (!session.workspace.memberIds.includes(userId)) return null;
   return session;
@@ -35,7 +43,7 @@ export async function getWorkspaceDoc(
   workspaceId: string,
   kind: WorkspaceDocKind,
 ): Promise<WorkspaceDocRead> {
-  if (!(await assertMember(userId, workspaceId))) return { access: 'denied' };
+  if (!(await assertReadableMember(userId, workspaceId))) return { access: 'denied' };
   const db = getDb();
   const [row] = await db
     .select()
@@ -57,7 +65,7 @@ export async function putWorkspaceDoc(
   payload: Record<string, unknown>,
   options?: WorkspaceDocWriteOptions,
 ): Promise<WorkspaceAppDoc | null> {
-  if (!(await assertMember(userId, workspaceId))) return null;
+  if (!(await assertActiveMember(userId, workspaceId))) return null;
   const current = await getWorkspaceDoc(userId, workspaceId, kind);
   if (current.access === 'denied') return null;
   const existing = current.doc;

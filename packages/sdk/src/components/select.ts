@@ -143,6 +143,8 @@ export class SoryeSelect extends SoryeElement {
   declare options: SelectOption[];
 
   private selectId = `sorye-select-${Math.random().toString(36).slice(2, 9)}`;
+  /** Set only from a pointer or key gesture, so a render cannot emit the first option. */
+  private userActivated = false;
 
   constructor() {
     super();
@@ -159,12 +161,34 @@ export class SoryeSelect extends SoryeElement {
     this.options = [];
   }
 
-  private onChange = (e: Event) => {
-    const target = e.target as HTMLSelectElement;
-    this.value = target.value;
+  override updated(): void {
+    const select = this.renderRoot.querySelector('select');
+    if (select && select.value !== this.value) select.value = this.value;
+  }
+
+  private onPointerDown = () => {
+    this.userActivated = true;
+  };
+
+  private onKeyDown = (event: KeyboardEvent) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' '].includes(event.key)) {
+      this.userActivated = true;
+    }
+  };
+
+  private onChange = (event: Event) => {
+    const target = event.target as HTMLSelectElement;
+    const next = target.value;
+    if (!this.userActivated) {
+      if (target.value !== this.value) target.value = this.value;
+      return;
+    }
+    if (next === this.value) return;
+    this.userActivated = false;
+    this.value = next;
     this.dispatchEvent(
       new CustomEvent('sorye-change', {
-        detail: { value: target.value, name: this.name },
+        detail: { value: next, name: this.name },
         bubbles: true,
         composed: true,
       }),
@@ -184,6 +208,8 @@ export class SoryeSelect extends SoryeElement {
             ?disabled=${this.disabled}
             ?required=${this.required}
             .value=${this.value}
+            @pointerdown=${this.onPointerDown}
+            @keydown=${this.onKeyDown}
             @change=${this.onChange}
             aria-invalid=${this.invalid ? 'true' : 'false'}
             aria-label=${this.label || this.placeholder || 'Select'}
@@ -198,6 +224,7 @@ export class SoryeSelect extends SoryeElement {
                 <option
                   value=${option.value}
                   ?disabled=${option.disabled ?? false}
+                  ?selected=${option.value === this.value}
                 >
                   ${option.label}
                 </option>

@@ -1,6 +1,8 @@
+import { switchAuthorizedWorkspace } from '@sorye/platform';
+import { UserLoadSections } from '@sorye/platform/react';
 import { uploadToDrive } from '@sorye/sdk/files';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { StudioModelStats, StudioTooMuchReport } from '@sorye/types';
+import type { FileListResponse, StudioModelStats, StudioTooMuchReport, UserLoadPartition, WorkspaceFile } from '@sorye/types';
 import {
   STUDIO_MAX_FILE_BYTES,
   STUDIO_MAX_TRIANGLES,
@@ -27,6 +29,7 @@ export default function App() {
   const stageRef = useRef<StudioStage | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<StageStatus>('booting');
+  const [meshLoad, setMeshLoad] = useState<UserLoadPartition<WorkspaceFile> | null>(null);
   const [backend, setBackend] = useState('webgpu');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,15 +173,56 @@ export default function App() {
     if (file) void ingestFile(file);
   }
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/files', { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: FileListResponse | null) => {
+        if (cancelled || !data?.load) return;
+        const studioOnly = (group: UserLoadPartition<WorkspaceFile>['personal'][number]) => ({
+          ...group,
+          items: group.items.filter((item) => item.value.sourceAppId === 'studio'),
+        });
+        setMeshLoad({
+          personal: data.load.personal.map(studioOnly),
+          work: data.load.work.map(studioOnly),
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function openMesh(file: WorkspaceFile) {
+    setBusy(true);
+    setError(null);
+    try {
+      const switched = await switchAuthorizedWorkspace(file.workspaceId);
+      if (!switched) throw new Error('Could not open that workspace');
+      const res = await fetch(`/api/files/${file.id}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Could not open that model');
+      const blob = await res.blob();
+      const local = new File([blob], file.displayName, { type: blob.type || 'application/octet-stream' });
+      if (!stageRef.current) await bootStage();
+      const object = await loadModelFromFile(local);
+      presentObject(object, {
+        name: file.displayName,
+        format: fileExtension(file.displayName) || 'mesh',
+        fileBytes: local.size,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open that model');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const live = status === 'ready' || status === 'booting';
 
   return (
     <div className="studio-app">
       <header className="studio-top">
-        <div>
-          <h1>Studio</h1>
-          <p>WebGPU inspection stage for 3D and CAD mesh files.</p>
-        </div>
         <div className="studio-pills">
           <span className={`studio-pill ${status}`}>
             {status === 'ready'
@@ -238,6 +282,24 @@ export default function App() {
       </div>
 
       <footer className="studio-bar">
+        {meshLoad ? (
+          <UserLoadSections
+            load={meshLoad}
+            empty="No Studio models in this workspace."
+            heading="h2"
+            renderItems={(items) => (
+              <ul>
+                {items.map((item) => (
+                  <li key={`${item.workspaceId}:${item.value.id}`}>
+                    <button type="button" className="btn-ghost" disabled={busy} onClick={() => void openMesh(item.value)}>
+                      {item.value.displayName}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
+        ) : null}
         <input
           ref={fileRef}
           type="file"

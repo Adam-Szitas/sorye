@@ -1,89 +1,33 @@
-import { ensureHubUser } from '@/lib/ensure-user';
-import { parseCalendarEvents } from '@/lib/workspace-docs-validate';
-import {
-  getWorkspaceDoc,
-  putWorkspaceDoc,
-} from '@/lib/store/workspace-docs';
 import { NextResponse } from 'next/server';
-import { documentRouteError } from '@/lib/document-route-error';
+import { ensureHubUser } from '@/lib/ensure-user';
+import { listRodrigoResources, RodrigoResponseError } from '@/lib/rodrigo/service-client';
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await ensureHubUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
+  if (!session.workspace.memberIds.includes(session.user.id) || !session.workspace.selectedAppIds.includes('calendar')) {
+    return NextResponse.json({ error: { code: 'app_access_denied' } }, { status: 403 });
   }
-
-  let result;
+  const url = new URL(req.url);
+  const limit = Number(url.searchParams.get('limit') ?? 100);
+  const cursor = url.searchParams.get('cursor') ?? undefined;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || (cursor !== undefined && cursor.length > 160)) {
+    return NextResponse.json({ error: { code: 'invalid_collection_page' } }, { status: 400 });
+  }
   try {
-    result = await getWorkspaceDoc(session.user.id, session.workspace.id, 'calendar', session);
+    const page = await listRodrigoResources({ userId: session.user.id, workspaceId: session.workspace.id }, 'calendar', 'event', limit, cursor);
+    return NextResponse.json(page, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    return documentRouteError(error);
-  }
-  if (result.access === 'denied') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  if (!result.doc) {
-    return NextResponse.json({ events: [], empty: true, revision: result.revision ?? 0 });
-  }
-
-  try {
-    return NextResponse.json({
-      events: parseCalendarEvents(
-        result.doc.payload.events ?? result.doc.payload,
-      ),
-      empty: false, revision: result.doc.revision,
-    });
-  } catch {
-    return NextResponse.json({ error: 'Stored document is invalid. Contact an administrator.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    const status = error instanceof RodrigoResponseError ? error.status : 503;
+    const code = error instanceof RodrigoResponseError ? error.code : 'rodrigo_unavailable';
+    const requestId = error instanceof RodrigoResponseError ? error.requestId : undefined;
+    return NextResponse.json({ error: { code, ...(requestId ? { requestId } : {}) } }, { status, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
-export async function PUT(req: Request) {
+/** Legacy document writes are disabled after the Rodrigo v2 cutover. */
+export async function PUT() {
   const session = await ensureHubUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const body = (await req.json().catch(() => ({}))) as {
-    events?: unknown;
-    migrate?: boolean;
-    expectedRevision?: number;
-  };
-
-  let events;
-  try {
-    events = parseCalendarEvents(body.events);
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Invalid events' },
-      { status: 400 },
-    );
-  }
-
-  let saved;
-  try {
-    saved = await putWorkspaceDoc(
-      session.user.id,
-      session.workspace.id,
-      'calendar',
-      { events },
-      { migrate: body.migrate === true, expectedRevision: body.expectedRevision },
-      session,
-    );
-  } catch (err) {
-    return documentRouteError(err);
-  }
-  if (!saved) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  try {
-    return NextResponse.json({
-      events: parseCalendarEvents(saved.payload.events ?? saved.payload),
-      empty: false, revision: saved.revision,
-    });
-  } catch {
-    return NextResponse.json({ error: 'Stored document is invalid. Contact an administrator.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
-  }
+  if (!session) return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
+  return NextResponse.json({ error: { code: 'legacy_writer_disabled', owner: 'rodrigo_v2' } }, { status: 410 });
 }

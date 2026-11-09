@@ -12,6 +12,9 @@ import {
   type MailFolderId,
   type MailMessage,
 } from '@sorye/types';
+import { switchAuthorizedWorkspace } from '@sorye/platform';
+import { UserLoadSections } from '@sorye/platform/react';
+import type { UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { MailAccountDialog } from '@/components/mail-account-dialog';
 import { MailComposeDialog } from '@/components/mail-compose-dialog';
@@ -147,20 +150,33 @@ export function AppMail() {
   const [syncing, setSyncing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [mailLoad, setMailLoad] = useState<UserLoadPartition<MailMessage> | null>(null);
+  const [mailWorkspace, setMailWorkspace] = useState<UserLoadWorkspace | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch('/api/mail', { credentials: 'include' });
     const next = (await res.json().catch(() => ({}))) as MailBootstrap & {
       error?: string;
+      load?: UserLoadPartition<MailMessage>;
+      workspace?: UserLoadWorkspace;
     };
     if (!res.ok) {
       throw new Error(next.error ?? 'Could not load Mail');
     }
     setData(next);
+    setMailLoad(next.load ?? null);
+    setMailWorkspace(next.workspace ?? null);
     setPersonalEmail(next.profile.personalEmail);
     setNotifyMessenger(next.profile.notifyMessenger);
     return next;
   }, []);
+
+  const switchMailWorkspace = async (workspaceId: string) => {
+    if (workspaceId === mailWorkspace?.id) return;
+    const switched = await switchAuthorizedWorkspace(workspaceId);
+    if (!switched) return;
+    await load();
+  };
 
   const loadExternal = useCallback(
     async (id: string, nextFolder: MailFolderId) => {
@@ -692,6 +708,41 @@ export function AppMail() {
           className="flex min-h-0 min-w-0 flex-col border-b border-white/8 @min-[56rem]:border-b-0 @min-[56rem]:border-r"
           aria-label="Message list"
         >
+          {usingSorye && mailWorkspace ? (
+            <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              {mailWorkspace.kind === 'team' ? `Work · ${mailWorkspace.name}` : 'Personal'}
+            </h3>
+          ) : null}
+          {usingSorye && mailLoad && mailWorkspace ? (
+            <UserLoadSections
+              load={{
+                personal: mailWorkspace.kind === 'personal' ? [] : mailLoad.personal,
+                work: mailLoad.work.filter((group) => group.workspace.id !== mailWorkspace.id),
+              }}
+              empty="No Sorye mail in this workspace."
+              heading="h3"
+              renderItems={(items) => (
+                <ul>
+                  {items.map((item) => (
+                    <li key={`${item.workspaceId}:${item.value.id}`}>
+                      <button
+                        type="button"
+                        className="flex w-full flex-col gap-0.5 px-4 py-3 text-left text-sm"
+                        onClick={() => {
+                          void switchMailWorkspace(item.workspaceId);
+                        }}
+                      >
+                        <strong>{item.value.subject || '(no subject)'}</strong>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          {item.value.fromName} → {item.value.toName}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
+          ) : null}
           {list.length === 0 ? (
             <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
               {folder === 'inbox'

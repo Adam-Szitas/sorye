@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, lt, or } from 'drizzle-orm';
 import * as schema from '@sorye/db/schema';
-import type { MessengerMessage } from '@sorye/types';
+import { withMessengerMentions, type MessengerMessage } from '@sorye/types';
 import type { WorkspaceDb } from '@/lib/workspace-db';
 
 export type ListMessagesQuery = {
@@ -29,7 +29,7 @@ function isOlderThan(message: MessengerMessage, cursor: MessengerMessage): boole
 function rowToMessage(
   row: typeof schema.messengerMessages.$inferSelect,
 ): MessengerMessage {
-  return {
+  return withMessengerMentions({
     id: row.id,
     channelId: row.channelId,
     workspaceId: row.workspaceId,
@@ -41,7 +41,7 @@ function rowToMessage(
     imageHeight: row.imageHeight ?? undefined,
     author: row.author,
     createdAt: row.createdAt.toISOString(),
-  };
+  });
 }
 
 /** In-memory pagination for the JSON store (already loaded for a single channel). */

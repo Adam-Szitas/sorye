@@ -6,7 +6,8 @@ import {
   FileAccessError,
   listWorkspaceFiles,
 } from '@/lib/files';
-import { FILE_MAX_BYTES, FILE_MAX_PER_WORKSPACE } from '@sorye/types';
+import { FILE_MAX_BYTES, FILE_MAX_PER_WORKSPACE, TASK_PHOTO_MAX_BYTES } from '@sorye/types';
+import { readPartitionedLoad, sessionWorkspace } from '@/lib/user-load-read';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -29,10 +30,19 @@ export async function GET() {
 
   try {
     const files = await listWorkspaceFiles(session.workspace.id);
+    const load = await readPartitionedLoad(session, async (scope) => {
+      const rows = await listWorkspaceFiles(scope.id);
+      return rows.map((file) => ({ workspaceId: scope.id, value: file }));
+    }, {
+      itemAppId: (file) => (file.sourceAppId === 'studio' ? 'studio' : 'files'),
+      personalApps: ['files', 'studio'],
+    });
     return NextResponse.json({
       files,
       maxBytes: FILE_MAX_BYTES,
       maxFiles: FILE_MAX_PER_WORKSPACE,
+      load,
+      workspace: sessionWorkspace(session),
     });
   } catch (err) {
     return errorResponse(err);
@@ -61,9 +71,21 @@ async function uploadFile(req: Request, session: NonNullable<Awaited<ReturnType<
     return NextResponse.json({ error: 'Expected multipart form data' }, { status: 400 });
   }
 
+  const sourceAppId = typeof form.get('sourceAppId') === 'string' ? String(form.get('sourceAppId')) : 'files';
+  if (sourceAppId === 'tasks' && (!session.workspace.memberIds.includes(session.user.id) || !session.workspace.selectedAppIds.includes('tasks'))) {
+    return NextResponse.json({ error: 'Tasks is not enabled for this workspace' }, { status: 403 });
+  }
+
   const upload = form.get('file');
   if (!(upload instanceof File)) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 });
+  }
+
+  if (sourceAppId === 'tasks' && upload.size > TASK_PHOTO_MAX_BYTES) {
+    return NextResponse.json(
+      { error: `Tasks photos must be under ${Math.floor(TASK_PHOTO_MAX_BYTES / (1024 * 1024))} MB` },
+      { status: 400 },
+    );
   }
 
   if (upload.size > FILE_MAX_BYTES) {
@@ -90,7 +112,7 @@ async function uploadFile(req: Request, session: NonNullable<Awaited<ReturnType<
     file = await createWorkspaceFile({
       workspaceId: session.workspace.id,
       displayName: upload.name,
-      sourceAppId: typeof form.get('sourceAppId') === 'string' ? String(form.get('sourceAppId')) : 'files',
+      sourceAppId,
       bytes,
     });
   } catch (err) {

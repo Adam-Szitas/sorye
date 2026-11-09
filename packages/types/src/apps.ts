@@ -1,3 +1,5 @@
+import { quoteRunningCost, type RunningCostQuote } from './running-cost';
+
 export type AppStatus = 'available' | 'coming_soon' | 'beta';
 
 export type AppCategory =
@@ -59,6 +61,15 @@ export interface AppCatalogEntry {
    * Combine with `alwaysAvailable` so admins get it without a plan slot.
    */
   adminOnly?: boolean;
+  /**
+   * Share of the always-on host's electricity.
+   * 0 = not sold on its own (Catalog, Contact, Reports, Operator).
+   * 1 = light gateway. 2 = mailbox, chat, or webhook worker.
+   * 3 = board or file bytes. 4 = PDF service on the same host.
+   */
+  costWeight: 0 | 1 | 2 | 3 | 4;
+  /** Server GPU electricity for OCR is assigned to this app. */
+  serverGpu?: boolean;
 }
 
 export const APP_CATALOG: AppCatalogEntry[] = [
@@ -82,6 +93,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     color: '#818cf8',
     mountPath: '/apps/catalog',
     alwaysAvailable: true,
+    costWeight: 0,
   },
   {
     id: 'contact',
@@ -104,6 +116,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     color: '#7c9cff',
     mountPath: '/contact',
     presentationOnly: true,
+    costWeight: 0,
   },
   {
     id: 'dashboard',
@@ -129,6 +142,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3001/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 1,
   },
   {
     id: 'notes',
@@ -153,6 +167,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3004/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 1,
   },
   {
     id: 'calendar',
@@ -177,6 +192,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3003/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 1,
   },
   {
     id: 'relay',
@@ -202,6 +218,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3006/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 2,
   },
   {
     id: 'storefront',
@@ -223,6 +240,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     icon: 'store',
     color: '#f472b6',
     mountPath: '/apps/storefront',
+    costWeight: 1,
   },
   {
     id: 'site',
@@ -243,6 +261,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     icon: 'site',
     color: '#f97316',
     mountPath: '/apps/site',
+    costWeight: 1,
   },
   {
     id: 'devtools',
@@ -268,6 +287,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3009/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 1,
   },
   {
     id: 'protocolio',
@@ -293,6 +313,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3007/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 4,
   },
   {
     id: 'canvas',
@@ -318,6 +339,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3008/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 3,
   },
   {
     id: 'tasks',
@@ -328,6 +350,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       steps: [
         'Add a task from the board toolbar.',
         'Drag cards between columns, or use the status control on a card.',
+        'Click a task to edit its label, description, or photo. Photos are kept in Drive under Tasks.',
         'Open Statuses to rename, reorder, or add workflow columns.',
       ],
     },
@@ -342,6 +365,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3005/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 1,
   },
   {
     id: 'messenger',
@@ -366,6 +390,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3010/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 2,
   },
   {
     id: 'mail',
@@ -387,6 +412,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     icon: 'mail',
     color: '#38bdf8',
     mountPath: '/apps/mail',
+    costWeight: 2,
   },
   {
     id: 'files',
@@ -408,6 +434,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     icon: 'files',
     color: '#7dd3fc',
     mountPath: '/apps/files',
+    costWeight: 3,
   },
   {
     id: 'susm',
@@ -431,6 +458,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       url: 'https://susm.vercel.app',
       title: 'SUSM',
     },
+    costWeight: 1,
   },
   {
     id: 'espm',
@@ -454,6 +482,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       url: 'https://espm-beta.vercel.app',
       title: 'ESPM',
     },
+    costWeight: 1,
   },
   {
     id: 'ocr',
@@ -464,8 +493,8 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       summary: 'Upload, review, and understand a PDF with tables, a complete transcript, and content-only JSON.',
       steps: [
         'Upload a PDF. The browser still builds a layout matrix you can export or send to Protocolio.',
-        'Analyze with Qwen. Hub stores each page as the visible lines, with spaces kept and [IMAGE] where a figure has no text.',
-        'Qwen3 8B reads the rows in small slices. Stored tables can be searched by UTC date, name, JSON field, code, and amount.',
+        'Analyze with Qwen on the Hub Server GPU (Qwen3 8B) or select My GPU (WebGPU) to normalize rows in your browser. Hub stores each page as the visible lines first.',
+        'Stored tables can be searched by UTC date, name, JSON field, code, and amount.',
         'Open a reading to review its transcript. Show AI-aligned JSON to inspect, copy, or download the complete document without layout styling.',
       ],
     },
@@ -480,6 +509,8 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3011/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 2,
+    serverGpu: true,
   },
   {
     id: 'studio',
@@ -506,6 +537,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
       remoteEntry: 'http://localhost:3012/remoteEntry.js',
       exposedModule: './mount',
     },
+    costWeight: 1,
   },
   {
     id: 'reports',
@@ -529,8 +561,40 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     mountPath: '/apps/reports',
     alwaysAvailable: true,
     adminOnly: true,
+    costWeight: 0,
+  },
+  {
+    id: 'operator',
+    name: 'Operator',
+    description:
+      'Platform health, plans, and notices for the platform operator. Counts and names only.',
+    usageIntro: {
+      summary:
+        'Check whether the platform is up, set a workspace plan, and publish a short notice. Hidden from everyone else.',
+      steps: [
+        'Open Operator from the launcher (platform operator only).',
+        'Read health, activity, and usage counts. Document text is not shown.',
+        'Set a plan or publish a notice. People only see the message text.',
+      ],
+    },
+    slug: 'operator',
+    category: 'analytics',
+    status: 'available',
+    icon: 'operator',
+    color: '#34d399',
+    mountPath: '/apps/operator',
+    alwaysAvailable: true,
+    adminOnly: true,
+    costWeight: 0,
   },
 ];
+
+/** Yearly electricity floor for one stack, split across sold apps. */
+export const APP_RUNNING_COST: RunningCostQuote = quoteRunningCost(APP_CATALOG);
+
+export function appMinimumYearlyCents(appId: string): number {
+  return APP_RUNNING_COST.byAppId[appId] ?? 0;
+}
 
 export function isAlwaysAvailableApp(
   catalog: AppCatalogEntry[],
@@ -627,8 +691,28 @@ export function getAppBySlug(
   return catalog.find((app) => app.slug === slug);
 }
 
-/** Hub shell: open an app in a split pane (`detail.appId`, optional `detail.side`). */
+/**
+ * Hub shell: open an app in a split pane.
+ * `detail.appId`, optional `detail.side`.
+ * Optional `detail.analysisId`, `detail.jobId`, and `detail.outcome` tell the
+ * opened app which finished task to show. Hub writes the same fields to
+ * `hubOpenTargetKey(appId)` so a remote that mounts after the event still sees them.
+ */
+export interface HubOpenAppDetail {
+  appId: string;
+  side?: 'left' | 'right';
+  analysisId?: string;
+  jobId?: string;
+  outcome?: 'success' | 'failure';
+  /** Messenger channel a ping notice should open. */
+  channelId?: string;
+}
+
 export const HUB_OPEN_APP_EVENT = 'sorye:hub:open-app';
+
+export function hubOpenTargetKey(appId: string): string {
+  return `sorye:hub:open:${appId}`;
+}
 
 /** Hub shell: open the App Library picker. */
 export const HUB_MANAGE_APPS_EVENT = 'sorye:hub:manage-apps';

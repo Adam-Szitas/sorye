@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { getDb } from '@sorye/db';
 import { backgroundJobs as jobs } from '@sorye/db/schema';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { notifyFinishedBackgroundJob, type FinishedBackgroundJob } from '@/lib/job-finished';
+import { analysisIdFromJob } from '@/lib/job-finished-notice';
 
 export type Job = typeof jobs.$inferSelect;
 export class QueueFullError extends Error {}
@@ -53,26 +55,72 @@ export async function getJob(workspaceId: string, id: string) {
   return job ?? null;
 }
 
+function resultRows(result: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
+  if (result && typeof result === 'object' && Array.isArray((result as { rows?: unknown }).rows)) {
+    return (result as { rows: Array<Record<string, unknown>> }).rows;
+  }
+  return [];
+}
+
+function textColumn(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string') return value;
+  }
+  return '';
+}
+
+function objectColumn(row: Record<string, unknown>, ...keys: string[]): Record<string, unknown> | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+async function notifyTerminal(job: FinishedBackgroundJob): Promise<void> {
+  try {
+    await notifyFinishedBackgroundJob(job);
+  } catch (err) {
+    console.error('[jobs] finish notice failed', err instanceof Error ? err.message : 'unknown error');
+  }
+}
+
 export async function claimJob(kind: 'ocr' | 'relay'): Promise<Job | null> {
   const owner = randomUUID();
-  return getDb().transaction(async tx => {
+  const claimed = await getDb().transaction(async tx => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`sorye:job:${kind}`}))`);
-    await tx.execute(sql`update background_jobs set status = 'failed', error = 'Worker retry limit reached', finished_at = now()
-      where kind = ${kind} and attempts >= 5 and (status = 'queued' or (status = 'running' and lease_until < now()))`);
+    const failed = await tx.execute(sql`update background_jobs set status = 'failed', error = 'Worker retry limit reached', finished_at = now()
+      where kind = ${kind} and attempts >= 5 and (status = 'queued' or (status = 'running' and lease_until < now()))
+      returning id, workspace_id, user_id, kind, payload, result, error`);
     const [running] = await tx.select({ count: sql<number>`count(*)::int` }).from(jobs)
       .where(sql`${jobs.kind} = ${kind} and ${jobs.status} = 'running' and ${jobs.leaseUntil} > now()`);
-    if ((running?.count ?? 0) >= (kind === 'ocr' ? 1 : 4)) return null;
+    if ((running?.count ?? 0) >= (kind === 'ocr' ? 1 : 4)) return { job: null, failed: resultRows(failed) };
     // Workspaces least recently serviced go first; one GPU job may run across the entire fleet.
     const candidates = await tx.execute(sql`select id from background_jobs j where kind = ${kind} and attempts < 5
       and ((status = 'queued' and available_at <= now()) or (status = 'running' and lease_until < now()))
       order by (select max(started_at) from background_jobs p where p.workspace_id = j.workspace_id and p.kind = j.kind) nulls first,
         created_at, id limit 1 for update skip locked`);
-    if (!candidates[0]) return null;
+    if (!candidates[0]) return { job: null, failed: resultRows(failed) };
     const [job] = await tx.update(jobs).set({ status: 'running', leaseOwner: owner,
       leaseUntil: sql`now() + interval '90 seconds'`, startedAt: new Date(), attempts: sql`${jobs.attempts} + 1` })
       .where(eq(jobs.id, String(candidates[0].id))).returning();
-    return job!;
+    return { job: job!, failed: resultRows(failed) };
   });
+  for (const row of claimed.failed) {
+    await notifyTerminal({
+      id: textColumn(row, 'id'),
+      workspaceId: textColumn(row, 'workspace_id', 'workspaceId'),
+      userId: textColumn(row, 'user_id', 'userId'),
+      kind: textColumn(row, 'kind'),
+      status: 'failed',
+      payload: objectColumn(row, 'payload') ?? {},
+      result: objectColumn(row, 'result'),
+      error: textColumn(row, 'error') || 'Worker retry limit reached',
+    });
+  }
+  return claimed.job;
 }
 
 export async function heartbeatJob(job: Job): Promise<boolean> {
@@ -93,16 +141,82 @@ export async function finishJob(job: Job, result: Record<string, unknown>) {
   const rows = await getDb().update(jobs).set({ status: 'completed', result, finishedAt: new Date(), leaseUntil: null })
     .where(and(eq(jobs.id, job.id), eq(jobs.status, 'running'), eq(jobs.leaseOwner, job.leaseOwner!)))
     .returning({ id: jobs.id });
+  if (rows.length > 0) {
+    await notifyTerminal({
+      id: job.id,
+      workspaceId: job.workspaceId,
+      userId: job.userId,
+      kind: job.kind,
+      status: 'completed',
+      payload: job.payload,
+      result,
+      error: null,
+    });
+  }
   return rows.length > 0;
 }
 
 export async function retryJob(job: Job) {
   const terminal = job.attempts >= 5;
-  await getDb().update(jobs).set({ status: terminal ? 'failed' : 'queued',
-    error: terminal ? 'Processing failed after repeated attempts. Retry from the source app.' : 'Processing will retry shortly.',
+  const error = terminal
+    ? 'Processing failed after repeated attempts. Retry from the source app.'
+    : 'Processing will retry shortly.';
+  const rows = await getDb().update(jobs).set({ status: terminal ? 'failed' : 'queued',
+    error,
     availableAt: new Date(Date.now() + Math.min(300_000, 1000 * 2 ** job.attempts) + Math.random() * 1000),
     finishedAt: terminal ? new Date() : null, leaseUntil: null })
-    .where(and(eq(jobs.id, job.id), eq(jobs.status, 'running'), eq(jobs.leaseOwner, job.leaseOwner!)));
+    .where(and(eq(jobs.id, job.id), eq(jobs.status, 'running'), eq(jobs.leaseOwner, job.leaseOwner!)))
+    .returning({ id: jobs.id });
+  if (terminal && rows.length > 0) {
+    await notifyTerminal({
+      id: job.id,
+      workspaceId: job.workspaceId,
+      userId: job.userId,
+      kind: job.kind,
+      status: 'failed',
+      payload: job.payload,
+      result: job.result,
+      error,
+    });
+  }
+}
+
+export async function latestRelevantOcrJob(workspaceId: string, userId: string): Promise<Job | null> {
+  const rows = await getDb().select().from(jobs).where(and(
+    eq(jobs.workspaceId, workspaceId), eq(jobs.userId, userId), eq(jobs.kind, 'ocr'),
+  )).orderBy(desc(jobs.createdAt)).limit(5);
+  return rows.find((job) => job.status === 'queued' || job.status === 'running') ?? rows[0] ?? null;
+}
+
+export function ocrResumeSummary(job: Job | null): {
+  id: string;
+  status: string;
+  error: string | null;
+  analysisId: string | null;
+  presented: boolean;
+} | null {
+  if (!job || job.kind !== 'ocr') return null;
+  const presented = job.result?.presented === true;
+  const live = job.status === 'queued' || job.status === 'running';
+  const terminal = job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled';
+  if (!live && (!terminal || presented)) return null;
+  return {
+    id: job.id,
+    status: job.status,
+    error: job.error,
+    analysisId: analysisIdFromJob(job) ?? null,
+    presented,
+  };
+}
+
+export async function acknowledgeOcrJob(workspaceId: string, userId: string, id: string): Promise<boolean> {
+  const job = await getJob(workspaceId, id);
+  if (!job || job.userId !== userId || job.kind !== 'ocr') return false;
+  if (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'cancelled') return false;
+  await getDb().update(jobs).set({
+    result: sql`coalesce(${jobs.result}, '{}'::jsonb) || '{"presented":true}'::jsonb`,
+  }).where(and(eq(jobs.id, id), eq(jobs.workspaceId, workspaceId), eq(jobs.userId, userId)));
+  return true;
 }
 
 export async function cancelJob(workspaceId: string, id: string) {

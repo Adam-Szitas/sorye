@@ -21,7 +21,10 @@ import {
   type SitePage,
   type SiteTemplateId,
 } from '@sorye/types';
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { createDurableActionQueue, registerPendingActionFlusher, switchAuthorizedWorkspace, type DurableActionQueue } from '@sorye/platform';
+import { UserLoadSections } from '@sorye/platform/react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import type { UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
 
 const FIELD_CLASS =
   'mt-1 w-full min-h-12 rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-base text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#0b57d0] focus:border-[var(--color-accent)]/50';
@@ -31,11 +34,23 @@ const HINT_CLASS = 'mt-1 text-xs text-[var(--color-text-muted)]';
 const GHOST_BTN =
   'min-h-12 rounded-lg px-3 text-sm text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)] disabled:opacity-40';
 
+interface SavedSiteSummary {
+  displayName: string;
+  slug: string;
+  published: boolean;
+}
+
 interface EditorResponse {
   site?: SitePage;
   sharePath?: string;
   error?: string;
+  load?: UserLoadPartition<SavedSiteSummary>;
+  workspace?: UserLoadWorkspace;
+  revision?: number;
+  queueScope?: string;
 }
+
+type SiteAction = { actionId: string; appId: 'site'; resourceType: 'page'; operation: 'create' | 'update'; resourceId: string; expectedRevision?: number; payloadVersion: 1; payload: Record<string, unknown>; occurredAt: string };
 
 function emptyLink(): SiteLink {
   return { label: '', url: '' };
@@ -52,12 +67,17 @@ function patchBlock(
 export function AppSite() {
   const uid = useId();
   const [site, setSite] = useState<SitePage | null>(null);
+  const [siteLoad, setSiteLoad] = useState<UserLoadPartition<SavedSiteSummary> | null>(null);
   const [sharePath, setSharePath] = useState('/s/…');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addType, setAddType] = useState<SiteBlockType>('hero');
+  const [revision, setRevision] = useState(0);
+  const [queueScope, setQueueScope] = useState<string | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const queueRef = useRef<DurableActionQueue<SiteAction> | null>(null);
 
   const nameId = `${uid}-name`;
   const publishedId = `${uid}-published`;
@@ -68,14 +88,26 @@ export function AppSite() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const res = await fetch('/api/site', { credentials: 'include' });
+      const [res, scopeResponse] = await Promise.all([
+        fetch('/api/site', { credentials: 'include' }),
+        fetch('/api/site/scope', { credentials: 'include' }),
+      ]);
       const data = (await res.json().catch(() => ({}))) as EditorResponse;
+      const scopeData = (await scopeResponse.json().catch(() => ({}))) as { queueScope?: string };
       if (cancelled) return;
       if (!res.ok || !data.site) {
         setError(data.error ?? 'Could not load this page.');
         return;
       }
       setSite(data.site);
+      setSiteLoad(data.load ?? null);
+      setRevision(data.revision ?? 0);
+      setQueueScope(scopeData.queueScope ?? null);
+      if (scopeData.queueScope) {
+        queueRef.current?.close();
+        queueRef.current = createDurableActionQueue<SiteAction>({ appId: 'site', scope: scopeData.queueScope });
+        setQueuedCount((await queueRef.current.list()).length);
+      }
       setSharePath(data.sharePath ?? `/s/${data.site.slug}`);
     }
     void load();
@@ -83,6 +115,28 @@ export function AppSite() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!queueScope || !queueRef.current) return;
+    void flushSiteActions().then(async () => {
+      setQueuedCount((await queueRef.current?.list())?.length ?? 0);
+    }).catch(() => undefined);
+  }, [queueScope]);
+
+  useEffect(() => {
+    const flushBestEffort = async () => {
+      await flushSiteActions().catch(() => undefined);
+      return (await queueRef.current?.list())?.length ?? 0;
+    };
+    const unregister = registerPendingActionFlusher('site', flushBestEffort);
+    window.addEventListener('pagehide', flushBestEffort);
+    window.addEventListener('sorye:logout-flush', flushBestEffort);
+    return () => {
+      window.removeEventListener('pagehide', flushBestEffort);
+      window.removeEventListener('sorye:logout-flush', flushBestEffort);
+      unregister();
+    };
+  }, [queueScope]);
 
   const shareUrl =
     typeof window === 'undefined'
@@ -94,37 +148,68 @@ export function AppSite() {
     const form = event.currentTarget;
     if (!form.reportValidity() || !site || saving) return;
 
+    if (!queueScope || !queueRef.current) { setError('The authorized Site queue is not ready. Reload before saving.'); return; }
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch('/api/site', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          published: site.published,
-          displayName: site.displayName,
-          blocks: site.blocks,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as EditorResponse;
-      if (!res.ok || !data.site) {
-        setError(data.error ?? 'Could not save this page.');
-        return;
-      }
-      setSite(data.site);
-      setSharePath(data.sharePath ?? `/s/${data.site.slug}`);
-      setNotice(
-        data.site.published
-          ? 'Saved and published. Anyone with the link can view these sections.'
-          : 'Saved. Unpublished pages return 404.',
-      );
+      const action: SiteAction = {
+        actionId: crypto.randomUUID(), appId: 'site', resourceType: 'page', operation: revision === 0 ? 'create' : 'update',
+        resourceId: site.workspaceId, ...(revision ? { expectedRevision: revision } : {}), payloadVersion: 1,
+        payload: { id: site.workspaceId, slug: site.slug, title: site.displayName, published: site.published,
+          blocks: site.blocks.map(({ id, type, ...content }) => ({ id, kind: type === 'storefront' ? 'shop' : type, content })), updatedAt: new Date().toISOString() },
+        occurredAt: new Date().toISOString(),
+      };
+      await queueRef.current.enqueue(action);
+      setQueuedCount((await queueRef.current.list()).length);
+      await flushSiteActions();
     } catch {
       setError('Could not save this page.');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function flushSiteActions() {
+    const q = queueRef.current;
+    if (!q) return;
+    const rows = await q.list();
+    for (const row of rows) {
+      if (row.status !== 'pending' && row.status !== 'failed') continue;
+      await q.markAttempt(row.action.actionId);
+      try {
+        const response = await fetch('/api/backend/actions/batch', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Sorye-Queue-Scope': queueScope ?? '' }, body: JSON.stringify({ actions: [row.action] }) });
+        const data = await response.json().catch(() => ({})) as { results?: Array<{ actionId: string; status: 'committed' | 'duplicate' | 'conflict' | 'rejected'; revision?: number; error?: { code: string; message?: string } }>; error?: { code?: string } };
+        if (!response.ok) { await q.markTransportFailure(row.action.actionId, { code: data.error?.code ?? 'request_failed' }); continue; }
+        const outcome = data.results?.find((result) => result.actionId === row.action.actionId);
+        if (!outcome) { await q.markTransportFailure(row.action.actionId, { code: 'missing_action_result' }); continue; }
+        await q.settle(outcome);
+        if (outcome.status === 'committed' || outcome.status === 'duplicate') setRevision(outcome.revision ?? revision);
+        else if (outcome.status === 'conflict') setError('Site changed elsewhere. Reload the latest page and reconcile before saving again.');
+        else setError(outcome.error?.message ?? outcome.error?.code ?? 'Rodrigo rejected this Site change.');
+      } catch {
+        await q.markTransportFailure(row.action.actionId, { code: 'network_error', message: 'Rodrigo could not confirm this change.' });
+      }
+    }
+    setQueuedCount((await q.list()).length);
+    const remaining = await q.list();
+    if (remaining.length === 0) {
+      try {
+        const response = await fetch('/api/site', { credentials: 'include' });
+        const data = await response.json() as EditorResponse;
+        if (response.ok && data.site) { setSite(data.site); setRevision(data.revision ?? revision); setSharePath(data.sharePath ?? `/s/${data.site.slug}`); setNotice(data.site.published ? 'Saved in Rodrigo. The share URL serves this page.' : 'Saved in Rodrigo as an unpublished draft. The public URL stays a 404.'); }
+      } catch { /* The durable acknowledgement is already recorded; next load re-reads Rodrigo. */ }
+    }
+  }
+
+  async function reconcileSiteActions() {
+    const q = queueRef.current;
+    if (!q) return;
+    for (const row of await q.list()) if (row.status === 'conflict' || row.status === 'rejected') await q.discard(row.action.actionId);
+    setQueuedCount((await q.list()).length);
+    const response = await fetch('/api/site', { credentials: 'include' });
+    const data = await response.json().catch(() => ({})) as EditorResponse;
+    if (response.ok && data.site) { setSite(data.site); setRevision(data.revision ?? 0); setSharePath(data.sharePath ?? `/s/${data.site.slug}`); setError(null); }
   }
 
   async function copyShareUrl() {
@@ -195,6 +280,33 @@ export function AppSite() {
             Build sections, then publish one URL. Visitors only see the blocks
             you include — never Reports, Mail, members, or orders.
           </p>
+          {siteLoad ? (
+            <UserLoadSections
+              load={siteLoad}
+              empty="No saved page in this workspace."
+              heading="h2"
+              renderItems={(items) => (
+                <ul>
+                  {items.map((item) => (
+                    <li key={item.workspaceId}>
+                      <button
+                        type="button"
+                        className="text-sm underline"
+                        onClick={() => {
+                          void switchAuthorizedWorkspace(item.workspaceId).then((ok) => {
+                            if (ok) window.location.reload();
+                          });
+                        }}
+                      >
+                        {item.value.displayName || item.value.slug}
+                        {item.value.published ? '' : ' (draft)'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
+          ) : null}
         </header>
 
         <div
@@ -205,6 +317,7 @@ export function AppSite() {
         >
           {error ? <p className="text-red-300">{error}</p> : null}
           {notice ? <p className="text-emerald-300">{notice}</p> : null}
+          {queuedCount > 0 ? <p className="text-amber-200">{queuedCount} unresolved Site action(s). <button type="button" className="underline" onClick={() => void flushSiteActions()}>Resend</button> <button type="button" className="ml-2 underline" onClick={() => void reconcileSiteActions()}>Reload and discard conflicts</button></p> : null}
         </div>
 
         <div>
@@ -313,9 +426,7 @@ export function AppSite() {
             type="checkbox"
             className="mt-1 size-5 accent-[var(--color-accent)]"
             checked={site.published}
-            onChange={(event) =>
-              setSite({ ...site, published: event.target.checked })
-            }
+            onChange={(event) => setSite({ ...site, published: event.target.checked })}
             aria-describedby={`${publishedId}-hint`}
           />
           <div>
@@ -323,8 +434,7 @@ export function AppSite() {
               Published
             </label>
             <p id={`${publishedId}-hint`} className={HINT_CLASS}>
-              When on, anyone with the URL can see these sections. Off returns
-              404.
+              Turn this on and save to serve the share URL. Visitors see the published blocks only. Turning it off makes that URL a 404. This save does not emit a Relay publish event.
             </p>
           </div>
         </div>

@@ -1,4 +1,7 @@
+import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
+import { UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
 
 import {
   addMonths,
@@ -46,11 +49,14 @@ export default function App() {
 
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [eventLoad, setEventLoad] = useState<UserLoadPartition<CalendarEvent> | null>(null);
+  const [calendarWorkspace, setCalendarWorkspace] = useState<UserLoadWorkspace | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>(
     'loading',
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
+  const [queueStatus, setQueueStatus] = useState({ pending: 0, failed: 0, conflicts: 0, rejected: 0 });
   const [draft, setDraft] = useState<ScheduleDraft>(() =>
     buildInitialDraft(todayKey()),
   );
@@ -61,15 +67,42 @@ export default function App() {
       .then((next) => {
         if (cancelled) return;
         setEvents(next);
+        const saved = storage.readLoad();
+        setEventLoad(saved.load);
+        setCalendarWorkspace(saved.workspace);
         setLoadState('ready');
+        void storage.queueState().then(setQueueStatus).catch(() => undefined);
       })
       .catch(() => {
-        if (!cancelled) setLoadState('error');
+        if (!cancelled) {
+          setLoadState('error');
+          void storage.queueState().then(setQueueStatus).catch(() => undefined);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const flushBestEffort = async () => {
+      await storage.resendPending().catch(() => undefined);
+      const state = await storage.queueState().catch(() => ({ pending: 1, failed: 0, conflicts: 0, rejected: 0 }));
+      return state.pending + state.failed + state.conflicts + state.rejected;
+    };
+    const unregister = registerPendingActionFlusher('calendar', flushBestEffort);
+    const refreshPending = () => { void storage.queueState().then(setQueueStatus).catch(() => undefined); };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushBestEffort(); else refreshPending(); };
+    window.addEventListener('pagehide', flushBestEffort);
+    window.addEventListener('sorye:logout-flush', flushBestEffort);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushBestEffort);
+      window.removeEventListener('sorye:logout-flush', flushBestEffort);
+      document.removeEventListener('visibilitychange', onVisibility);
+      unregister();
+    };
+  }, [storage]);
 
   const monthLabel = viewDate.toLocaleDateString(undefined, {
     month: 'long',
@@ -97,13 +130,25 @@ export default function App() {
   const persist = useCallback((next: CalendarEvent[]) => {
     setEvents(next);
     void saveEvents(next).then(
-      () => { setSaveError(null); setConflictDraftAvailable(false); },
+      () => { setSaveError(null); setConflictDraftAvailable(false); return storage.queueState(); },
       (err: unknown) => {
         setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
-        if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
+        setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
+        return storage.queueState();
       },
-    );
+    ).then(setQueueStatus).catch(() => undefined);
   }, [storage]);
+
+  const resendPending = async () => {
+    try {
+      await storage.resendPending();
+      const latest = await loadEvents();
+      setEvents(latest);
+      setSaveError(null);
+    }
+    catch (error) { setSaveError(error instanceof Error ? error.message : 'Rodrigo has not confirmed the pending calendar changes.'); }
+    setQueueStatus(await storage.queueState().catch(() => queueStatus));
+  };
 
   const downloadConflictDraft = () => {
     const draft = storage.readConflictDraft();
@@ -118,11 +163,13 @@ export default function App() {
 
   const discardDraftAndReload = async () => {
     try {
+      await storage.discardConflictsAndRejected();
       const latest = await loadEvents();
       storage.clearConflictDraft();
       setEvents(latest);
       setConflictDraftAvailable(false);
       setSaveError(null);
+      setQueueStatus(await storage.queueState());
     } catch {
       setSaveError('Could not reload the latest calendar. Your draft is still available in this browser.');
     }
@@ -175,14 +222,6 @@ export default function App() {
 
   return (
     <div className="calendar-app">
-      <header className="calendar-header">
-        <div>
-          <h1>Calendar</h1>
-          <p>Plan meetings and deadlines in your workspace</p>
-        </div>
-        <span className="calendar-badge">Productivity</span>
-      </header>
-
       {loadState === 'loading' ? (
         <p className="calendar-empty">Loading workspace calendar…</p>
       ) : null}
@@ -198,6 +237,12 @@ export default function App() {
             <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
             <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
           </div> : null}
+        </div>
+      ) : null}
+      {queueStatus.pending + queueStatus.failed + queueStatus.conflicts + queueStatus.rejected > 0 ? (
+        <div className="calendar-empty" role="status">
+          {queueStatus.pending + queueStatus.failed} calendar action(s) await Rodrigo; {queueStatus.conflicts} conflict(s); {queueStatus.rejected} rejected.
+          {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
         </div>
       ) : null}
 
@@ -275,6 +320,46 @@ export default function App() {
                 })}
               </h2>
 
+              {eventLoad && calendarWorkspace ? (
+                <UserLoadSections
+                  load={withActiveWorkspaceItems(eventLoad, calendarWorkspace.id, events)}
+                  empty="No events in this workspace."
+                  heading="h3"
+                  renderItems={(items) => (
+                    <ul className="calendar-events">
+                      {items.map((item) => (
+                        <li key={`${item.workspaceId}:${item.value.id}`}>
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            onClick={() => {
+                              void (async () => {
+                                if (item.workspaceId !== calendarWorkspace.id) {
+                                  const switched = await switchAuthorizedWorkspace(item.workspaceId);
+                                  if (!switched) {
+                                    setSaveError('Could not open that workspace.');
+                                    return;
+                                  }
+                                  const next = await loadEvents();
+                                  setEvents(next);
+                                  const saved = storage.readLoad();
+                                  setEventLoad(saved.load);
+                                  setCalendarWorkspace(saved.workspace);
+                                }
+                                const date = item.value.dates[0];
+                                if (date) setSelectedDate(date);
+                              })();
+                            }}
+                          >
+                            <strong>{item.value.title}</strong>
+                            <span>{formatEventSchedule(item.value)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                />
+              ) : null}
               {dayEvents.length === 0 ? (
                 <p className="calendar-empty">No events yet.</p>
               ) : (

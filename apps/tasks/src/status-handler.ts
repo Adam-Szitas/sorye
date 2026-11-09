@@ -8,7 +8,7 @@ import {
 export type { TaskItem, TaskStatus, TasksBoard };
 
 export type StatusPatch = Partial<Pick<TaskStatus, 'name' | 'color'>>;
-export type TaskPatch = Partial<Pick<TaskItem, 'title' | 'body'>>;
+export type TaskPatch = Partial<Pick<TaskItem, 'title' | 'body' | 'driveFileId'>>;
 
 const STATUS_COLORS = [
   '#64748b',
@@ -37,6 +37,12 @@ function pickColor(statuses: TaskStatus[]): string {
 
 function touchTask(task: TaskItem): TaskItem {
   return { ...task, updatedAt: new Date().toISOString() };
+}
+
+function applyTaskPatch(task: TaskItem, patch: TaskPatch): TaskItem {
+  const next = touchTask({ ...task, ...patch });
+  if ('driveFileId' in patch && patch.driveFileId === undefined) delete next.driveFileId;
+  return next;
 }
 
 /**
@@ -115,7 +121,7 @@ export class StatusHandler {
     return new StatusHandler({
       ...this.board,
       tasks: this.board.tasks.map((task) =>
-        task.id === taskId ? touchTask({ ...task, ...patch }) : task,
+        task.id === taskId ? applyTaskPatch(task, patch) : task,
       ),
     });
   }

@@ -496,6 +496,7 @@
 }
 
 .composer {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 0.45rem;
@@ -553,6 +554,46 @@
 
 .composer .send:disabled {
   opacity: 0.45;
+}
+
+.mention-list {
+  position: absolute;
+  z-index: 4;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: calc(100% - 0.35rem);
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  max-height: 12rem;
+  overflow: auto;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 0.75rem;
+  background: #121826;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.mention-list button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #f8fafc;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.45rem 0.65rem;
+}
+
+.mention-list button[aria-selected='true'] {
+  background: rgba(45, 212, 191, 0.18);
+}
+
+.mention {
+  background: rgba(45, 212, 191, 0.18);
+  color: #99f6e4;
+  border-radius: 0.3rem;
+  padding: 0 0.2rem;
 }
 
 @media (max-width: 720px) {

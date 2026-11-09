@@ -1,10 +1,12 @@
+import { UserLoadSections } from '@sorye/platform/react';
 import { useMemo, useState } from 'react';
-import type { AppCatalogEntry, EmbedWidget, HubSession } from '@sorye/types';
+import type { AppCatalogEntry, EmbedWidget, HubSession, UserLoadPartition } from '@sorye/types';
 import { APP_CATALOG } from '@sorye/types';
 
 interface EmbedGuideProps {
   session: HubSession;
   widgets: EmbedWidget[];
+  widgetLoad?: UserLoadPartition<EmbedWidget> | null;
   hubOrigin: string;
 }
 
@@ -43,7 +45,7 @@ function buildSnippet(
 </script>`;
 }
 
-export function EmbedGuide({ session, widgets, hubOrigin }: EmbedGuideProps) {
+export function EmbedGuide({ session, widgets, widgetLoad, hubOrigin }: EmbedGuideProps) {
   const [copied, setCopied] = useState(false);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
 
@@ -150,7 +152,25 @@ export function EmbedGuide({ session, widgets, hubOrigin }: EmbedGuideProps) {
 
         <article className="embed-card">
           <h3>Embed keys</h3>
-          {widgets.length === 0 ? (
+          {widgetLoad ? (
+            <UserLoadSections
+              load={widgetLoad}
+              empty="No embed widgets in this workspace."
+              heading="h3"
+              renderItems={(items) => (
+                <ul className="embed-widget-list">
+                  {items.map((item) => (
+                    <li key={`${item.workspaceId}:${item.value.id}`}>
+                      <strong>{item.value.name}</strong>
+                      <span>
+                        {item.value.keyHint} · {item.value.allowedOrigins.join(', ') || 'no origins'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
+          ) : widgets.length === 0 ? (
             <p className="embed-muted">
               No embed widgets yet. In the Hub top bar open{' '}
               <strong>Connections</strong> → <strong>Embed widgets</strong> and

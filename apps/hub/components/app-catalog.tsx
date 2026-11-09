@@ -6,7 +6,11 @@ import {
   APP_CATALOG,
   HUB_MANAGE_APPS_EVENT,
   HUB_OPEN_APP_EVENT,
+  type HubOpenAppDetail,
+  APP_RUNNING_COST,
+  appMinimumYearlyCents,
   filterCatalogForViewer,
+  formatEur,
   getSelectedApps,
   workspaceCatalogEntries,
   type AppCatalogEntry,
@@ -24,9 +28,14 @@ const CATEGORY_LABEL: Record<AppCatalogEntry['category'], string> = {
   creative: 'Creative',
 };
 
-export function requestHubOpenApp(appId: string, side?: PaneSide) {
+export function requestHubOpenApp(
+  appId: string,
+  side?: PaneSide,
+  target?: Pick<HubOpenAppDetail, 'analysisId' | 'jobId' | 'outcome' | 'channelId'>,
+) {
+  const detail: HubOpenAppDetail = { appId, side, ...target };
   window.dispatchEvent(
-    new CustomEvent(HUB_OPEN_APP_EVENT, { detail: { appId, side } }),
+    new CustomEvent(HUB_OPEN_APP_EVENT, { cancelable: true, detail }),
   );
 }
 
@@ -105,6 +114,12 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
           Every Sorye app, for every workspace. Catalog is always on and does
           not use a plan slot.
         </p>
+        <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-muted)]">
+          One running stack costs {formatEur(APP_RUNNING_COST.yearlyCents)} a
+          year. That covers electricity for the shared host and the OCR GPU
+          allowance. The price on each app is its share of that subscription.
+          Included apps are not charged on their own.
+        </p>
         <button
           type="button"
           onClick={() => {
@@ -164,6 +179,11 @@ export function AppCatalogBrowser({ paneSide }: AppCatalogBrowserProps) {
                       </div>
                       <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                         {app.description}
+                      </p>
+                      <p className="mt-1 text-xs font-medium tabular-nums">
+                        {appMinimumYearlyCents(app.id) > 0
+                          ? `${formatEur(appMinimumYearlyCents(app.id))} / year`
+                          : 'Included'}
                       </p>
                     </div>
                   </div>

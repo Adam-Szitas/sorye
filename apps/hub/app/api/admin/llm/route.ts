@@ -1,7 +1,7 @@
 import { ensureHubUser } from '@/lib/ensure-user';
 import { isPlatformAdmin } from '@/lib/platform-admin';
 import { getLlmActivity, getLlmControlSettings, initializeLlmControl, logLlmActivity, saveLlmControlSettings } from '@/lib/llm-control';
-import { readGpuSnapshot } from '@/lib/ocr/gpu-guard';
+import { listHostGpus, readGpuSnapshot } from '@/lib/ocr/gpu-guard';
 import { assertSafeLlmBaseUrl } from '@/lib/security';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -16,6 +16,7 @@ const settingsSchema = z.object({
   contextLength: z.number().int().min(2048).max(8192),
   maxOutputTokens: z.number().int().min(128).max(1800),
   minFreeVramMiB: z.number().int().min(512).max(8192),
+  gpuIndex: z.number().int().min(0).max(15).optional(),
 });
 
 async function authorizedAdmin() {
@@ -63,12 +64,16 @@ export async function GET() {
   if ('response' in auth) return auth.response;
   await initializeLlmControl();
   const settings = getLlmControlSettings();
-  const [gpu, processes, engine] = await Promise.all([
-    readGpuSnapshot().catch(() => null), gpuProcesses(), engineStatus(settings),
+  const [gpu, gpus, processes, engine] = await Promise.all([
+    readGpuSnapshot(settings.gpuIndex ?? 0).catch(() => null),
+    listHostGpus(),
+    gpuProcesses(),
+    engineStatus(settings),
   ]);
   return NextResponse.json({
     settings,
     gpu,
+    gpus,
     processes,
     engine,
     events: getLlmActivity(100),

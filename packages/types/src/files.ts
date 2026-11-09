@@ -4,6 +4,23 @@ export const FILE_DISPLAY_NAME_MAX = 180;
 /** Upload cap (bytes). Bytes are never stored in the JSON/Postgres record. */
 export const FILE_MAX_BYTES = 64 * 1024 * 1024;
 export const FILE_MAX_PER_WORKSPACE = 200;
+/**
+ * Task description photos. Raster images only, under the existing image ceiling
+ * (`MAX_IMAGE_DATA_URL_LENGTH`) and the Drive file cap. The bytes are a Drive
+ * file, not part of the task JSON or the Rodrigo action body.
+ */
+export const TASK_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const TASK_PHOTO_MIMES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+] as const;
+export type TaskPhotoMime = (typeof TASK_PHOTO_MIMES)[number];
+
+export function isTaskPhotoMime(value: string): value is TaskPhotoMime {
+  return (TASK_PHOTO_MIMES as readonly string[]).includes(value);
+}
 
 export const FILE_ALLOWED_MIMES = [
   'application/octet-stream', // Download-only Studio mesh documents.
@@ -71,6 +88,8 @@ export interface FileListResponse {
   files: WorkspaceFile[];
   maxBytes: number;
   maxFiles: number;
+  load?: import('./user-load').UserLoadPartition<WorkspaceFile>;
+  workspace?: import('./user-load').UserLoadWorkspace;
 }
 
 /** Apps that can open the original bytes, rather than an exported derivative. */

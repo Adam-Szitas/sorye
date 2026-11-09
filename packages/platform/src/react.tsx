@@ -55,3 +55,6 @@ export function TranslatedText({ message }: { message: MessageKey }) {
   const { t } = useI18n();
   return <>{t(message)}</>;
 }
+
+export { StandaloneAppBar, StandaloneFrame, hubMenuHref } from './chrome';
+export { UserLoadSections, withActiveWorkspaceItems } from './user-load-sections';

@@ -25,6 +25,7 @@ export const WORKSPACE_EVENT_NAMES = [
   'sorye.site.published',
   'sorye.mail.sent',
   'sorye.files.uploaded',
+  'sorye.mcp.action_executed',
   'sorye.test.ping',
 ] as const;
 

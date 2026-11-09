@@ -30,36 +30,17 @@ export const getCanvasBoard = (
   );
 
 export const createCanvasBoard = (
-  userId: string,
-  workspaceId: string,
-  title: string,
-) =>
-  withWorkspaceDb(
-    workspaceId,
-    (db) => workspaceDb.createCanvasBoard(db, userId, workspaceId, title),
-    () => hubStore().createCanvasBoard(userId, workspaceId, title),
-  );
+  _userId: string,
+  _workspaceId: string,
+  _title: string,
+) => Promise.reject(new Error('canvas_authority_moved_to_rodrigo'));
 
 export const updateCanvasBoard = (
-  userId: string,
-  workspaceId: string,
-  boardId: string,
-  patch: Parameters<typeof postgresStore.updateCanvasBoard>[3],
-) =>
-  withWorkspaceDb(
-    workspaceId,
-    (db) =>
-      workspaceDb.updateCanvasBoard(db, userId, workspaceId, boardId, patch),
-    () => hubStore().updateCanvasBoard(userId, workspaceId, boardId, patch),
-  );
+  _userId: string,
+  _workspaceId: string,
+  _boardId: string,
+  _patch: Parameters<typeof postgresStore.updateCanvasBoard>[3],
+) => Promise.reject(new Error('canvas_authority_moved_to_rodrigo'));
 
-export const deleteCanvasBoard = (
-  userId: string,
-  workspaceId: string,
-  boardId: string,
-) =>
-  withWorkspaceDb(
-    workspaceId,
-    (db) => workspaceDb.deleteCanvasBoard(db, userId, workspaceId, boardId),
-    () => hubStore().deleteCanvasBoard(userId, workspaceId, boardId),
-  );
+export const deleteCanvasBoard = (_userId: string, _workspaceId: string, _boardId: string) =>
+  Promise.reject(new Error('canvas_authority_moved_to_rodrigo'));

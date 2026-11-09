@@ -2,6 +2,7 @@
 
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader } from '@/components/micro-app-loader';
+import { StandaloneAppBar } from '@/components/standalone-app-bar';
 import { HubNativeAppBody } from '@/components/hub-native-app';
 import { AppUsageGuide } from '@/components/app-usage-guide';
 import {
@@ -76,15 +77,7 @@ export default function MicroAppPage() {
     if (isHubNativeApp(app)) {
       return (
         <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
-          <header className="glass flex shrink-0 items-center gap-4 px-4 py-3 sm:px-6">
-            <Link
-              href="/"
-              className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-            >
-              ← Hub
-            </Link>
-            <span className="text-sm font-medium">{app.name}</span>
-          </header>
+          <StandaloneAppBar appName={app.name} />
           {shouldShowUsageGuide(app.id) ? (
             <AppUsageGuide app={app} variant="pane" />
           ) : null}
@@ -108,25 +101,18 @@ export default function MicroAppPage() {
 
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
-      <header className="glass flex shrink-0 items-center gap-4 px-4 py-3 sm:px-6">
-        <Link
-          href="/"
-          className="rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)]"
-        >
-          ← Hub
-        </Link>
-        <span className="text-sm font-medium">{app.name}</span>
+      <StandaloneAppBar appName={app.name}>
         {app.external ? (
           <a
             href={app.external.url}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto text-xs text-[var(--color-text-muted)] transition hover:text-[var(--color-accent)]"
+            className="sorye-app-bar-hub"
           >
             Open externally ↗
           </a>
         ) : null}
-      </header>
+      </StandaloneAppBar>
       {shouldShowUsageGuide(app.id) ? (
         <AppUsageGuide app={app} variant="pane" />
       ) : null}

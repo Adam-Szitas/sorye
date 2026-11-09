@@ -1225,3 +1225,15 @@
 .ocr-formatted-table tbody tr:hover td {
   background: rgba(245, 158, 11, 0.08);
 }
+
+.ocr-gpu-select select {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.5rem;
+  background: #0b0f17;
+  color: #f1f5f9;
+  padding: 0.45rem 0.65rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  color-scheme: only dark;
+}
+

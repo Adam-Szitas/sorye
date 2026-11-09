@@ -1042,3 +1042,410 @@ test('model output truncation is reported as incomplete rather than accepted JSO
     await assert.rejects(completeJson('PAGE 1\n0|test'), /output limit/);
   } finally { global.fetch = oldFetch; }
 });
+
+test('multi-GPU CSV parser returns indexed host GPUs and drops malformed rows', () => {
+  const { parseGpuListCsv } = load('./gpu-guard.ts');
+  const gpus = parseGpuListCsv([
+    '0, NVIDIA GeForce RTX 5070, 1920, 12282, 10362, 48',
+    '1, NVIDIA RTX A4000, 512, 16376, 15864, 41',
+    'bad, row, here',
+  ].join('\n'));
+  assert.equal(gpus.length, 2);
+  assert.deepEqual(gpus[0], {
+    index: 0,
+    name: 'NVIDIA GeForce RTX 5070',
+    usedMiB: 1920,
+    totalMiB: 12282,
+    freeMiB: 10362,
+    temperatureC: 48,
+  });
+  assert.equal(gpus[1].index, 1);
+  assert.equal(gpus[1].name, 'NVIDIA RTX A4000');
+});
+
+test('client WebGPU pattern submission preserves source rows, aligns amounts, and stamps GPU duration', async () => {
+  const pages = [{
+    page: 1,
+    rows: [
+      '01.11.04.A\tBaustelle einrichten und räumen\t \t \t1',
+      ' \t96 491,29/ PA\t59 543,90\t36 947,39\t ',
+      ' \t0,067PA\t3 989,44\t2 475,48\t6 464,92',
+    ],
+  }];
+  const { buildVector } = load('./vector.ts');
+  let persisted = null;
+  const { applyClientWebGpuPattern } = load('./webgpu-pattern.ts', {
+    '@/lib/store/ocr-analyses': {
+      updateOcrAnalysis: async (_u, _w, _id, patch) => {
+        persisted = { ...persisted, ...patch };
+        return {
+          id: 'ocr-webgpu-1',
+          workspaceId: 'ws-1',
+          fileName: '1.TR_RH7_TOP27-TOP23.pdf',
+          createdAt: '2026-11-09T08:00:00.000Z',
+          model: 'webgpu:Qwen2.5-3B-Instruct-q4f16_1-MLC',
+          status: patch.status,
+          pages,
+          lines: pages[0].rows,
+          vector: patch.vector,
+          pattern: patch.pattern,
+          error: patch.error,
+          workStartedAt: patch.workStartedAt ?? null,
+          workFinishedAt: patch.workFinishedAt ?? null,
+          durationMs: patch.durationMs ?? null,
+        };
+      },
+    },
+  });
+
+  const initial = {
+    id: 'ocr-webgpu-1',
+    workspaceId: 'ws-1',
+    fileName: '1.TR_RH7_TOP27-TOP23.pdf',
+    createdAt: '2026-11-09T08:00:00.000Z',
+    model: 'none',
+    status: 'extracting',
+    pages,
+    lines: pages[0].rows,
+    vector: buildVector(pages),
+    pattern: null,
+    error: null,
+  };
+
+  const finished = await applyClientWebGpuPattern('u-1', 'ws-1', initial, {
+    model: 'webgpu:Qwen2.5-3B-Instruct-q4f16_1-MLC',
+    startedAt: '2026-11-09T08:00:01.000Z',
+    durationMs: 420,
+    pattern: {
+      documentKind: 'invoice',
+      records: [
+        { description: 'Baustelle einrichten und räumen', unitPrice: '491,29', qty: '1', total: '6 464,92' },
+      ],
+    },
+  });
+
+  assert.equal(finished.status, 'ready');
+  assert.deepEqual(finished.pages, pages, 'client WebGPU submission must never overwrite stored pages');
+  assert.equal(finished.durationMs, 420);
+  assert.equal(finished.vector.gpuStartedAt, '2026-11-09T08:00:01.000Z');
+  assert.ok(finished.vector.gpuFinishedAt);
+  assert.equal(finished.pattern.records.length, 3);
+  assert.ok(!Object.values(finished.pattern.records[0]).includes('6 464,92'));
+  assert.ok(Object.values(finished.pattern.records[1]).some((v) => v.includes('96 491,29')));
+  assert.ok(Object.values(finished.pattern.records[2]).includes('6 464,92'));
+});
+
+test('MCP tools enforce workspace app permissions, confirmation gates, and route domain writes via Hub bridge to Rodrigo', async () => {
+  const appsTypes = load('../../../../packages/types/src/apps.ts');
+  const subTypes = load('../../../../packages/types/src/subscription.ts');
+  const tasksTypes = load('../../../../packages/types/src/tasks.ts');
+  const ocrAiTypes = load('../../../../packages/types/src/ocr-ai.ts');
+  const { parseTasksBoard, parseNotes, parseCalendarEvents } = load('../workspace-docs-validate.ts', {
+    '@sorye/types': { ...ocrAiTypes, ...tasksTypes },
+    '@/lib/security': load('../security.ts'),
+  });
+  const { executeMcpTool, listMcpToolsForSession, answerMcpChat } = load('../mcp/tools.ts', {
+    '@sorye/types': { ...ocrAiTypes, ...appsTypes, ...subTypes, ...tasksTypes },
+    '@/lib/platform-admin': { isPlatformAdmin: (u) => Boolean(u?.isAdmin) },
+    '@/lib/ocr/llm': {
+      completeChat: async () => {
+        throw new Error('model server offline');
+      },
+      llmModelName: () => 'qwen3:8b',
+    },
+    '@/lib/llm-control': {
+      getUserGpuPreference: () => ({
+        target: 'client-webgpu',
+        webGpuPowerPreference: 'high-performance',
+        webGpuModelId: 'Qwen2.5-3B-Instruct-q4f16_1-MLC',
+        hostGpuIndex: 0,
+      }),
+    },
+    './dispatcher': {
+      createDefaultMcpHubBridge: () => {
+        throw new Error('Test must supply mockBridge');
+      },
+      readTasksBoardViaBridge: async (bridge, session) => {
+        const doc = await bridge.readDocument(session, 'tasks');
+        return {
+          board: doc.payload ? parseTasksBoard(doc.payload.board ?? doc.payload) : tasksTypes.createDefaultTasksBoard(),
+          revision: doc.revision,
+        };
+      },
+      readNotesViaBridge: async (bridge, session) => {
+        const doc = await bridge.readDocument(session, 'notes');
+        return {
+          notes: doc.payload ? parseNotes(doc.payload.notes ?? doc.payload) : [],
+          revision: doc.revision,
+        };
+      },
+      readCalendarViaBridge: async (bridge, session) => {
+        const doc = await bridge.readDocument(session, 'calendar');
+        return {
+          events: doc.payload ? parseCalendarEvents(doc.payload.events ?? doc.payload) : [],
+          revision: doc.revision,
+        };
+      },
+    },
+  });
+
+  const memberSession = {
+    user: {
+      id: 'user-1',
+      email: 'member@sorye.dev',
+      displayName: 'Member',
+      personalWorkspaceId: 'ws-1',
+      teamWorkspaceIds: [],
+      activeWorkspaceId: 'ws-1',
+      isAdmin: false,
+    },
+    workspace: {
+      id: 'ws-1',
+      kind: 'personal',
+      name: 'Ops Workspace',
+      ownerId: 'user-1',
+      memberIds: ['user-1'],
+      subscriptionId: 'pro',
+      subscriptionSource: 'manual',
+      selectedAppIds: ['ocr', 'tasks', 'messenger'],
+      connectedApps: [],
+      updatedAt: '2026-11-09T08:00:00.000Z',
+    },
+    workspaces: [{ id: 'ws-1', kind: 'personal', name: 'Ops Workspace' }],
+  };
+
+  const visible = listMcpToolsForSession(memberSession);
+  assert.ok(visible.some((t) => t.name === 'ocr.search_stored_tables'));
+  assert.ok(visible.some((t) => t.name === 'tasks.create'));
+  assert.ok(!visible.some((t) => t.name === 'notes.search'), 'notes is not enabled in selectedAppIds');
+  assert.ok(!visible.some((t) => t.name === 'backend.topology'), 'admin-only tool hidden from non-admin');
+
+  // Uninstalled app tool call is denied
+  const deniedNotes = await executeMcpTool(memberSession, 'notes.search', { query: 'test' });
+  assert.equal(deniedNotes.ok, false);
+  assert.equal(deniedNotes.trace.status, 'denied');
+  assert.equal(deniedNotes.actions?.[0]?.kind, 'open-picker');
+
+  // Admin tool is denied for non-admin
+  const deniedAdmin = await executeMcpTool(memberSession, 'backend.topology', {});
+  assert.equal(deniedAdmin.ok, false);
+  assert.equal(deniedAdmin.trace.status, 'denied');
+
+  // Messenger post requires confirmation first
+  const unconfirmed = await executeMcpTool(memberSession, 'messenger.post_update', {
+    title: 'Invoice check',
+    summary: 'Verified position 01.11.04.A',
+  });
+  assert.equal(unconfirmed.ok, false);
+  assert.equal(unconfirmed.requiresConfirmation, true);
+  assert.equal(unconfirmed.trace.status, 'confirmation_required');
+
+  // Tasks write routes through bridge (Rodrigo) and emits sorye.task.created
+  const rodrigoWrites = [];
+  const emittedEvents = [];
+  const mockBridge = {
+    readDocument: async () => ({ revision: 7, payload: null }),
+    writeDocument: async (_s, kind, payload, expectedRevision) => {
+      rodrigoWrites.push({ kind, payload, expectedRevision });
+      return { revision: 8, payload };
+    },
+    emitEvent: async (_s, name, payload) => {
+      emittedEvents.push({ name, payload });
+      return { delivered: true, eventId: 'evt-1' };
+    },
+    queryOcrTables: async (_s, query) => [
+      {
+        id: 'ocr-1234',
+        fileName: '26-01579_Siedlungsunion.pdf',
+        createdAt: '2026-10-25T10:00:00.000Z',
+        status: 'ready',
+        documentKind: 'invoice',
+        fields: { Total: '96 491,29' },
+        records: [{ position: query.code ?? '01.11.04.A', amount: '96 491,29/ PA' }],
+        recordCount: 1,
+      },
+    ],
+    readOcrAnalysis: async () => null,
+    renameOcrTable: async () => null,
+    handoffOcrToProtocolio: async () => null,
+    readRodrigoCapabilities: async () => ({
+      contractVersion: '1',
+      service: 'rodrigo',
+      dataReady: true,
+      operations: ['documents:read', 'documents:write'],
+      adapters: { postgresql: 'ready', mongodb: 'not_configured', redis: 'ready', s3: 'not_configured' },
+    }),
+    readRodrigoTopology: async () => null,
+  };
+
+  const createdTask = await executeMcpTool(
+    memberSession,
+    'tasks.create',
+    { title: 'Verify 01.11.04.A unit price' },
+    { bridge: mockBridge },
+  );
+  assert.equal(createdTask.ok, true);
+  assert.equal(createdTask.trace.routedVia, 'rodrigo-signed');
+  assert.equal(rodrigoWrites.length, 1);
+  assert.equal(rodrigoWrites[0].kind, 'tasks');
+  assert.equal(rodrigoWrites[0].expectedRevision, 7);
+  assert.equal(emittedEvents[0].name, 'sorye.task.created');
+
+  const chatRes = await answerMcpChat(
+    memberSession,
+    'Search stored OCR tables for code 01.11.04.A',
+    { bridge: mockBridge },
+  );
+  assert.match(chatRes.reply, /26-01579_Siedlungsunion\.pdf/);
+  assert.match(chatRes.reply, /96 491,29/);
+  assert.equal(chatRes.traces[0].toolName, 'ocr.search_stored_tables');
+  assert.equal(chatRes.engine, 'tools');
+
+  // Stateful bridge for team workspaces
+  const docs = {
+    tasks: {
+      revision: 3,
+      payload: {
+        board: {
+          statuses: tasksTypes.createDefaultTasksBoard().statuses,
+          tasks: [
+            { id: 'task-a', title: 'Order tiles', body: '', statusId: 'status-todo', createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z' },
+            { id: 'task-b', title: 'Old cleanup', body: '', statusId: 'status-backlog', createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z' },
+          ],
+        },
+      },
+    },
+    notes: { revision: 1, payload: { notes: [] } },
+    calendar: { revision: 1, payload: { events: [] } },
+  };
+  const teamWrites = [];
+  const teamEvents = [];
+  const teamBridge = {
+    ...mockBridge,
+    readDocument: async (_s, kind) => docs[kind] ?? { revision: 0, payload: null },
+    writeDocument: async (_s, kind, payload, expectedRevision) => {
+      teamWrites.push({ kind, expectedRevision });
+      docs[kind] = { revision: (docs[kind]?.revision ?? 0) + 1, payload };
+      return docs[kind];
+    },
+    emitEvent: async (_s, name, payload) => {
+      teamEvents.push({ name, payload });
+      return { delivered: true, eventId: `evt-${teamEvents.length}` };
+    },
+    listDriveFiles: async () => [],
+  };
+  const teamWorkspace = {
+    id: 'ws-team-1',
+    kind: 'team',
+    name: 'Moi team',
+    ownerId: 'user-1',
+    memberIds: ['user-1'],
+    subscriptionId: 'pro',
+    subscriptionSource: 'manual',
+    selectedAppIds: ['ocr', 'tasks', 'notes', 'calendar'],
+    connectedApps: [],
+    updatedAt: '2026-11-09T08:00:00.000Z',
+  };
+  const ownerSession = {
+    user: { ...memberSession.user, displayName: 'Ada Owner', activeWorkspaceId: 'ws-team-1', teamWorkspaceIds: ['ws-team-1'] },
+    workspace: teamWorkspace,
+    workspaces: [
+      { id: 'ws-1', kind: 'personal', name: 'Personal' },
+      { id: 'ws-team-1', kind: 'team', name: 'Moi team' },
+    ],
+  };
+  const teamMemberSession = {
+    ...ownerSession,
+    workspace: { ...teamWorkspace, ownerId: 'user-9', memberIds: ['user-9', 'user-1', 'user-5'] },
+  };
+
+  // Ownership: owner vs member, GPU per user, data per workspace
+  const ownerAnswer = await answerMcpChat(ownerSession, 'Does this belong to me or my team?', { bridge: teamBridge });
+  assert.equal(ownerAnswer.traces[0].toolName, 'hub.whoami');
+  assert.match(ownerAnswer.reply, /Team workspace owned by you \(1 member\)/);
+  assert.match(ownerAnswer.reply, /GPU choice .* saved per user/);
+  assert.match(ownerAnswer.reply, /Belongs to "Moi team": OCR tables, Tasks, Notes, Calendar and Drive/);
+  assert.match(ownerAnswer.reply, /Personal \(personal\)/);
+  const memberAnswer = await answerMcpChat(teamMemberSession, 'Is this workspace owned by me?', { bridge: teamBridge });
+  assert.match(memberAnswer.reply, /member of, not the owner \(3 members\)/);
+
+  // Generic questions never fall back to the workspace boilerplate and never run tools
+  const howTo = await answerMcpChat(ownerSession, 'How do I use Calendar?', { bridge: teamBridge });
+  assert.equal(howTo.engine, 'built-in');
+  assert.doesNotMatch(howTo.reply, /Enabled apps:/);
+  assert.match(howTo.reply, /^Calendar: /);
+  assert.equal(howTo.traces.length, 0);
+  assert.equal(howTo.actions[0].appId, 'calendar');
+  const open = await answerMcpChat(ownerSession, 'What is the meaning of life?', { bridge: teamBridge });
+  assert.equal(open.engine, 'built-in');
+  assert.match(open.reply, /model server is running/);
+  assert.doesNotMatch(open.reply, /Enabled apps:/);
+  let seenSystemPrompt = '';
+  const llmAnswer = await answerMcpChat(ownerSession, 'Write a polite reminder to a client', {
+    bridge: teamBridge,
+    chat: async (system, user) => {
+      seenSystemPrompt = system;
+      return { text: `Dear client, ${user.length} chars`, model: 'qwen3:8b' };
+    },
+  });
+  assert.equal(llmAnswer.engine, 'server-llm');
+  assert.equal(llmAnswer.model, 'qwen3:8b');
+  assert.equal(llmAnswer.traces.length, 0);
+  assert.match(seenSystemPrompt, /Sorye Hub Assistant/);
+  const math = await answerMcpChat(ownerSession, 'what is 12*(3+4)?', { bridge: teamBridge });
+  assert.equal(math.reply, '12*(3+4) = 84');
+  const area = await answerMcpChat(ownerSession, '25 m2 to ft2', { bridge: teamBridge });
+  assert.match(area.reply, /25 m² = 269\.0978 ft²/);
+  const hello = await answerMcpChat(ownerSession, 'hello', { bridge: teamBridge });
+  assert.match(hello.reply, /^Hi Ada!/);
+
+  // tasks.complete writes the Done column through the bridge and emits sorye.task.moved
+  const completed = await answerMcpChat(ownerSession, 'Complete task Order tiles', { bridge: teamBridge });
+  assert.equal(completed.traces[0].toolName, 'tasks.complete');
+  assert.equal(completed.traces[0].status, 'executed');
+  assert.equal(docs.tasks.payload.board.tasks.find((t) => t.id === 'task-a').statusId, 'status-done');
+  assert.equal(teamWrites.at(-1).expectedRevision, 3);
+  assert.equal(teamEvents.at(-1).name, 'sorye.task.moved');
+
+  // tasks.delete requires confirmation before writing
+  const writesBeforeDelete = teamWrites.length;
+  const deleteAsk = await answerMcpChat(ownerSession, 'Delete task Old cleanup', { bridge: teamBridge });
+  assert.equal(deleteAsk.traces[0].status, 'confirmation_required');
+  assert.equal(deleteAsk.actions[0].kind, 'confirm-tool');
+  assert.equal(teamWrites.length, writesBeforeDelete);
+  const deleted = await executeMcpTool(ownerSession, 'tasks.delete', deleteAsk.actions[0].toolArgs, {
+    bridge: teamBridge,
+    confirmed: true,
+  });
+  assert.equal(deleted.ok, true);
+  assert.ok(!docs.tasks.payload.board.tasks.some((t) => t.id === 'task-b'));
+  assert.equal(teamEvents.at(-1).name, 'sorye.task.updated');
+
+  // personal.quick_capture writes a note and a task, emitting both events
+  const eventsBeforeCapture = teamEvents.length;
+  const capture = await answerMcpChat(ownerSession, 'Quick note: call the plumber about the leak + task: book plumber visit', {
+    bridge: teamBridge,
+  });
+  assert.equal(capture.traces[0].toolName, 'personal.quick_capture');
+  assert.equal(docs.notes.payload.notes[0].body, 'call the plumber about the leak');
+  assert.equal(docs.tasks.payload.board.tasks[0].title, 'book plumber visit');
+  assert.deepEqual(
+    teamEvents.slice(eventsBeforeCapture).map((e) => e.name),
+    ['sorye.notes.saved', 'sorye.task.created'],
+  );
+
+  // Tools for disabled apps are denied
+  const filesDenied = await executeMcpTool(ownerSession, 'files.list_recent', {}, { bridge: teamBridge });
+  assert.equal(filesDenied.trace.status, 'denied');
+  const captureDenied = await executeMcpTool(memberSession, 'personal.quick_capture', { note: 'x' }, { bridge: teamBridge });
+  assert.equal(captureDenied.trace.status, 'denied');
+
+  // Briefing skips disabled apps; switch offers an authorized switch card
+  const briefing = await answerMcpChat(ownerSession, 'My day', { bridge: teamBridge });
+  assert.match(briefing.reply, /Scope: "Moi team" · Team \(owned by you\)/);
+  assert.match(briefing.reply, /Open tasks/);
+  const switchRes = await answerMcpChat(ownerSession, 'Switch to my personal workspace', { bridge: teamBridge });
+  assert.equal(switchRes.actions[0].kind, 'switch-workspace');
+  assert.equal(switchRes.actions[0].workspaceId, 'ws-1');
+});
+

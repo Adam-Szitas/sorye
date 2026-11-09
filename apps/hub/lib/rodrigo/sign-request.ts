@@ -4,6 +4,7 @@ import { createHash, createPrivateKey, randomUUID, sign } from 'node:crypto';
 export function signRodrigoRequest(input: {
   userId: string; workspaceId: string; scope: string; method: string; path: string;
   body: string; keyId: string; privateKeyPem: string; now?: number;
+  appScopes?: string[]; actionScopes?: string[];
 }) {
   const key = createPrivateKey(input.privateKeyPem);
   if (key.asymmetricKeyType !== 'ed25519') throw new Error('Rodrigo signing key must be Ed25519');
@@ -12,6 +13,8 @@ export function signRodrigoRequest(input: {
   const payload = Buffer.from(JSON.stringify({
     iss: 'sorye-hub', aud: 'rodrigo', sub: input.userId, workspaceId: input.workspaceId,
     scope: input.scope, method: input.method, path: input.path,
+    ...(input.appScopes ? { appScopes: input.appScopes } : {}),
+    ...(input.actionScopes ? { actionScopes: input.actionScopes } : {}),
     bodySha256: createHash('sha256').update(input.body).digest('hex'),
     iat: now, exp: now + 30, jti: randomUUID(),
   })).toString('base64url');

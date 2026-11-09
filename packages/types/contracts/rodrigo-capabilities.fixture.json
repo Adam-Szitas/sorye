@@ -1,10 +1,29 @@
 {
   "contractVersion": "1",
+  "contractVersions": ["1", "2"],
   "service": "rodrigo",
   "dataReady": false,
   "operations": [
     "capabilities:read"
   ],
+  "actions": {
+    "version": "2",
+    "provider": "not_configured",
+    "maxBatchActions": 100,
+    "maxBodyBytes": 262144,
+    "maxCollectionPageSize": 100,
+    "families": [
+      "tasks.task.create", "tasks.task.update", "tasks.task.delete", "tasks.taskBoard.create", "tasks.taskBoard.update",
+      "notes.note.create", "notes.note.update", "notes.note.delete", "calendar.event.create", "calendar.event.update", "calendar.event.delete",
+      "workspace.settings.create", "workspace.settings.update", "messenger.channel.create", "messenger.channel.update",
+      "messenger.message.create", "messenger.message.update", "messenger.reaction.create", "files.fileMetadata.create", "files.fileMetadata.update",
+      "canvas.board.create", "canvas.board.update", "canvas.board.delete", "mail.account.create", "mail.account.update", "mail.draft.create", "mail.draft.update",
+      "relay.config.create", "relay.config.update", "site.page.create", "site.page.update", "storefront.product.create", "storefront.product.update",
+      "storefront.order.create", "storefront.order.update", "ocr.analysis.create", "ocr.analysis.update", "ocr.pattern.create", "ocr.pattern.update",
+      "studio.project.create", "studio.project.update", "notifications.notification.create", "notifications.notification.update", "events.event.create",
+      "embed.widget.create", "embed.widget.update", "protocolio.artifact.create", "protocolio.artifact.update"
+    ]
+  },
   "adapters": {
     "postgresql": "not_configured",
     "mongodb": "not_configured",

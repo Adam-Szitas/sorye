@@ -20,8 +20,9 @@
 
 .canvas-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: safe center;
+  justify-content: flex-end;
   gap: 1rem;
   padding: 1.25rem 1.5rem 1rem;
   flex-shrink: 0;

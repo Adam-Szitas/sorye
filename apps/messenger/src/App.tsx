@@ -1,22 +1,33 @@
-import { uploadToDrive } from '@sorye/sdk/files';
+import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
+import { UserLoadSections } from '@sorye/platform/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  HubOpenAppDetail,
   MessengerBootstrap,
   MessengerChannel,
   MessengerMember,
   MessengerMessage,
 } from '@sorye/types';
-import { HUB_MAIL_COMPOSE_EVENT, MESSENGER_PAGE_SIZE } from '@sorye/types';
-import { compressImageFile, formatBytes } from './image-compress';
+import {
+  HUB_MAIL_COMPOSE_EVENT,
+  HUB_OPEN_APP_EVENT,
+  MESSENGER_PAGE_SIZE,
+  activeMentionQuery,
+  hubOpenTargetKey,
+  mentionToken,
+  mentionsFromText,
+} from '@sorye/types';
 import {
   createChannel,
+  discardMessengerConflicts,
   fetchMessages,
+  getMessengerQueueState,
   loadMessenger,
-  markMessengerRead,
   mergeMessages,
   openDm,
   pollMessages,
+  resendMessengerActions,
   sendMessage,
 } from './messenger-api';
 import './styles.css';
@@ -38,6 +49,44 @@ function pickDefaultChannel(next: MessengerBootstrap): string | null {
   );
   if (next.events?.alive && events) return events.id;
   return next.channels[0]?.id ?? null;
+}
+
+function renderPingText(text: string) {
+  const pattern = /@\[([^\]\r\n]{1,80})\]\(([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\)/g;
+  const parts: Array<string | { name: string; id: string }> = [];
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (index > last) parts.push(text.slice(last, index));
+    parts.push({ name: match[1], id: match[2] });
+    last = index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.map((part, index) =>
+    typeof part === 'string' ? (
+      <span key={index}>{part}</span>
+    ) : (
+      <mark key={`${part.id}-${index}`} className="mention">
+        @{part.name}
+      </mark>
+    ),
+  );
+}
+
+function isImeEnter(event: React.KeyboardEvent): boolean {
+  return event.nativeEvent.isComposing || event.keyCode === 229;
+}
+
+function readStoredChannel(): string | null {
+  try {
+    const raw = sessionStorage.getItem(hubOpenTargetKey('messenger'));
+    if (!raw) return null;
+    sessionStorage.removeItem(hubOpenTargetKey('messenger'));
+    const parsed = JSON.parse(raw) as { channelId?: unknown };
+    return typeof parsed.channelId === 'string' ? parsed.channelId : null;
+  } catch {
+    return null;
+  }
 }
 
 function renderMessageText(text: string) {
@@ -72,10 +121,13 @@ export default function App() {
   const [data, setData] = useState<MessengerBootstrap | null>(null);
   const [channelId, setChannelId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [cursor, setCursor] = useState(0);
+  const [suggestions, setSuggestions] = useState<MessengerMember[]>([]);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [dismissedQuery, setDismissedQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [compressNote, setCompressNote] = useState<string | null>(null);
+  const [queueState, setQueueState] = useState({ pending: 0, failed: 0, conflicts: 0, rejected: 0 });
   const [newChannel, setNewChannel] = useState('');
   const [dmOpen, setDmOpen] = useState(false);
   const [mobileShowChannels, setMobileShowChannels] = useState(true);
@@ -89,13 +141,17 @@ export default function App() {
   const topSentinelRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const lastMessageCursorRef = useRef<{ createdAt: string; id: string } | undefined>(undefined);
   const threadReqRef = useRef(0);
   const loadingOlderRef = useRef(false);
   const pendingRestore = useRef<{ height: number; top: number } | null>(null);
   const hasMoreOlderRef = useRef(false);
   const threadMessagesRef = useRef<MessengerMessage[]>([]);
+
+  const refreshQueueState = useCallback(async () => {
+    try { setQueueState(await getMessengerQueueState()); } catch { /* Session/API can be unavailable before bootstrap. */ }
+  }, []);
 
   const refresh = useCallback(async () => {
     const next = await loadMessenger();
@@ -107,6 +163,23 @@ export default function App() {
     return next;
   }, []);
 
+  const selectChannel = useCallback(async (channel: MessengerChannel) => {
+    if (data && channel.workspaceId !== data.workspace.id) {
+      const switched = await switchAuthorizedWorkspace(channel.workspaceId);
+      if (!switched) {
+        setError('Could not open that workspace.');
+        return;
+      }
+      const next = await loadMessenger();
+      setData(next);
+      setChannelId(channel.id);
+      setMobileShowChannels(false);
+      return;
+    }
+    setChannelId(channel.id);
+    setMobileShowChannels(false);
+  }, [data]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -115,8 +188,14 @@ export default function App() {
         const next = await loadMessenger();
         if (cancelled) return;
         setData(next);
-        setChannelId(pickDefaultChannel(next));
-        await markMessengerRead();
+        await refreshQueueState();
+        const opened = readStoredChannel();
+        const known = new Set([
+          ...next.channels.map((channel) => channel.id),
+          ...(next.load?.personal ?? []).flatMap((group) => group.items.map((item) => item.value.id)),
+          ...(next.load?.work ?? []).flatMap((group) => group.items.map((item) => item.value.id)),
+        ]);
+        setChannelId(opened && known.has(opened) ? opened : pickDefaultChannel(next));
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load');
@@ -128,12 +207,89 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshQueueState]);
+
+  useEffect(() => {
+    const flushBestEffort = async () => {
+      await resendMessengerActions().catch(() => undefined);
+      const state = await getMessengerQueueState().catch(() => ({ pending: 1, failed: 0, conflicts: 0, rejected: 0 }));
+      return state.pending + state.failed + state.conflicts + state.rejected;
+    };
+    const unregister = registerPendingActionFlusher('messenger', flushBestEffort);
+    const onVisibility = () => { if (document.visibilityState === 'hidden') void flushBestEffort(); else void refreshQueueState(); };
+    window.addEventListener('pagehide', flushBestEffort);
+    window.addEventListener('sorye:logout-flush', flushBestEffort);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushBestEffort);
+      window.removeEventListener('sorye:logout-flush', flushBestEffort);
+      document.removeEventListener('visibilitychange', onVisibility);
+      unregister();
+    };
+  }, [refreshQueueState]);
 
   useEffect(() => {
     if (!channelId || loading) return;
-    void markMessengerRead(channelId);
   }, [channelId, loading]);
+
+  const mentionQuery = activeMentionQuery(draft, cursor);
+  const mentionKey = mentionQuery ? `${mentionQuery.start}:${mentionQuery.query}` : '';
+
+  useEffect(() => {
+    if (!channelId || !mentionKey || dismissedQuery === mentionKey) {
+      setSuggestions((current) => (current.length === 0 ? current : []));
+      return;
+    }
+    const query = mentionKey.slice(mentionKey.indexOf(':') + 1);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({
+        channelId,
+        q: query,
+      });
+      void fetch(`/api/messenger?${params}`, {
+        credentials: 'include',
+        signal: controller.signal,
+      })
+        .then(async (res) => {
+          if (!res.ok) return [];
+          const body = (await res.json()) as { members?: MessengerMember[] };
+          return body.members ?? [];
+        })
+        .then((members) => {
+          if (controller.signal.aborted) return;
+          setSuggestions(members);
+          setSuggestionIndex(0);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setSuggestions([]);
+        });
+    }, 120);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [channelId, mentionKey, dismissedQuery]);
+
+  useEffect(() => {
+    function onOpen(event: Event) {
+      const detail = (event as CustomEvent<HubOpenAppDetail>).detail;
+      if (!detail || detail.appId !== 'messenger' || !detail.channelId) return;
+      const nextId = detail.channelId;
+      void (async () => {
+        try {
+          const next = await loadMessenger();
+          setData(next);
+          setChannelId(nextId);
+          setMobileShowChannels(false);
+        } catch {
+          setChannelId(nextId);
+        }
+      })();
+    }
+    window.addEventListener(HUB_OPEN_APP_EVENT, onOpen);
+    return () => window.removeEventListener(HUB_OPEN_APP_EVENT, onOpen);
+  }, []);
 
   const messages = threadMessages;
   threadMessagesRef.current = threadMessages;
@@ -141,14 +297,6 @@ export default function App() {
 
   const activeChannel = data?.channels.find((c) => c.id === channelId);
   const isEventsChannel = activeChannel?.name === 'events';
-  const publicChannels = useMemo(() => {
-    const list = data?.channels.filter((c) => c.kind === 'channel') ?? [];
-    return [...list].sort((a, b) => {
-      if (a.name === 'events') return -1;
-      if (b.name === 'events') return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [data]);
   const dmChannels = data?.channels.filter((c) => c.kind === 'dm') ?? [];
 
   const dmCandidates = useMemo(() => {
@@ -304,7 +452,6 @@ export default function App() {
         if (cancelled || caughtUp.length === 0) return;
         lastMessageCursorRef.current = cursor;
         setThreadMessages((prev) => mergeMessages(prev, caughtUp));
-        void markMessengerRead(channelId);
       } catch {
         // ignore transient poll errors
       } finally {
@@ -325,7 +472,6 @@ export default function App() {
           const latest = page.messages.at(-1)!;
           lastMessageCursorRef.current = { createdAt: latest.createdAt, id: latest.id };
           setThreadMessages((prev) => mergeMessages(prev, page.messages));
-          void markMessengerRead(channelId);
         }).catch(() => undefined);
       }
     };
@@ -378,15 +524,35 @@ export default function App() {
     }
   }
 
+  function chooseMention(member: MessengerMember) {
+    const query = activeMentionQuery(draft, cursor);
+    if (!query) return;
+    const token = `${mentionToken(member.displayName, member.id)} `;
+    const next = `${draft.slice(0, query.start)}${token}${draft.slice(query.end)}`;
+    const nextCursor = query.start + token.length;
+    setDraft(next);
+    setCursor(nextCursor);
+    setSuggestions([]);
+    setDismissedQuery('');
+    requestAnimationFrame(() => {
+      const field = composerRef.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
   async function sendText() {
     if (!channelId || !draft.trim()) return;
+    const mentions = mentionsFromText(draft.trim());
     try {
       const message = await sendMessage({
         channelId,
         kind: 'text',
         text: draft.trim(),
+        mentions: mentions.map((mention) => ({ userId: mention.userId })),
       });
-      setThreadMessages((prev) => mergeMessages(prev, [message]));
+      setThreadMessages((prev) => mergeMessages(prev, [{ ...message, author: data?.user ?? message.author }]));
       lastMessageCursorRef.current = { createdAt: message.createdAt, id: message.id };
       stickToBottom.current = true;
       setShowJump(false);
@@ -394,39 +560,8 @@ export default function App() {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed');
-    }
-  }
-
-  async function onPickImage(file: File | null) {
-    if (!file || !channelId) return;
-    setUploading(true);
-    setCompressNote(null);
-    setError(null);
-    try {
-      const compressed = await compressImageFile(file);
-      await uploadToDrive(file, 'messenger');
-      setCompressNote(
-        `${formatBytes(compressed.originalBytes)} → ${formatBytes(compressed.bytesApprox)} · ${compressed.width}×${compressed.height}`,
-      );
-      const message = await sendMessage({
-        channelId,
-        kind: 'image',
-        text: draft.trim() || undefined,
-        imageDataUrl: compressed.dataUrl,
-        imageBytes: compressed.bytesApprox,
-        imageWidth: compressed.width,
-        imageHeight: compressed.height,
-      });
-      setThreadMessages((prev) => mergeMessages(prev, [message]));
-      lastMessageCursorRef.current = { createdAt: message.createdAt, id: message.id };
-      stickToBottom.current = true;
-      setShowJump(false);
-      setDraft('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Image upload failed');
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = '';
+      await refreshQueueState();
     }
   }
 
@@ -434,25 +569,29 @@ export default function App() {
     e.preventDefault();
     if (!newChannel.trim()) return;
     try {
-      const channel = await createChannel(newChannel);
+      const channel = await createChannel(newChannel, data?.user.id ?? '');
       setNewChannel('');
       await refresh();
       setChannelId(channel.id);
       setMobileShowChannels(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create channel');
+    } finally {
+      await refreshQueueState();
     }
   }
 
   async function startDm(peerUserId: string) {
     try {
-      const channel = await openDm(peerUserId);
+      const channel = await openDm(peerUserId, data?.user.id ?? '');
       setDmOpen(false);
       await refresh();
       setChannelId(channel.id);
       setMobileShowChannels(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not open DM');
+    } finally {
+      await refreshQueueState();
     }
   }
 
@@ -559,29 +698,43 @@ export default function App() {
               : 'App events are off by default. Turn them on in Dashboard → App events.'}
           </div>
         ) : null}
+        <p className="hint-li">Read receipts are unavailable until their data contract moves to Rodrigo.</p>
 
         <div className="sidebar-section">
           <h2>Channels</h2>
-          <ul className="channel-list">
-            {publicChannels.map((ch) => (
-              <li key={ch.id}>
-                <button
-                  type="button"
-                  className={ch.id === channelId ? 'active' : undefined}
-                  onClick={() => {
-                    setChannelId(ch.id);
-                    setMobileShowChannels(false);
-                  }}
-                >
-                  <span aria-hidden>#</span>
-                  {ch.name}
-                  {ch.name === 'events' && data.events?.alive ? (
-                    <em className="events-pill">live</em>
-                  ) : null}
-                </button>
-              </li>
-            ))}
-          </ul>
+          {(queueState.pending + queueState.failed + queueState.conflicts + queueState.rejected) > 0 ? (
+            <div className="events-inactive" role="status">
+              <p>Messenger actions: {queueState.pending} pending, {queueState.failed} failed, {queueState.conflicts} conflicts, {queueState.rejected} rejected.</p>
+              {queueState.pending + queueState.failed > 0 ? <button type="button" onClick={() => void resendMessengerActions().then(refreshQueueState).catch((err) => setError(err instanceof Error ? err.message : 'Resend failed'))}>Resend</button> : null}
+              {queueState.conflicts + queueState.rejected > 0 ? <button type="button" onClick={() => void discardMessengerConflicts().then(refreshQueueState)}>Discard conflicts/rejections</button> : null}
+            </div>
+          ) : null}
+          {data.load ? (
+            <UserLoadSections
+              load={data.load}
+              empty="No channels you have joined."
+              heading="h3"
+              renderItems={(items) => (
+                <ul className="channel-list">
+                  {items.map((item) => (
+                    <li key={`${item.workspaceId}:${item.value.id}`}>
+                      <button
+                        type="button"
+                        className={item.value.id === channelId && item.workspaceId === data.workspace.id ? 'active' : undefined}
+                        onClick={() => void selectChannel(item.value)}
+                      >
+                        <span aria-hidden>{item.value.kind === 'channel' ? '#' : '@'}</span>
+                        {channelLabel(item.value, data.members, data.user.id)}
+                        {item.value.kind === 'channel' && item.value.name === 'events' && data.events?.alive && item.workspaceId === data.workspace.id ? (
+                          <em className="events-pill">live</em>
+                        ) : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
+          ) : null}
         </div>
 
         <div className="sidebar-section">
@@ -625,25 +778,7 @@ export default function App() {
             </ul>
           ) : null}
 
-          <ul className="channel-list">
-            {dmChannels.map((ch) => (
-              <li key={ch.id}>
-                <button
-                  type="button"
-                  className={ch.id === channelId ? 'active' : undefined}
-                  onClick={() => {
-                    setChannelId(ch.id);
-                    setMobileShowChannels(false);
-                  }}
-                >
-                  <span aria-hidden className="dm-mark">
-                    @
-                  </span>
-                  {channelLabel(ch, data.members, data.user.id)}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <p className="hint-li">Direct messages are listed with their workspace above.</p>
         </div>
 
         <form
@@ -714,11 +849,6 @@ export default function App() {
         ) : null}
 
         {error ? <div className="banner-error">{error}</div> : null}
-        {compressNote ? (
-          <div className="banner-info" role="status">
-            Image reduced: {compressNote}
-          </div>
-        ) : null}
 
         <div className="message-pane">
           <div
@@ -793,14 +923,11 @@ export default function App() {
                               if (stickToBottom.current) scrollToLatest();
                             }}
                           />
-                          {msg.imageBytes != null ? (
-                            <figcaption>{formatBytes(msg.imageBytes)}</figcaption>
-                          ) : null}
                         </figure>
                       ) : null}
                       {msg.text ? (
                         <p className={system ? 'event-body' : undefined}>
-                          {system ? renderMessageText(msg.text) : msg.text}
+                          {system ? renderMessageText(msg.text) : renderPingText(msg.text)}
                         </p>
                       ) : null}
                       <footer className="bubble-actions">
@@ -831,25 +958,58 @@ export default function App() {
         </div>
 
         <footer className="composer">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => void onPickImage(e.target.files?.[0] ?? null)}
-          />
+          {suggestions.length > 0 ? (
+            <ul
+              id="messenger-mentions"
+              className="mention-list"
+              role="listbox"
+              aria-label="People you can ping"
+            >
+              {suggestions.map((member, index) => (
+                <li key={member.id} role="presentation">
+                  <button
+                    type="button"
+                    role="option"
+                    id={`messenger-mention-${member.id}`}
+                    aria-selected={index === suggestionIndex}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => chooseMention(member)}
+                  >
+                    {member.displayName}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <button
             type="button"
             className="attach"
-            title="Attach picture"
-            disabled={uploading || !channelId}
-            onClick={() => fileRef.current?.click()}
+            title="Image messages need Rodrigo blob storage"
+            disabled
           >
-            {uploading ? '…' : 'Photo'}
+            Photo unavailable
           </button>
           <textarea
+            ref={composerRef}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={suggestions.length > 0}
+            aria-controls="messenger-mentions"
+            aria-activedescendant={
+              suggestions[suggestionIndex]
+                ? `messenger-mention-${suggestions[suggestionIndex].id}`
+                : undefined
+            }
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setCursor(event.target.selectionStart ?? event.target.value.length);
+              setDismissedQuery('');
+            }}
+            onSelect={(event) => {
+              const field = event.currentTarget;
+              setCursor(field.selectionStart ?? field.value.length);
+            }}
             placeholder={
               isEventsChannel
                 ? 'Comment on an event…'
@@ -859,9 +1019,35 @@ export default function App() {
             }
             rows={1}
             disabled={!channelId}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+            onKeyDown={(event) => {
+              if (suggestions.length > 0) {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  setSuggestionIndex((index) => (index + 1) % suggestions.length);
+                  return;
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  setSuggestionIndex((index) => (index - 1 + suggestions.length) % suggestions.length);
+                  return;
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setSuggestions([]);
+                  setDismissedQuery(mentionKey);
+                  return;
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  if (isImeEnter(event)) return;
+                  event.preventDefault();
+                  const member = suggestions[suggestionIndex] ?? suggestions[0];
+                  if (member) chooseMention(member);
+                  return;
+                }
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
+                if (isImeEnter(event)) return;
+                event.preventDefault();
                 void sendText();
               }
             }}
@@ -869,7 +1055,7 @@ export default function App() {
           <button
             type="button"
             className="send"
-            disabled={!draft.trim() || uploading || !channelId}
+            disabled={!draft.trim() || !channelId}
             onClick={() => void sendText()}
           >
             Send

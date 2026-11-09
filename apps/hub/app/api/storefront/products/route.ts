@@ -1,61 +1,36 @@
 import { ensureHubUser } from '@/lib/ensure-user';
-import { assertJsonPayloadSize, MAX_STOREFRONT_PRODUCT_BYTES } from '@/lib/security-limits';
-import {
-  listStorefrontProducts,
-  upsertStorefrontProduct,
-} from '@/lib/storefront';
-import type { UpsertStorefrontProductInput } from '@sorye/types';
+import { listRodrigoResources, RodrigoResponseError } from '@/lib/rodrigo/service-client';
+import { deriveActionQueueScope } from '@/lib/rodrigo/queue-scope';
+import { cloneStorefrontSeedProducts, type StorefrontProduct } from '@sorye/types';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
   const session = await ensureHubUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!session) return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
+  if (!session.workspace.memberIds.includes(session.user.id) || !session.workspace.selectedAppIds.includes('storefront')) {
+    return NextResponse.json({ error: { code: 'app_access_denied' } }, { status: 403 });
   }
-
-  const products = await listStorefrontProducts(session.workspace.id);
-  return NextResponse.json({ products });
+  try {
+    const page = await listRodrigoResources({ userId: session.user.id, workspaceId: session.workspace.id }, 'storefront', 'product', 100);
+    const revisions = Object.fromEntries(page.items.map(({ resourceId, revision }) => [resourceId, revision]));
+    const products: StorefrontProduct[] = page.items.filter(({ resource }) => resource.active === true && resource.currency === 'USD').map(({ resource }) => ({
+      id: String(resource.id), title: String(resource.title ?? resource.name),
+      summary: String(resource.summary ?? String(resource.description).slice(0, 240)),
+      description: String(resource.description), priceCents: Number(resource.priceCents ?? resource.priceMinor),
+      category: String(resource.category ?? 'General'), accent: String(resource.accent ?? '#f472b6'),
+    }));
+    const queueScope = deriveActionQueueScope('storefront', session.user.id, session.workspace.id);
+    return NextResponse.json({ products: products.length ? products : cloneStorefrontSeedProducts(), revisions, queueScope, canManage: session.workspace.ownerId === session.user.id }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    const status = error instanceof RodrigoResponseError ? error.status : 503;
+    const code = error instanceof RodrigoResponseError ? error.code : 'rodrigo_unavailable';
+    return NextResponse.json({ error: { code } }, { status, headers: { 'Cache-Control': 'no-store' } });
+  }
 }
 
-export async function POST(req: Request) {
+/** Legacy direct writes are disabled; product edits use the queued v2 batch API. */
+export async function POST() {
   const session = await ensureHubUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const body = (await req.json().catch(() => ({}))) as Partial<UpsertStorefrontProductInput>;
-
-  try {
-    assertJsonPayloadSize(body, MAX_STOREFRONT_PRODUCT_BYTES, 'Product');
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Payload too large' },
-      { status: 400 },
-    );
-  }
-
-  if (!body.title || body.priceCents == null) {
-    return NextResponse.json(
-      { error: 'title and priceCents are required' },
-      { status: 400 },
-    );
-  }
-
-  try {
-    const product = await upsertStorefrontProduct(session.workspace.id, {
-      id: body.id,
-      title: body.title,
-      summary: body.summary,
-      description: body.description,
-      priceCents: body.priceCents,
-      category: body.category,
-      accent: body.accent,
-    });
-    return NextResponse.json({ product }, { status: 201 });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not save product' },
-      { status: 400 },
-    );
-  }
+  if (!session) return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
+  return NextResponse.json({ error: { code: 'legacy_writer_disabled' } }, { status: 410 });
 }

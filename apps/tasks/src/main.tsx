@@ -1,7 +1,7 @@
 import '@sorye/sdk/register';
 import '@sorye/sdk/tokens.css';
 import { connectKernel } from '@sorye/platform';
-import { KernelProvider } from '@sorye/platform/react';
+import { KernelProvider, StandaloneFrame } from '@sorye/platform/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
@@ -16,8 +16,10 @@ const connected = connectKernel({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <KernelProvider kernel={connected.kernel}>
-      <App />
-    </KernelProvider>
+    <StandaloneFrame appName="Tasks">
+      <KernelProvider kernel={connected.kernel}>
+        <App />
+      </KernelProvider>
+    </StandaloneFrame>
   </StrictMode>,
 );

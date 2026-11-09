@@ -1,11 +1,10 @@
+import { UserLoadSections } from '@sorye/platform/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
 import {
   APP_CATALOG,
-  getPlanById,
-  SUBSCRIPTION_PLANS,
   type EmbedWidget,
   type HubSession,
+  type UserLoadPartition,
 } from '@sorye/types';
 import {
   API_PRESETS,
@@ -37,6 +36,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('overview');
   const [session, setSession] = useState<HubSession | null>(null);
   const [widgets, setWidgets] = useState<EmbedWidget[]>([]);
+  const [widgetLoad, setWidgetLoad] = useState<UserLoadPartition<EmbedWidget> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<DevkitLogEntry[]>([]);
@@ -63,8 +63,9 @@ export default function App() {
 
       const wRes = await fetch('/api/embed/widgets', { credentials: 'include' });
       if (wRes.ok) {
-        const wData = (await wRes.json()) as { widgets: EmbedWidget[] };
+        const wData = (await wRes.json()) as { widgets: EmbedWidget[]; load?: UserLoadPartition<EmbedWidget> };
         setWidgets(wData.widgets ?? []);
+        setWidgetLoad(wData.load ?? null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
@@ -116,10 +117,6 @@ export default function App() {
     };
   }, []);
 
-  const plan = session
-    ? getPlanById(SUBSCRIPTION_PLANS, session.workspace.subscriptionId)
-    : null;
-
   const enabledApps = useMemo(() => {
     if (!session) return [];
     const selected = new Set(session.workspace.selectedAppIds);
@@ -130,26 +127,6 @@ export default function App() {
 
   return (
     <div className="devkit">
-      <header className="devkit-header">
-        <div>
-          <p className="devkit-eyebrow">Developer toolkit</p>
-          <h1>DevKit</h1>
-          <p>
-            {session
-              ? `${session.workspace.name} · explore APIs, embeds, and webhooks`
-              : 'API explorer, embed lab, webhooks, and integration logs'}
-          </p>
-        </div>
-        {plan ? (
-          <span
-            className="devkit-plan"
-            style={{ '--plan': plan.accent } as CSSProperties}
-          >
-            {plan.name}
-          </span>
-        ) : null}
-      </header>
-
       <nav className="devkit-tabs" aria-label="DevKit sections">
         {(
           [
@@ -194,6 +171,7 @@ export default function App() {
           {tab === 'embed' ? (
             <EmbedLab
               widgets={widgets}
+              widgetLoad={widgetLoad}
               enabledApps={enabledApps}
               onLogged={() => refreshLogs()}
             />
@@ -456,10 +434,12 @@ function ApiExplorer({ onLogged }: { onLogged: () => void }) {
 
 function EmbedLab({
   widgets,
+  widgetLoad,
   enabledApps,
   onLogged,
 }: {
   widgets: EmbedWidget[];
+  widgetLoad: UserLoadPartition<EmbedWidget> | null;
   enabledApps: typeof APP_CATALOG;
   onLogged: () => void;
 }) {
@@ -510,7 +490,23 @@ function EmbedLab({
     <div className="devkit-stack">
       <section className="devkit-card">
         <h3>Your embed widgets</h3>
-        {widgets.length === 0 ? (
+        {widgetLoad ? (
+          <UserLoadSections
+            load={widgetLoad}
+            empty="No embed widgets in this workspace."
+            heading="h3"
+            renderItems={(items) => (
+              <ul className="widget-list">
+                {items.map((item) => (
+                  <li key={`${item.workspaceId}:${item.value.id}`}>
+                    <strong>{item.value.name}</strong>
+                    <span>{item.value.keyHint}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
+        ) : widgets.length === 0 ? (
           <p className="hint">
             No widgets yet. Create one in Hub → Connections → Embed widgets, then
             paste the key here to test bootstrap.

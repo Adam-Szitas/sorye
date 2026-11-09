@@ -16,9 +16,10 @@ Before editing, compare the proposed work with the behavior map and relevant sou
 - Treat navigation that opens the wrong app, route, build, or content version as a reliability defect and a performance failure. Trace navigation state, route resolution, remote/build version, and cache behavior; correct the source and verify repeat navigation and reloads resolve to the intended version. Treat user reports of wrong-version navigation as actionable defect reports.
 
 - Preserve existing worktree changes. Inspect `git status` before edits and do not revert or overwrite work that is not part of the task.
-- Shared contracts and the app catalog live in `packages/types/`. Hub owns shared APIs and workspace authorization. Derive workspace identity from the server session; do not trust a client-supplied workspace ID.
+- Shared contracts and the app catalog live in `packages/types/`. Hub owns shared APIs and workspace authorization. Derive workspace identity from the server session; do not trust a client-supplied workspace ID. Personal and Work lists are partitioned in `apps/hub/lib/user-load.ts`; see `docs/AGENTS.md`.
 - Rodrigo is an independent backend repository. Its authoritative HTTP specification lives in that repository's `contracts/`; Sorye keeps a reviewed snapshot and DTOs in `packages/types/`. Preserve compatibility tests and signed server-to-server authorization when delegating Hub operations. Do not move Rodrigo source or deployment files into this monorepo.
 - Apps do not import or call one another directly. Route shared behavior through Hub APIs, platform events, or handoffs.
+- The product navbar is the Hub shell top bar. Apps do not add a second navbar; standalone pages use `StandaloneAppBar` in `packages/platform/src/chrome.tsx`. Details: `docs/AGENTS.md`.
 - Keep app-private UI state inside its app. Persist state according to the app's existing owner and lifetime; do not move private state into global kernel signals.
 - When adding or changing an app, keep `packages/types/src/apps.ts`, federation/Hub wiring, `docs/apps/APPS.md`, and the behavior tree consistent.
 - Follow the security, testing, and architecture instructions in `docs/AGENTS.md`, `docs/SECURITY.md`, and `docs/ARCHITECTURE.md`.

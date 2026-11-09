@@ -1,5 +1,7 @@
 import { Select } from '@sorye/sdk/react';
+import { UserLoadSections } from '@sorye/platform/react';
 import { useMemo, useState } from 'react';
+import type { RelayMessage, UserLoadPartition } from '@sorye/types';
 import {
   CHANNEL_META,
   RelayHandler,
@@ -13,6 +15,7 @@ interface RelayActivityProps {
   eventsEnabled: boolean;
   busy?: boolean;
   notice?: string | null;
+  load?: UserLoadPartition<RelayMessage> | null;
 }
 
 function formatWhen(iso: string): string {
@@ -30,6 +33,7 @@ export function RelayActivity({
   eventsEnabled,
   busy,
   notice,
+  load,
 }: RelayActivityProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [testSource, setTestSource] = useState(WORKSPACE_SOURCES[0]!.id);
@@ -100,12 +104,36 @@ export function RelayActivity({
 
       {notice ? <p className="relay-notice">{notice}</p> : null}
 
-      {messages.length === 0 ? (
+      {load ? (
+        <UserLoadSections
+          load={load}
+          empty="No messages in this workspace."
+          heading="h3"
+          renderItems={(items) => (
+            <ul className="message-feed">
+              {items.map((item) => (
+                <li key={`${item.workspaceId}:${item.value.id}`} className="message-card">
+                  <header className="message-card-header">
+                    <div>
+                      <strong>{item.value.title}</strong>
+                      <span>
+                        {sourceLabel(item.value.sourceAppId)} · {formatWhen(item.value.createdAt)}
+                      </span>
+                    </div>
+                  </header>
+                  {item.value.body ? <p>{item.value.body}</p> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        />
+      ) : null}
+      {!load && messages.length === 0 ? (
         <p className="relay-empty">
           No messages yet. Enable sources and routes under Configure, turn on
           App events, then run OCR / Tasks / Calendar — or send a test.
         </p>
-      ) : (
+      ) : !load ? (
         <ul className="message-feed">
           {messages.map((message) => (
             <li key={message.id} className="message-card">
@@ -139,7 +167,7 @@ export function RelayActivity({
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -34,6 +34,18 @@ export const adminAssignSubscription = (
   ...args: Parameters<typeof jsonStore.adminAssignSubscription>
 ) => activeStore().adminAssignSubscription(...args);
 
+export const assignWorkspacePlan = (
+  ...args: Parameters<typeof jsonStore.assignWorkspacePlan>
+) => activeStore().assignWorkspacePlan(...args);
+
+export const operatorWorkspaceExists = (
+  ...args: Parameters<typeof jsonStore.operatorWorkspaceExists>
+) => activeStore().operatorWorkspaceExists(...args);
+
+export const listOperatorWorkspaces = (
+  ...args: Parameters<typeof jsonStore.listOperatorWorkspaces>
+) => activeStore().listOperatorWorkspaces(...args);
+
 export const listUsers = (...args: Parameters<typeof jsonStore.listUsers>) =>
   activeStore().listUsers(...args);
 

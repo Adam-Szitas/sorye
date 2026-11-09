@@ -12,7 +12,7 @@ function hubStore() {
 export const bootstrapMessenger = (
   userId: string,
   workspaceId: string,
-  options?: { includeMessages?: boolean },
+  options?: { includeMessages?: boolean; seedDefaults?: boolean },
 ) =>
   withWorkspaceDb(
     workspaceId,
@@ -51,6 +51,13 @@ export const postMessage = (
     workspaceId,
     (db) => workspaceDb.postMessage(db, userId, workspaceId, input),
     () => hubStore().postMessage(userId, workspaceId, input),
+  );
+
+export const getMessengerChannel = (workspaceId: string, channelId: string) =>
+  withWorkspaceDb(
+    workspaceId,
+    (db) => workspaceDb.getMessengerChannel(db, workspaceId, channelId),
+    () => hubStore().getMessengerChannel(workspaceId, channelId),
   );
 
 export const listMessages = (

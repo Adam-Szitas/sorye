@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { RelayMessage, UserLoadPartition } from '@sorye/types';
 import { RelayHandler } from './relay-handler';
 import {
   fetchRelayConfig,
@@ -21,6 +22,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [messageLoad, setMessageLoad] = useState<UserLoadPartition<RelayMessage> | null>(null);
 
   const handler = useMemo(() => new RelayHandler(config), [config]);
 
@@ -34,6 +36,7 @@ export default function App() {
     setConfig(snapshot.config);
     saveConfig(snapshot.config);
     setEventsEnabled(snapshot.eventsEnabled);
+    setMessageLoad(snapshot.load ?? null);
   }, []);
 
   useEffect(() => {
@@ -88,15 +91,7 @@ export default function App() {
   return (
     <div className="relay-app">
       <header className="relay-header">
-        <div>
-          <h1>Relay</h1>
-          <p>
-            Connect OCR, Protocolio, Messenger, Calendar, and Tasks — route
-            movements to Messenger, email, and webhooks
-          </p>
-        </div>
         <div className="relay-header-actions">
-          <span className="relay-badge">Communication</span>
           <div className="relay-tabs" role="tablist">
             <button
               type="button"
@@ -129,6 +124,7 @@ export default function App() {
           eventsEnabled={eventsEnabled}
           busy={busy}
           notice={notice}
+          load={messageLoad}
         />
       ) : (
         <RelayConfigure

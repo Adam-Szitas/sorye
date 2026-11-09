@@ -294,6 +294,121 @@ export async function completeJson(
 }
 
 /**
+ * Ask the local Qwen/Qwen3-8B server for a plain-text conversational answer.
+ * Uses a fast timeout so the MCP chat UI stays responsive if the local model is offline.
+ */
+export async function completeChat(
+  systemPrompt: string,
+  userPrompt: string,
+  options?: { maxOutputTokens?: number; timeoutMs?: number; parentSignal?: AbortSignal },
+): Promise<string> {
+  const settings = getLlmControlSettings();
+  if (settings.paused) {
+    throw new LlmUnavailableError('LLM inference is paused by a platform administrator.');
+  }
+  const inputBytes = Buffer.byteLength(systemPrompt) + Buffer.byteLength(userPrompt);
+  if (inputBytes > MAX_INPUT_BYTES) {
+    throw new Error('Chat prompt exceeds the safe context budget.');
+  }
+  const timeoutMs = Math.max(1500, Math.min(30_000, options?.timeoutMs ?? 12_000));
+  const started = Date.now();
+  logLlmActivity({
+    type: 'request_start',
+    provider: settings.provider,
+    model: settings.model,
+    inputBytes,
+    status: 'ok',
+  });
+  const controller = new AbortController();
+  activeRequests.add(controller);
+  try {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const signal = options?.parentSignal
+      ? AbortSignal.any([options.parentSignal, controller.signal, timeoutSignal])
+      : AbortSignal.any([controller.signal, timeoutSignal]);
+    signal.throwIfAborted();
+    await assertLlmAvailable(signal);
+    const maxOutputTokens = resolvedOutputTokens(
+      options?.maxOutputTokens ?? 600,
+      settings.maxOutputTokens,
+    );
+    const ollama = settings.provider === 'ollama';
+    const url = llmChatUrl();
+    const model = llmModelName();
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ];
+    const body: Record<string, unknown> = ollama
+      ? {
+          model,
+          messages,
+          stream: false,
+          think: false,
+          keep_alive: OLLAMA_KEEP_ALIVE,
+          options: {
+            temperature: 0.25,
+            num_ctx: settings.contextLength,
+            num_predict: maxOutputTokens,
+            num_batch: 128,
+          },
+        }
+      : {
+          model,
+          messages,
+          temperature: 0.25,
+          max_tokens: maxOutputTokens,
+          stream: false,
+          chat_template_kwargs: { enable_thinking: false },
+        };
+    modelUsed = true;
+    const response = await postChat(url, body, signal);
+    if (!response.ok) {
+      const errorBody = (await readBoundedText(response, 4096)).slice(0, 500);
+      throw new LlmUnavailableError(classifyFailure(response.status, errorBody));
+    }
+    const payload = JSON.parse(await readBoundedText(response)) as {
+      message?: { content?: unknown };
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+    const raw =
+      ollama && typeof payload?.message?.content === 'string'
+        ? payload.message.content
+        : messageContent(payload);
+    const cleaned = stripThink(raw).trim();
+    if (!cleaned) {
+      throw new LlmUnavailableError('Model returned an empty chat reply.');
+    }
+    logLlmActivity({
+      type: 'request_success',
+      provider: settings.provider,
+      model: settings.model,
+      durationMs: Date.now() - started,
+      inputBytes,
+      outputBytes: Buffer.byteLength(cleaned),
+      status: 'ok',
+    });
+    return cleaned;
+  } catch (err) {
+    logLlmActivity({
+      type: 'request_failure',
+      provider: settings.provider,
+      model: settings.model,
+      durationMs: Date.now() - started,
+      inputBytes,
+      status: 'error',
+      detail:
+        err instanceof LlmUnavailableError
+          ? 'Provider unavailable or inference paused.'
+          : 'Chat completion failed; using built-in assistant responder.',
+    });
+    throw err;
+  } finally {
+    activeRequests.delete(controller);
+  }
+}
+
+/**
  * Drop Ollama's resident weights. vLLM keeps the model for the life of its
  * container, so this is a no-op for that provider.
  */

@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { switchAuthorizedWorkspace } from '@sorye/platform';
+import { UserLoadSections } from '@sorye/platform/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { UserLoadPartition } from '@sorye/types';
 import type { PdfTemplate } from '@protocolio/sdk';
 import './styles.css';
 import TokenProvision from './components/TokenProvision';
@@ -33,7 +36,17 @@ import {
 
 type EditorMode = 'visual' | 'json';
 type Panel = 'builder' | 'json';
-const DRAFT_STORAGE_KEY = 'sorye:protocolio:draft:v1';
+const LEGACY_DRAFT_KEY = 'sorye:protocolio:draft:v1';
+
+function draftStorageKey(workspaceId: string) {
+  return `${LEGACY_DRAFT_KEY}:${workspaceId}`;
+}
+
+interface DraftWorkspace {
+  id: string;
+  name: string;
+  kind: 'personal' | 'team';
+}
 
 interface SavedDraft {
   version: 1;
@@ -43,9 +56,9 @@ interface SavedDraft {
   jsonText: string;
 }
 
-function readSavedDraft(): SavedDraft | null {
+function readSavedDraft(key: string): SavedDraft | null {
   try {
-    const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<SavedDraft>;
     if (
@@ -77,6 +90,9 @@ export default function App() {
   const [bridgeStatus, setBridgeStatus] = useState<string | null>(null);
   const [jsonText, setJsonText] = useState('');
   const [draftReady, setDraftReady] = useState(false);
+  const [draftKey, setDraftKey] = useState<string | null>(null);
+  const [draftWorkspaces, setDraftWorkspaces] = useState<DraftWorkspace[]>([]);
+  const [personalPackageAppIds, setPersonalPackageAppIds] = useState<string[] | null>(null);
   const handledHandoffRef = useRef<string | null>(null);
 
   const refreshBuilder = useCallback(() => {
@@ -149,27 +165,73 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const saved = readSavedDraft();
-    const template = saved?.template ?? minimalPreset;
-    TBS.loadTemplate(template);
-    if (saved) {
-      setPanel(saved.panel);
-      setMode(saved.mode);
-      setJsonParsed(template);
-      setJsonText(saved.jsonText);
-    } else {
-      setJsonParsed(minimalPreset);
-      setJsonText(JSON.stringify(minimalPreset, null, 2));
-    }
-    refreshBuilder();
-    setDraftReady(true);
+    let cancelled = false;
+    void (async () => {
+      let activeId = 'local';
+      let list: DraftWorkspace[] = [];
+      try {
+        const res = await fetch('/api/workspace', { credentials: 'include' });
+        if (res.ok) {
+          const session = (await res.json()) as {
+            workspace?: { id?: string };
+            workspaces?: DraftWorkspace[];
+            personalPackageAppIds?: string[];
+          };
+          if (session.workspace?.id) activeId = session.workspace.id;
+          if (!cancelled && Array.isArray(session.personalPackageAppIds)) {
+            setPersonalPackageAppIds(session.personalPackageAppIds);
+          }
+          if (Array.isArray(session.workspaces)) {
+            list = session.workspaces.filter(
+              (workspace) =>
+                Boolean(workspace?.id) &&
+                (workspace.kind === 'personal' || workspace.kind === 'team'),
+            );
+          }
+        }
+      } catch {
+        // Keep the editor usable when the session request fails.
+      }
+      if (cancelled) return;
+      const key = draftStorageKey(activeId);
+      try {
+        if (!window.localStorage.getItem(key)) {
+          const legacy = window.localStorage.getItem(LEGACY_DRAFT_KEY);
+          if (legacy) {
+            window.localStorage.setItem(key, legacy);
+            window.localStorage.removeItem(LEGACY_DRAFT_KEY);
+          }
+        }
+      } catch {
+        // Storage can be disabled.
+      }
+      setDraftKey(key);
+      setDraftWorkspaces(list);
+      const saved = readSavedDraft(key);
+      const template = saved?.template ?? minimalPreset;
+      TBS.loadTemplate(template);
+      if (saved) {
+        setPanel(saved.panel);
+        setMode(saved.mode);
+        setJsonParsed(template);
+        setJsonText(saved.jsonText);
+      } else {
+        setJsonParsed(minimalPreset);
+        setJsonText(JSON.stringify(minimalPreset, null, 2));
+      }
+      refreshBuilder();
+      setDraftReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshBuilder]);
 
   useEffect(() => {
-    if (!draftReady) return;
+    if (!draftReady || !draftKey) return;
     const template = mode === 'json' && jsonParsed ? jsonParsed : TBS.build();
     try {
-      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+      window.localStorage.setItem(draftKey, JSON.stringify({
         version: 1,
         template,
         panel,
@@ -179,7 +241,7 @@ export default function App() {
     } catch {
       // Storage can be disabled or full; the live editor remains usable.
     }
-  }, [draftReady, builderVersion, panel, mode, jsonParsed, jsonText]);
+  }, [draftReady, draftKey, builderVersion, panel, mode, jsonParsed, jsonText]);
 
   useEffect(() => {
     let cancelled = false;
@@ -282,18 +344,43 @@ export default function App() {
 
   void builderVersion;
 
+  const draftLoad = useMemo<UserLoadPartition<{ title: string }>>(() => {
+    const groupFor = (workspace: DraftWorkspace) => {
+      const saved = readSavedDraft(draftStorageKey(workspace.id));
+      const named = saved?.template as { name?: unknown } | undefined;
+      const title = typeof named?.name === 'string' && named.name
+        ? named.name
+        : saved
+          ? 'Untitled draft'
+          : '';
+      return {
+        workspace,
+        items: title
+          ? [{
+              workspaceId: workspace.id,
+              workspaceName: workspace.name,
+              workspaceKind: workspace.kind,
+              value: { title },
+            }]
+          : [],
+      };
+    };
+    const personalAllowed =
+      personalPackageAppIds === null || personalPackageAppIds.includes('protocolio');
+    return {
+      personal: personalAllowed
+        ? draftWorkspaces.filter((workspace) => workspace.kind === 'personal').map(groupFor)
+        : [],
+      work: [...draftWorkspaces.filter((workspace) => workspace.kind === 'team')]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(groupFor),
+    };
+  }, [draftWorkspaces, draftReady, builderVersion, panel, mode, jsonText, personalPackageAppIds]);
+
   return (
     <div className="protocolio-app">
       <header className="protocolio-header">
-        <div>
-          <h1>Protocolio</h1>
-          <p>
-            Full PdfTemplate builder — receives OCR layouts via workspace events
-            and generates PDFs
-          </p>
-        </div>
         <div className="protocolio-header-actions">
-          <span className="protocolio-badge">Developer</span>
           <div className="protocolio-tabs" role="tablist">
             <button
               type="button"
@@ -318,6 +405,32 @@ export default function App() {
       </header>
 
       <div className="protocolio-builder">
+        {draftWorkspaces.length > 0 ? (
+          <UserLoadSections
+            load={draftLoad}
+            empty="No draft in this workspace."
+            heading="h2"
+            renderItems={(items) => (
+              <ul>
+                {items.map((item) => (
+                  <li key={item.workspaceId}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (draftStorageKey(item.workspaceId) === draftKey) return;
+                        void switchAuthorizedWorkspace(item.workspaceId).then((ok) => {
+                          if (ok) window.location.reload();
+                        });
+                      }}
+                    >
+                      {item.value.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
+        ) : null}
         <PipelineGuide />
 
         {handoffNotice ? (

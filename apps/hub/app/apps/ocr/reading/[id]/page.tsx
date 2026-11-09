@@ -1,4 +1,5 @@
 import { OcrReading } from '@/components/ocr-reading';
+import { StandaloneAppBar } from '@/components/standalone-app-bar';
 import { ensureHubUser } from '@/lib/ensure-user';
 import { getOcrAnalysis } from '@/lib/store/ocr-analyses';
 import type { Metadata } from 'next';
@@ -26,5 +27,10 @@ export default async function OcrReadingPage({ params }: ReadingPageProps) {
   const result = await getOcrAnalysis(session.user.id, session.workspace.id, id);
   if (result.access === 'denied' || !result.analysis) notFound();
 
-  return <OcrReading analysis={result.analysis} />;
+  return (
+    <>
+      <StandaloneAppBar appName="OCR" />
+      <OcrReading analysis={result.analysis} />
+    </>
+  );
 }

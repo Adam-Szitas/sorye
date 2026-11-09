@@ -1,6 +1,12 @@
 'use client';
 
-import type { AppCatalogEntry, SubscriptionPlan } from '@sorye/types';
+import {
+  APP_RUNNING_COST,
+  appMinimumYearlyCents,
+  formatEur,
+  type AppCatalogEntry,
+  type SubscriptionPlan,
+} from '@sorye/types';
 import { prefetchMicroFrontend } from '@/lib/prefetch';
 import { resolveRemoteEntry } from '@/lib/mf-remotes';
 import { AppIcon } from './app-icon';
@@ -33,6 +39,10 @@ export function AppLauncher({
 }: AppLauncherProps) {
   const optionalCount = apps.filter((app) => !app.alwaysAvailable).length;
   const slotsRemaining = Math.max(0, plan.maxApps - optionalCount);
+  const enabledCents = apps.reduce(
+    (sum, app) => sum + appMinimumYearlyCents(app.id),
+    0,
+  );
   // High-cap plans (Enterprise uses 999 as "unlimited") would otherwise
   // render hundreds of placeholder tiles.
   const emptySlots = Math.min(slotsRemaining, 4);
@@ -51,6 +61,10 @@ export function AppLauncher({
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
           Tap an app to open it full screen, or use L / R for a side-by-side desk.
           Badges show unread notifications per app.
+        </p>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          Enabled apps account for {formatEur(enabledCents)} of the{' '}
+          {formatEur(APP_RUNNING_COST.yearlyCents)} yearly stack cost.
         </p>
       </header>
 
@@ -76,8 +90,8 @@ export function AppLauncher({
                 className="app-tile relative flex w-full flex-col items-center gap-2 rounded-2xl p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
                 aria-label={
                   unread > 0
-                    ? `Open ${app.name}, ${unread} unread notifications`
-                    : `Open ${app.name}`
+                    ? `Open ${app.name}, ${formatEur(appMinimumYearlyCents(app.id))} per year, ${unread} unread notifications`
+                    : `Open ${app.name}, ${appMinimumYearlyCents(app.id) > 0 ? `${formatEur(appMinimumYearlyCents(app.id))} per year` : 'included in the stack'}`
                 }
                 title={`${app.name} — ${app.usageIntro.summary}`}
               >
@@ -94,6 +108,11 @@ export function AppLauncher({
                 </div>
                 <span className="max-w-full truncate text-center text-xs font-medium text-[var(--color-text-muted)] group-hover:text-[var(--color-text)]">
                   {app.name}
+                </span>
+                <span className="max-w-full truncate text-center text-[10px] tabular-nums text-[var(--color-text-muted)]">
+                  {appMinimumYearlyCents(app.id) > 0
+                    ? `${formatEur(appMinimumYearlyCents(app.id))}/yr`
+                    : 'Included'}
                 </span>
                 {app.status === 'coming_soon' && (
                   <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">

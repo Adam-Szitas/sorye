@@ -6,6 +6,7 @@ import {
   updateEmbedWidget,
 } from '@/lib/store/embed';
 import { APP_CATALOG, normalizeOrigin } from '@sorye/types';
+import { readPartitionedLoad, sessionWorkspace } from '@/lib/user-load-read';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
@@ -15,7 +16,11 @@ export async function GET() {
   }
 
   const widgets = await listEmbedWidgets(session.workspace.id);
-  return NextResponse.json({ widgets });
+  const load = await readPartitionedLoad(session, async (scope) => {
+    const rows = await listEmbedWidgets(scope.id);
+    return rows.map((widget) => ({ workspaceId: scope.id, value: widget }));
+  }, { appId: 'devtools' });
+  return NextResponse.json({ widgets, load, workspace: sessionWorkspace(session) });
 }
 
 export async function POST(req: Request) {

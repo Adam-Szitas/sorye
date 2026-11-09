@@ -237,6 +237,22 @@ function toMember(
   };
 }
 
+/** Stored Sorye mailbox rows for this member. Does not allocate addresses or sync IMAP. */
+export async function listMailboxMessages(input: {
+  workspaceId: string;
+  userId: string;
+}): Promise<MailMessage[]> {
+  const store = await mailFile.read(input.workspaceId);
+  const state = store[input.workspaceId];
+  if (!state?.messages) return [];
+  return state.messages
+    .filter((message) => message.toUserId === input.userId || message.fromUserId === input.userId)
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 50)
+    .map(cloneMessage);
+}
+
 export async function bootstrapMail(input: {
   workspaceId: string;
   workspaceName: string;

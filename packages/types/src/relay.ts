@@ -156,6 +156,7 @@ export function relaySourceFromEventName(name: string): string | null {
   if (name.startsWith('sorye.site.')) return 'site';
   if (name.startsWith('sorye.mail.')) return 'mail';
   if (name.startsWith('sorye.files.')) return 'files';
+  if (name === 'sorye.mcp.action_executed') return 'messenger';
   if (name === 'sorye.test.ping') return 'messenger';
   return null;
 }

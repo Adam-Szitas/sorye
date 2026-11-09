@@ -1,5 +1,5 @@
+import { UserLoadSections } from '@sorye/platform/react';
 import { useEffect, useState } from 'react';
-import type { CSSProperties } from 'react';
 import {
   APP_CATALOG,
   getPlanById,
@@ -8,6 +8,7 @@ import {
   type AppCatalogEntry,
   type EmbedWidget,
   type HubSession,
+  type UserLoadPartition,
   type WorkspaceStorageInfo,
 } from '@sorye/types';
 import {
@@ -112,7 +113,9 @@ export default function App() {
   const [session, setSession] = useState<HubSession | null>(null);
   const [snapshots, setSnapshots] = useState<LocalAppSnapshots | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [activityLoad, setActivityLoad] = useState<UserLoadPartition<ActivityItem> | null>(null);
   const [widgets, setWidgets] = useState<EmbedWidget[]>([]);
+  const [widgetLoad, setWidgetLoad] = useState<UserLoadPartition<EmbedWidget> | null>(null);
   const [storage, setStorage] = useState<WorkspaceStorageInfo | null>(null);
   const [events, setEvents] = useState<EventsStatus | null>(null);
   const [hubOrigin, setHubOrigin] = useState('');
@@ -129,7 +132,9 @@ export default function App() {
           setSession(data.session);
           setSnapshots(data.snapshots);
           setActivity(data.activity);
+          setActivityLoad(data.activityLoad);
           setWidgets(data.widgets);
+          setWidgetLoad(data.widgetLoad);
           setStorage(data.storage);
           setEvents(data.events);
           setHubOrigin(data.hubOrigin);
@@ -151,37 +156,12 @@ export default function App() {
     };
   }, []);
 
-  const plan = session
-    ? getPlanById(SUBSCRIPTION_PLANS, session.workspace.subscriptionId)
-    : null;
   const metrics =
     session && snapshots ? buildMetrics(session, snapshots, widgets.length) : [];
   const installedApps = session ? getInstalledApps(session) : [];
 
   return (
     <div className="dashboard">
-      <header className="dashboard-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p>
-            {session
-              ? `${session.workspace.name} · ${session.user.email}`
-              : 'Connect Sorye apps to your product'}
-          </p>
-        </div>
-        <div className="dashboard-header-badges">
-          {plan ? (
-            <span
-              className="dashboard-plan-badge"
-              style={{ '--plan-color': plan.accent } as CSSProperties}
-            >
-              {plan.name} plan
-            </span>
-          ) : null}
-          <span className="dashboard-badge">Live data</span>
-        </div>
-      </header>
-
       <nav className="dashboard-tabs" aria-label="Dashboard sections">
         <button
           type="button"
@@ -247,6 +227,7 @@ export default function App() {
           <EmbedGuide
             session={session}
             widgets={widgets}
+            widgetLoad={widgetLoad}
             hubOrigin={hubOrigin}
           />
         ) : tab === 'database' ? (
@@ -276,7 +257,26 @@ export default function App() {
             <section className="panels">
               <article className="panel">
                 <h2>Recent activity</h2>
-                {activity.length === 0 ? (
+                {activityLoad && activityLoad.personal.length + activityLoad.work.length > 0 ? (
+                  <UserLoadSections
+                    load={activityLoad}
+                    empty="No activity in this workspace."
+                    heading="h3"
+                    renderItems={(items) => (
+                      <ul>
+                        {items.map((item) => (
+                          <li key={`${item.workspaceId}:${item.value.id}`}>
+                            <div>
+                              <strong>{activityVerb(item.value)}: {item.value.title}</strong>
+                              <span>{item.value.source}</span>
+                            </div>
+                            <time>{formatRelativeTime(item.value.at)}</time>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  />
+                ) : activity.length === 0 ? (
                   <p className="panel-empty">
                     No activity yet. Use Calendar, Notes, Tasks, or Relay to
                     populate this feed.

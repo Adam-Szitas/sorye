@@ -8,11 +8,19 @@ import {
 } from '@sorye/types';
 import { randomUUID } from 'crypto';
 import { and, desc, eq } from 'drizzle-orm';
-import { getHubSession } from './postgres-store';
+import { getHubSession, getHubSessionForWorkspace } from './postgres-store';
 
 async function assertMember(userId: string, workspaceId: string) {
   const session = await getHubSession(userId);
   if (!session) return null;
+  if (session.workspace.id !== workspaceId) return null;
+  if (!session.workspace.memberIds.includes(userId)) return null;
+  return session;
+}
+
+async function assertReadableMember(userId: string, workspaceId: string) {
+  const session = await getHubSessionForWorkspace(userId, workspaceId);
+  if (!session || session.user.id !== userId) return null;
   if (session.workspace.id !== workspaceId) return null;
   if (!session.workspace.memberIds.includes(userId)) return null;
   return session;
@@ -52,7 +60,7 @@ export async function listCanvasBoards(
   userId: string,
   workspaceId: string,
 ): Promise<CanvasBoardSummary[] | null> {
-  if (!(await assertMember(userId, workspaceId))) return null;
+  if (!(await assertReadableMember(userId, workspaceId))) return null;
   const db = getDb();
   const rows = await db
     .select()

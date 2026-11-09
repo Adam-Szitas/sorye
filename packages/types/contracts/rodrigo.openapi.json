@@ -2,10 +2,172 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rodrigo service contract",
-    "version": "1.1.0",
-    "description": "Signed Hub-to-Rodrigo contract. Workspace comes exclusively from verified Ed25519 assertions. Optional PostgreSQL/MySQL/MongoDB owners commit document changes and event history together; Redis is a disposable cache; named S3-compatible stores hold immutable small objects. No cross-provider atomicity or automatic write retries. Absent providers fail closed. Hub data migration is separate from deploying Rodrigo."
+    "version": "2.0.0",
+    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts."
   },
   "paths": {
+    "/v2/resources/{app}/{resourceType}/{resourceId}": {
+      "parameters": [
+        {
+          "name": "app",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "notes",
+              "calendar",
+              "workspace",
+              "messenger",
+              "files",
+              "canvas",
+              "mail",
+              "relay",
+              "site",
+              "storefront",
+              "ocr",
+              "studio",
+              "notifications",
+              "events",
+              "embed",
+              "protocolio"
+            ]
+          }
+        },
+        {
+          "name": "resourceType",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "task",
+              "taskBoard",
+              "note",
+              "event",
+              "settings",
+              "channel",
+              "message",
+              "reaction",
+              "fileMetadata",
+              "board",
+              "account",
+              "draft",
+              "config",
+              "page",
+              "product",
+              "order",
+              "analysis",
+              "pattern",
+              "project",
+              "notification",
+              "widget",
+              "artifact"
+            ]
+          }
+        },
+        {
+          "name": "resourceId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readActionResourceV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:read",
+        "description": "Read current resource and revision. Revisions order mutations for one workspace/app/type/resource id; deleted or absent resources return resource null with revision 0 for never-present rows or the last tombstone revision.",
+        "responses": {
+          "200": {
+            "description": "Resource snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid resource identity"
+          },
+          "401": {
+            "description": "Invalid assertion"
+          },
+          "403": {
+            "description": "Missing app/resource read scope"
+          },
+          "503": {
+            "description": "Action provider unavailable"
+          }
+        }
+      }
+    },
+    "/v2/actions/batch": {
+      "post": {
+        "operationId": "commitActionBatchV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:write",
+        "description": "At most 100 independently committed actions. The HTTP body is bounded to 256 KiB. A parse, authentication, or scope failure commits none. Provider failures return per-action rejected results; retry with the same actionId and identical action. Results may be returned in any order and are correlated by actionId. Receipts are retained at least ten years and currently are not pruned. Resource revisions are ordered within workspace/app/resource identity.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionBatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One result per action; committed and duplicate are durable acknowledgements",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionBatchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or oversized batch"
+          },
+          "401": {
+            "description": "Invalid signed assertion"
+          },
+          "403": {
+            "description": "Missing app or action scope"
+          },
+          "413": {
+            "description": "Body exceeds 256 KiB"
+          },
+          "429": {
+            "description": "Admission limit"
+          },
+          "503": {
+            "description": "Action provider is not ready"
+          },
+          "504": {
+            "description": "Request deadline; retry identical actions"
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "operationId": "liveness",
@@ -36,7 +198,7 @@
         "operationId": "readiness",
         "responses": {
           "200": {
-            "description": "HTTP ready; inspect dataReady independently",
+            "description": "HTTP ready; dataReady covers configured v1 document ownership and actionReady reports the v2 PostgreSQL action writer independently",
             "content": {
               "application/json": {
                 "schema": {
@@ -47,11 +209,15 @@
                     },
                     "dataReady": {
                       "type": "boolean"
+                    },
+                    "actionReady": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "status",
-                    "dataReady"
+                    "dataReady",
+                    "actionReady"
                   ]
                 }
               }
@@ -1931,6 +2097,180 @@
           }
         }
       }
+    },
+    "/v2/messenger/channels/{channelId}/messages/{direction}/{limit}/{cursor}": {
+      "parameters": [
+        { "name": "channelId", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 160 } },
+        { "name": "direction", "in": "path", "required": true, "schema": { "type": "string", "enum": ["older", "newer"] } },
+        { "name": "limit", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 50 } },
+        { "name": "cursor", "in": "path", "required": true, "schema": { "type": "string", "maxLength": 321, "description": "Use latest for the newest page; otherwise an RFC3339 timestamp, pipe, and resourceId from the previous page." } }
+      ],
+      "get": {
+        "operationId": "listMessengerChannelMessagesV2",
+        "security": [{ "hubAssertion": [] }],
+        "x-required-scope": "actions:read",
+        "description": "Returns a stable channel timeline ordered by createdAt then resourceId. Newest-page and older/newer cursor reads are bounded. Rodrigo derives message author identity from the verified assertion and returns createdByUserId separately from client payload. Private/direct channels require the asserted actor in the channel's server-validated memberIds. Each request is statement-consistent; pages are not frozen across requests.",
+        "responses": {
+          "200": { "description": "Messenger timeline page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessengerMessagePage" } } } },
+          "400": { "description": "Invalid channel, direction, limit, or cursor" },
+          "401": { "description": "Invalid assertion" },
+          "403": { "description": "Missing read scope or channel membership" },
+          "404": { "description": "Channel not found" },
+          "503": { "description": "Action provider unavailable" }
+        }
+      }
+    },
+    "/v2/public/sites/{slug}": {
+      "parameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readPublishedSiteV2",
+        "security": [{ "hubAssertion": [] }],
+        "x-required-scope": "actions:read",
+        "description": "Returns one published Site page and, when a shop block is present, active USD product cards. The assertion workspace must be the reserved public-site grant and the actor must be the public reader. The slug selects the page; it does not select a workspace. Unpublished and unknown slugs are not_found. The response omits workspace id, actor id, and draft fields.",
+        "responses": {
+          "200": {
+            "description": "Published page projection",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PublishedSite" }
+              }
+            }
+          },
+          "400": { "description": "Slug is not a public path segment" },
+          "401": { "description": "Invalid signed assertion" },
+          "403": { "description": "Assertion is not the reserved public-site grant or is missing read scopes" },
+          "404": { "description": "Slug is unknown or the page is not published" },
+          "503": { "description": "Action provider unavailable" }
+        }
+      }
+    },
+    "/v2/collections/{app}/{resourceType}/{limit}/{cursor}": {
+      "parameters": [
+        {
+          "name": "app",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "notes",
+              "calendar",
+              "workspace",
+              "messenger",
+              "files",
+              "canvas",
+              "mail",
+              "relay",
+              "site",
+              "storefront",
+              "ocr",
+              "studio",
+              "notifications",
+              "events",
+              "embed",
+              "protocolio"
+            ]
+          }
+        },
+        {
+          "name": "resourceType",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "task",
+              "taskBoard",
+              "note",
+              "event",
+              "settings",
+              "channel",
+              "message",
+              "reaction",
+              "fileMetadata",
+              "board",
+              "account",
+              "draft",
+              "config",
+              "page",
+              "product",
+              "order",
+              "analysis",
+              "pattern",
+              "project",
+              "notification",
+              "widget",
+              "artifact"
+            ]
+          }
+        },
+        {
+          "name": "limit",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        {
+          "name": "cursor",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^(first|[0-9a-fA-F]{2,320})$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listActionResourcesV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:read",
+        "description": "Returns non-deleted resources for one workspace/app/resourceType, ordered by resourceId ascending. Cursor is the hex-encoded last resourceId. Each page is one statement-consistent read; pages are not pinned to a shared snapshot, so concurrent inserts/deletes may affect later pages. Item revisions are authoritative per resource and clients must reconcile/re-read on revision changes.",
+        "responses": {
+          "200": {
+            "description": "Bounded collection page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid app/resourceType/limit/cursor"
+          },
+          "401": {
+            "description": "Invalid signed assertion"
+          },
+          "403": {
+            "description": "Missing app or resource read scope"
+          },
+          "503": {
+            "description": "Action provider unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1939,7 +2279,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "EdDSA JWT",
-        "description": "iss=sorye-hub, aud=rodrigo, sub, workspaceId, scope, method, path, bodySha256, iat, exp <= iat+30, jti UUID. kid selects trusted public key. TLS required across VMs. Assertions are bearer credentials until expiration; jti is not a distributed replay lock."
+        "description": "iss=sorye-hub, aud=rodrigo, sub, workspaceId, scope, method, path, bodySha256, iat, exp <= iat+30, jti UUID. v2 additionally requires appScopes and actionScopes for action batches. kid selects trusted public key. TLS required across VMs. Assertions are bearer credentials until expiration; jti is not a distributed replay lock."
       }
     },
     "schemas": {
@@ -1947,14 +2287,64 @@
         "type": "object",
         "required": [
           "contractVersion",
+          "contractVersions",
           "service",
           "dataReady",
           "operations",
-          "adapters"
+          "adapters",
+          "actions"
         ],
         "properties": {
           "contractVersion": {
             "const": "1"
+          },
+          "contractVersions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "1",
+                "2"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "actions": {
+            "type": "object",
+            "required": [
+              "version",
+              "provider",
+              "maxBatchActions",
+              "maxBodyBytes",
+              "families"
+            ],
+            "properties": {
+              "version": {
+                "const": "2"
+              },
+              "provider": {
+                "enum": [
+                  "not_configured",
+                  "ready"
+                ]
+              },
+              "maxBatchActions": {
+                "const": 100
+              },
+              "maxBodyBytes": {
+                "const": 262144
+              },
+              "families": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "maxCollectionPageSize": {
+                "type": "integer",
+                "const": 100
+              }
+            }
           },
           "service": {
             "const": "rodrigo"
@@ -2113,6 +2503,1778 @@
           }
         }
       },
+      "ActionBatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actions"
+        ],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        }
+      },
+      "Action": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId",
+          "appId",
+          "resourceType",
+          "operation",
+          "resourceId",
+          "payloadVersion",
+          "payload",
+          "occurredAt"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "appId": {
+            "type": "string",
+            "enum": [
+              "tasks",
+              "notes",
+              "calendar",
+              "workspace",
+              "messenger",
+              "files",
+              "canvas",
+              "mail",
+              "relay",
+              "site",
+              "storefront",
+              "ocr",
+              "studio",
+              "notifications",
+              "events",
+              "embed",
+              "protocolio"
+            ]
+          },
+          "resourceType": {
+            "type": "string",
+            "enum": [
+              "task",
+              "taskBoard",
+              "note",
+              "event",
+              "settings",
+              "channel",
+              "message",
+              "reaction",
+              "fileMetadata",
+              "board",
+              "account",
+              "draft",
+              "config",
+              "page",
+              "product",
+              "order",
+              "analysis",
+              "pattern",
+              "project",
+              "notification",
+              "widget",
+              "artifact"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ]
+          },
+          "resourceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740990,
+            "description": "Required for update/delete; omitted for create. Prevents silent stale overwrites."
+          },
+          "payloadVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "payload": {
+            "type": "object",
+            "minProperties": 0
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "create"
+                }
+              },
+              "required": [
+                "operation"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "expectedRevision"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "expectedRevision"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "operation": {
+                  "const": "delete"
+                }
+              },
+              "required": [
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "maxProperties": 0
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "payload": {
+                  "minProperties": 1
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "tasks"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "task",
+                    "taskBoard"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "tasks"
+                },
+                "resourceType": {
+                  "const": "taskBoard"
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "tasks"
+                },
+                "resourceType": {
+                  "const": "taskBoard"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/TaskBoardPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "tasks"
+                },
+                "resourceType": {
+                  "const": "task"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/TaskPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "notes"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "const": "note"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "notes"
+                },
+                "resourceType": {
+                  "const": "note"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/NotePayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "calendar"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "const": "event"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "calendar"
+                },
+                "resourceType": {
+                  "const": "event"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/CalendarEventPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "tasks"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "task",
+                    "taskBoard"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "notes"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "note"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "calendar"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "event"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "workspace"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "settings"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "messenger"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "channel",
+                    "message",
+                    "reaction"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "files"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "fileMetadata"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "canvas"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "board"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "mail"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "account",
+                    "draft"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "relay"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "config"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "page"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "storefront"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "product",
+                    "order"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "ocr"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "analysis",
+                    "pattern"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "studio"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "project"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "notifications"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "notification"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "events"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "event"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "embed"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "widget"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "protocolio"
+                }
+              },
+              "required": [
+                "appId"
+              ]
+            },
+            "then": {
+              "properties": {
+                "resourceType": {
+                  "enum": [
+                    "artifact"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "workspace"
+                },
+                "resourceType": {
+                  "const": "settings"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/WorkspaceSettingsPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "messenger"
+                },
+                "resourceType": {
+                  "const": "channel"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/MessengerChannelPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "messenger"
+                },
+                "resourceType": {
+                  "const": "message"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/MessengerMessagePayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "messenger"
+                },
+                "resourceType": {
+                  "const": "reaction"
+                },
+                "operation": {
+                  "enum": [
+                    "create"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/MessengerReactionPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "files"
+                },
+                "resourceType": {
+                  "const": "fileMetadata"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/FileMetadataPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "canvas"
+                },
+                "resourceType": {
+                  "const": "board"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/CanvasBoardPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "mail"
+                },
+                "resourceType": {
+                  "const": "account"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/MailAccountPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "mail"
+                },
+                "resourceType": {
+                  "const": "draft"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/MailDraftPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "relay"
+                },
+                "resourceType": {
+                  "const": "config"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/RelayConfigPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "page"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SitePagePayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "storefront"
+                },
+                "resourceType": {
+                  "const": "product"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/StorefrontProductPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "storefront"
+                },
+                "resourceType": {
+                  "const": "order"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/StorefrontOrderPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "ocr"
+                },
+                "resourceType": {
+                  "const": "analysis"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/OcrAnalysisPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "ocr"
+                },
+                "resourceType": {
+                  "const": "pattern"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/OcrPatternPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "studio"
+                },
+                "resourceType": {
+                  "const": "project"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/StudioProjectPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "notifications"
+                },
+                "resourceType": {
+                  "const": "notification"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/NotificationPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "events"
+                },
+                "resourceType": {
+                  "const": "event"
+                },
+                "operation": {
+                  "enum": [
+                    "create"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/EventPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "embed"
+                },
+                "resourceType": {
+                  "const": "widget"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/EmbedWidgetPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "protocolio"
+                },
+                "resourceType": {
+                  "const": "artifact"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/ProtocolioArtifactPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "messenger"
+                },
+                "resourceType": {
+                  "const": "reaction"
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "enum": [
+                    "create"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "events"
+                },
+                "resourceType": {
+                  "const": "event"
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "enum": [
+                    "create"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "protocolio"
+                },
+                "resourceType": {
+                  "const": "artifact"
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType"
+              ]
+            },
+            "then": {
+              "properties": {
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ActionBatchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "results"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "results": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/ActionResult"
+            }
+          }
+        }
+      },
+      "ResourceSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "resource"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "resource": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Typed domain payload or null if missing/deleted."
+          },
+          "createdByUserId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Identity derived from the verified action assertion; never copied from request payload."
+          }
+        }
+      },
+      "TaskPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "body",
+          "statusId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Must equal Action.resourceId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "statusId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "driveFileId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "description": "Optional Hub Drive file id for a photo in the Tasks section. Rodrigo stores this id only; the bytes stay in Hub Drive."
+          }
+        }
+      },
+      "NotePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "body",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Must equal Action.resourceId"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "CalendarEventPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "dates"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "Must equal Action.resourceId"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "timed",
+              "allDay",
+              "multiDate"
+            ]
+          },
+          "dates": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 366,
+            "items": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          "startTime": {
+            "type": "string",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "endTime": {
+            "type": "string",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+          }
+        }
+      },
+      "TaskBoardPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "statuses",
+          "tasks"
+        ],
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "color",
+                "order"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "color": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$"
+                },
+                "order": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                }
+              }
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "title",
+                "body",
+                "statusId",
+                "createdAt",
+                "updatedAt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "statusId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "updatedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "driveFileId": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                  "description": "Optional Hub Drive file id for a photo in the Tasks section. Rodrigo stores this id only; the bytes stay in Hub Drive."
+                }
+              }
+            }
+          }
+        }
+      },
+      "ActionResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId",
+          "status"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "committed",
+              "duplicate",
+              "conflict",
+              "rejected"
+            ]
+          },
+          "commitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "result": {
+            "type": "object"
+          },
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "description": "provider_unavailable is retryable with the identical actionId and payload; other codes require user correction or reconciliation"
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "committed",
+                    "duplicate"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "commitId",
+                "revision"
+              ],
+              "not": {
+                "required": [
+                  "error"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "conflict",
+                    "rejected"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "error"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "commitId"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "revision"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
       "DeleteDocument": {
         "type": "object",
         "additionalProperties": false,
@@ -2124,6 +4286,1052 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9007199254740990
+          }
+        }
+      },
+      "WorkspaceSettingsPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "locale",
+          "timezone",
+          "updatedAt"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 35
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "MessengerChannelPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private",
+              "direct",
+              "events"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "memberIds": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 160 },
+            "maxItems": 100,
+            "uniqueItems": true,
+            "description": "Required for direct/private channels; direct channels have exactly two members and the verified actor must be included."
+          }
+        }
+      },
+      "MessengerMessagePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "channelId",
+          "body",
+          "mentionUserIds",
+          "attachmentIds",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "channelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "mentionUserIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "maxItems": 100
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "maxItems": 20
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "MessengerReactionPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "messageId",
+          "emoji",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "messageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "FileMetadataPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "mimeType",
+          "sizeBytes",
+          "blobId",
+          "version",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "mimeType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864
+          },
+          "blobId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "CanvasBoardPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "document",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "document": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "MailAccountPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "provider",
+          "address",
+          "secretRef",
+          "status",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "imap",
+              "gmail",
+              "outlook",
+              "sorye"
+            ]
+          },
+          "address": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "secretRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disconnected",
+              "error"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "MailDraftPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "accountId",
+          "to",
+          "cc",
+          "bcc",
+          "subject",
+          "body",
+          "attachmentIds",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "accountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 320
+            },
+            "maxItems": 100
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 320
+            },
+            "maxItems": 100
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 320
+            },
+            "maxItems": 100
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 998
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "maxItems": 20
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "RelayConfigPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "enabled",
+          "rules",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "destination",
+                "targetRef",
+                "enabled"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "destination": {
+                  "type": "string",
+                  "enum": [
+                    "messenger",
+                    "webhook",
+                    "email"
+                  ]
+                },
+                "targetRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "maxItems": 100
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "PublishedSite": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "title", "blocks", "products"],
+        "properties": {
+          "slug": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "blocks": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "content"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+                "kind": { "type": "string", "enum": ["hero", "about", "links", "shop", "contact"] },
+                "content": { "type": "object" }
+              }
+            }
+          },
+          "products": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "title", "summary", "priceCents", "category", "accent"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+                "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "summary": { "type": "string", "maxLength": 240 },
+                "priceCents": { "type": "integer", "minimum": 0, "maximum": 10000000 },
+                "category": { "type": "string", "maxLength": 40 },
+                "accent": { "type": "string", "maxLength": 32 }
+              }
+            }
+          }
+        }
+      },
+      "SitePagePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "published",
+          "blocks",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "kind",
+                "content"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "hero",
+                    "about",
+                    "links",
+                    "shop",
+                    "contact"
+                  ]
+                },
+                "content": {
+                  "type": "object"
+                }
+              }
+            },
+            "maxItems": 100
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "StorefrontProductPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "description",
+          "currency",
+          "priceMinor",
+          "active",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "priceMinor": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9000000000000
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "accent": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "priceCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000000
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "StorefrontOrderPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "customerName",
+          "customerEmail",
+          "items",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "accepted",
+              "cancelled",
+              "fulfilled"
+            ],
+            "description": "Create accepts only requested. Updates may use the full enum and remain limited to the verified creating actor."
+          },
+          "customerName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "customerEmail": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "productId",
+                "quantity",
+                "unitPriceMinor"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
+                },
+                "unitPriceMinor": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9000000000000
+                }
+              }
+            },
+            "maxItems": 100
+          },
+          "note": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 2000,
+            "description": "Customer enquiry text. Actor ownership is createdByUserId from the verified assertion, not a payload field."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "OcrAnalysisPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "documentRef",
+          "pageCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "processing",
+              "complete",
+              "failed"
+            ]
+          },
+          "documentRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "pageCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "OcrPatternPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "analysisId",
+          "pattern",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "analysisId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "pattern": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "StudioProjectPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "assetRefs",
+          "state",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "assetRefs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 160
+            },
+            "maxItems": 1000
+          },
+          "state": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "NotificationPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "createdAt",
+          "readAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          },
+          "readAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "EventPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "appId",
+          "entityId",
+          "payload",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "entityId": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "payload": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "EmbedWidgetPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "config",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "config": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "ProtocolioArtifactPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "content",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "template",
+              "generatedPdfRef"
+            ]
+          },
+          "content": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "maxLength": 64
+          }
+        }
+      },
+      "MessengerMessagePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messages", "hasMore", "nextCursor"],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+                "required": ["resourceId", "revision", "resource"],
+              "properties": {
+                "resourceId": { "type": "string", "minLength": 1, "maxLength": 160 },
+                "revision": { "type": "integer", "minimum": 1 },
+                "createdByUserId": { "type": "string", "minLength": 1, "maxLength": 160 },
+                "resource": { "$ref": "#/components/schemas/MessengerMessagePayload" }
+              }
+            }
+          },
+          "hasMore": { "type": "boolean" },
+          "nextCursor": { "type": ["string", "null"], "maxLength": 321 }
+        }
+      },
+      "CollectionPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "resourceId",
+                "revision",
+                "resource"
+              ],
+              "properties": {
+                "resourceId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "createdByUserId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160,
+                  "description": "Identity derived from the verified action assertion."
+                },
+                "resource": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320,
+            "description": "Hex-encoded final resourceId when another page exists."
           }
         }
       }

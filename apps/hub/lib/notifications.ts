@@ -109,18 +109,28 @@ function unreadCounts(
 
 export async function recordWorkspaceNotification(input: {
   workspaceId: string;
+  userId?: string;
   appId: string;
   title: string;
   body?: string;
   eventName?: string;
+  jobId?: string;
+  analysisId?: string;
+  channelId?: string;
+  outcome?: 'success' | 'failure';
 }): Promise<WorkspaceNotification> {
   const notification: WorkspaceNotification = {
     id: `ntf-${randomUUID().slice(0, 10)}`,
     workspaceId: input.workspaceId,
+    userId: input.userId,
     appId: input.appId,
     title: input.title.trim(),
     body: input.body?.trim() ?? '',
     eventName: input.eventName,
+    jobId: input.jobId,
+    analysisId: input.analysisId,
+    channelId: input.channelId,
+    outcome: input.outcome,
     createdAt: new Date().toISOString(),
   };
   await notificationsFile.update((store) => {
@@ -143,10 +153,9 @@ export async function getNotificationSnapshot(input: {
     readReadState(input.workspaceId),
     getNotificationSettings(input.workspaceId, input.userId),
   ]);
-  const notifications = (store[input.workspaceId] ?? []).slice(
-    0,
-    input.limit ?? 50,
-  );
+  const notifications = (store[input.workspaceId] ?? [])
+    .filter((notice) => !notice.userId || notice.userId === input.userId)
+    .slice(0, input.limit ?? 50);
   const readIds = readIdsForUser(readStore, input.workspaceId, input.userId);
   const { unreadByApp, unreadTotal } = unreadCounts(notifications, readIds);
 

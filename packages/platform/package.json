@@ -6,7 +6,8 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
-      "import": "./src/index.ts"
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
     },
     "./host": {
       "types": "./src/host.ts",
@@ -30,7 +31,8 @@
     }
   },
   "scripts": {
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@preact/signals-core": "^1.8.1",
@@ -46,7 +48,9 @@
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
+    "fake-indexeddb": "^6.2.8",
     "react": "^19.1.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.3"
   }
 }

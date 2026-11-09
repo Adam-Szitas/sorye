@@ -16,6 +16,7 @@ const ICON_PATHS: Record<string, string> = {
   mail: 'M4 6h16v12H4zm0 0 8 7 8-7',
   files: 'M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z',
   reports: 'M5 20V10m7 10V4m7 16v-8',
+  operator: 'M12 8v5l3 2M12 3a9 9 0 1 0 .01 0',
   susm: 'M4 7h16v10H4zm4 3h8m-8 3h5',
   espm: 'M12 3l8 4v6c0 4-3.5 7.5-8 9-4.5-1.5-8-5-8-9V7l8-4z',
   ocr: 'M4 5h16v14H4zm3 4h10M7 12h7M7 15h5',

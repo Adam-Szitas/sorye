@@ -1,4 +1,11 @@
 import { TranslatedText } from '@sorye/platform/react';
+import {
+  probeWebGpu,
+  readLocalGpuPreference,
+  runWebGpuOcrPatternExtraction,
+  subscribeGpuPreference,
+  writeLocalGpuPreference,
+} from '@sorye/platform';
 import '@sorye/sdk/register';
 import '@sorye/sdk/tokens.css';
 import { Button } from '@sorye/sdk/react';
@@ -6,9 +13,16 @@ import { uploadToDrive } from '@sorye/sdk/files';
 import { JsonDocument } from '@sorye/sdk/react/document-reading';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DEFAULT_USER_GPU_PREFERENCE,
+  HUB_OPEN_APP_EVENT,
+  hubOpenTargetKey,
+  type HubOpenAppDetail,
+  type LlmExecutionTarget,
   type OcrAnalysis,
   type OcrMatrix,
   type OcrPageLayout,
+  type UserGpuPreference,
+  type WebGpuDeviceDescriptor,
 } from '@sorye/types';
 import {
   DocumentPagesPreview,
@@ -29,6 +43,14 @@ import { runOcr, warmOcrEngine } from './ocr-engine';
 import { sendLayoutToProtocolio } from './send-to-protocolio';
 import { emitWorkspaceEvent } from './emit-event';
 import { hubApiPath } from './hub-origin';
+import {
+  chooseFromJob,
+  chooseOcrResume,
+  readStoredLaunch,
+  type OcrLaunchTarget,
+  type OcrResumeChoice,
+  type OcrResumeJob,
+} from './resume-target';
 import { GpuClock } from './gpu-clock';
 import { ReadingView } from './reading-view';
 import { LibraryPanel } from './library-panel';
@@ -44,11 +66,7 @@ async function followAnalysis(
 ): Promise<OcrAnalysis> {
   let current = start;
   onProgress(current);
-  try {
-    sessionStorage.setItem('sorye.ocr.reading', current.id);
-  } catch {
-    // The hub frame can block storage. The reading still continues in this tab.
-  }
+  rememberReading(current.id);
   let guard = 0;
   while (current.status === 'extracting' && guard < 10_000) {
     guard += 1;
@@ -64,8 +82,118 @@ async function followAnalysis(
   return current;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(stoppedError());
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(stoppedError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function stoppedError(): DOMException {
+  return new DOMException('Stopped following this analysis', 'AbortError');
+}
+
+function stopped(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
+
+function rememberReading(id: string) {
+  try {
+    sessionStorage.setItem('sorye.ocr.reading', id);
+  } catch {
+    // The hub frame can block storage. The reading still continues in this tab.
+  }
+}
+
+function acknowledgeJob(jobId: string) {
+  void fetch(hubApiPath('/api/ocr/active'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jobId }),
+  }).catch(() => {});
+}
+
+async function fetchOcrAnalysis(id: string, signal?: AbortSignal): Promise<OcrAnalysis | null> {
+  const analysisResponse = await fetch(hubApiPath(`/api/ocr/analyses/${encodeURIComponent(id)}`), {
+    credentials: 'include', cache: 'no-store', signal,
+  });
+  const data = (await analysisResponse.json().catch(() => ({}))) as { analysis?: OcrAnalysis };
+  if (!analysisResponse.ok || !data.analysis) return null;
+  return data.analysis;
+}
+
+async function fetchResumeJob(jobId: string, signal?: AbortSignal): Promise<OcrResumeJob | null> {
+  const response = await fetch(hubApiPath(`/api/jobs/${encodeURIComponent(jobId)}`), {
+    credentials: 'include', cache: 'no-store', signal,
+  });
+  if (!response.ok) return null;
+  const job = (await response.json().catch(() => ({}))) as {
+    id?: string;
+    status?: string;
+    error?: string | null;
+    result?: { analysisId?: string; presented?: boolean };
+  };
+  return {
+    id: job.id || jobId,
+    status: job.status || 'failed',
+    error: job.error,
+    analysisId: typeof job.result?.analysisId === 'string' ? job.result.analysisId : null,
+    presented: job.result?.presented === true,
+  };
+}
+
+async function pollOcrJob(
+  jobId: string,
+  onQueued: (status: string, gpuStartedAt?: string) => void,
+  shouldContinue: () => boolean,
+  signal?: AbortSignal,
+): Promise<OcrAnalysis> {
+  const jobPath = hubApiPath(`/api/jobs/${encodeURIComponent(jobId)}`);
+  for (;;) {
+    if (signal?.aborted || !shouldContinue()) throw stoppedError();
+    const jobResponse = await fetch(jobPath, { credentials: 'include', cache: 'no-store', signal });
+    const job = (await jobResponse.json().catch(() => ({}))) as {
+      status?: string;
+      error?: string;
+      result?: { analysisId?: string; phase?: string; completed?: number; total?: number; gpuStartedAt?: string };
+    };
+    if (!jobResponse.ok) throw new Error(job.error || `Could not check analysis (${jobResponse.status})`);
+    if (job.status === 'failed' || job.status === 'cancelled') {
+      const failure = new Error(job.error || (job.status === 'cancelled' ? 'Analysis was cancelled' : 'Analysis failed')) as Error & { analysisId?: string };
+      failure.analysisId = job.result?.analysisId;
+      throw failure;
+    }
+    const progress = job.result;
+    const gpuStartedAt = progress?.phase === 'analyzing' ? progress.gpuStartedAt : undefined;
+    if (job.status === 'running') {
+      onQueued(progress?.phase === 'analyzing' && progress.total
+        ? `Qwen is reading section ${Math.min((progress.completed ?? 0) + 1, progress.total)} of ${progress.total}.`
+        : progress?.phase === 'reading_pdf' ? 'Extracting rows from the PDF…' : 'Waiting for an OCR worker…',
+      gpuStartedAt);
+    } else {
+      onQueued('Waiting for an OCR worker…');
+    }
+    if (job.status === 'completed' && progress?.analysisId) {
+      const analysis = await fetchOcrAnalysis(progress.analysisId, signal);
+      if (!analysis) throw new Error('The analysis finished but could not be loaded');
+      rememberReading(analysis.id);
+      return analysis;
+    }
+    await delay(1_500, signal);
+  }
 }
 
 async function submitAndFollowAnalysis(
@@ -73,7 +201,53 @@ async function submitAndFollowAnalysis(
   onAnalysisProgress?: (analysis: OcrAnalysis) => void,
   onQueued?: (status: string, gpuStartedAt?: string) => void,
   onJobCreated?: (jobId: string | null) => void,
+  executionTarget: LlmExecutionTarget = 'hub-server',
+  shouldContinue: () => boolean = () => true,
+  signal?: AbortSignal,
 ): Promise<OcrAnalysis> {
+  if (executionTarget === 'client-webgpu') {
+    body.set('executionTarget', 'client-webgpu');
+    const extractRes = await fetch(hubApiPath('/api/ocr/analyze?executionTarget=client-webgpu'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+      body,
+    });
+    const extracted = (await extractRes.json().catch(() => ({}))) as {
+      error?: string;
+      analysis?: OcrAnalysis;
+    };
+    if (!extractRes.ok || !extracted.analysis) {
+      throw new Error(extracted.error || `Row extraction failed (${extractRes.status})`);
+    }
+    const baseAnalysis = extracted.analysis;
+    onAnalysisProgress?.(baseAnalysis);
+
+    const webGpuResult = await runWebGpuOcrPatternExtraction(baseAnalysis.pages, {
+      onGpuStart: (startedAt) => onQueued?.('Running Qwen pattern pass on your WebGPU…', startedAt),
+      onProgress: (_done, _total, detail) => onQueued?.(detail),
+    });
+
+    const patchRes = await fetch(
+      hubApiPath(`/api/ocr/analyses/${encodeURIComponent(baseAnalysis.id)}/pattern`),
+      {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(webGpuResult),
+      },
+    );
+    const finalized = (await patchRes.json().catch(() => ({}))) as {
+      error?: string;
+      analysis?: OcrAnalysis;
+    };
+    if (!patchRes.ok || !finalized.analysis) {
+      throw new Error(finalized.error || `Could not save WebGPU pattern (${patchRes.status})`);
+    }
+    rememberReading(finalized.analysis.id);
+    return finalized.analysis;
+  }
+
   const response = await fetch(hubApiPath('/api/ocr/analyze'), {
     method: 'POST',
     credentials: 'include',
@@ -89,39 +263,7 @@ async function submitAndFollowAnalysis(
   onJobCreated?.(submitted.jobId ?? null);
   if (submitted.analysis) return followAnalysis(submitted.analysis, onAnalysisProgress ?? (() => {}));
   if (!submitted.jobId) throw new Error(submitted.error || 'The analysis was not accepted');
-
-  const jobPath = hubApiPath(`/api/jobs/${encodeURIComponent(submitted.jobId)}`);
-  for (;;) {
-    const jobResponse = await fetch(jobPath, { credentials: 'include', cache: 'no-store' });
-    const job = (await jobResponse.json().catch(() => ({}))) as {
-      status?: string;
-      error?: string;
-      result?: { analysisId?: string; phase?: string; completed?: number; total?: number; gpuStartedAt?: string };
-    };
-    if (!jobResponse.ok) throw new Error(job.error || `Could not check analysis (${jobResponse.status})`);
-    if (job.status === 'failed' || job.status === 'cancelled') {
-      throw new Error(job.error || (job.status === 'cancelled' ? 'Analysis was cancelled' : 'Analysis failed'));
-    }
-    const progress = job.result;
-    const gpuStartedAt = progress?.phase === 'analyzing' ? progress.gpuStartedAt : undefined;
-    if (job.status === 'running') {
-      onQueued?.(progress?.phase === 'analyzing' && progress.total
-        ? `Qwen is reading section ${Math.min((progress.completed ?? 0) + 1, progress.total)} of ${progress.total}.`
-        : progress?.phase === 'reading_pdf' ? 'Extracting rows from the PDF…' : 'Waiting for an OCR worker…',
-      gpuStartedAt);
-    } else {
-      onQueued?.('Waiting for an OCR worker…');
-    }
-    if (job.status === 'completed' && progress?.analysisId) {
-      const analysisResponse = await fetch(hubApiPath(`/api/ocr/analyses/${encodeURIComponent(progress.analysisId)}`), {
-        credentials: 'include', cache: 'no-store',
-      });
-      const data = (await analysisResponse.json().catch(() => ({}))) as { analysis?: OcrAnalysis; error?: string };
-      if (!analysisResponse.ok || !data.analysis) throw new Error(data.error || 'The analysis finished but could not be loaded');
-      return data.analysis;
-    }
-    await delay(1_500);
-  }
+  return pollOcrJob(submitted.jobId, onQueued ?? (() => {}), shouldContinue, signal);
 }
 
 async function continueAnalysis(id: string, tries = 0): Promise<OcrAnalysis> {
@@ -221,12 +363,48 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState('');
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const watchRef = useRef(0);
+  const followAbort = useRef<AbortController | null>(null);
+  const pendingAck = useRef<string | null>(null);
   const [gpuStartedAt, setGpuStartedAt] = useState<string | null>(null);
   const [comparisonDocuments, setComparisonDocuments] = useState<ComparisonDocument[]>([]);
   const [comparisonBusy, setComparisonBusy] = useState(false);
   const [comparisonProgress, setComparisonProgress] = useState('');
   const [comparisonError, setComparisonError] = useState<string | null>(null);
   const [comparisonRestored, setComparisonRestored] = useState(false);
+  const [gpuPref, setGpuPref] = useState<UserGpuPreference>(DEFAULT_USER_GPU_PREFERENCE);
+  const [webGpuInfo, setWebGpuInfo] = useState<WebGpuDeviceDescriptor | null>(null);
+
+  useEffect(() => {
+    const initial = readLocalGpuPreference();
+    setGpuPref(initial);
+    void probeWebGpu(initial.webGpuPowerPreference).then(setWebGpuInfo);
+    void fetch(hubApiPath('/api/llm/preferences'), { credentials: 'include', cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { preference?: UserGpuPreference } | null) => {
+        if (data?.preference) {
+          const synced = writeLocalGpuPreference(data.preference);
+          setGpuPref(synced);
+        }
+      })
+      .catch(() => {});
+    return subscribeGpuPreference((next) => {
+      setGpuPref(next);
+      void probeWebGpu(next.webGpuPowerPreference).then(setWebGpuInfo);
+    });
+  }, []);
+
+  function switchOcrGpuTarget(target: LlmExecutionTarget) {
+    const next = writeLocalGpuPreference({ target });
+    setGpuPref(next);
+    void fetch(hubApiPath('/api/llm/preferences'), {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    }).catch(() => {});
+  }
 
   useEffect(() => {
     pageScansRef.current = pageScans;
@@ -282,35 +460,200 @@ export default function App() {
     }
   }, [comparisonDocuments, comparisonRestored]);
 
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has('handoff')) return;
-    const savedId = sessionStorage.getItem('sorye.ocr.reading');
-    if (!savedId) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(hubApiPath(`/api/ocr/analyses/${savedId}`), {
-          credentials: 'include',
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { analysis?: OcrAnalysis };
-        if (cancelled || !data.analysis || data.analysis.status !== 'extracting') return;
-        setAnalyzing(true);
-        await followAnalysis(data.analysis, (next) => {
-          if (!cancelled) setAnalysis(next);
-        });
-      } catch (err) {
-        if (!cancelled) {
-          setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
-        }
-      } finally {
-        if (!cancelled) setAnalyzing(false);
+  const noteFinished = useCallback((jobId?: string) => {
+    if (!jobId) return;
+    pendingAck.current = jobId;
+    const node = rootRef.current;
+    if (!node || document.visibilityState === 'hidden' || node.getClientRects().length === 0) return;
+    pendingAck.current = null;
+    acknowledgeJob(jobId);
+  }, []);
+
+  const presentChoice = useCallback(async (
+    choice: OcrResumeChoice,
+    signal: AbortSignal,
+    shouldContinue: () => boolean,
+  ) => {
+    if (signal.aborted || !shouldContinue() || choice.action === 'none') return;
+    if (choice.action === 'show') {
+      setAnalyzing(false);
+      setAnalysisProgress('');
+      const loaded = await fetchOcrAnalysis(choice.analysisId, signal);
+      if (signal.aborted || !shouldContinue()) return;
+      if (loaded?.status === 'extracting' && choice.jobId) {
+        await presentChoice({ action: 'poll', jobId: choice.jobId }, signal, shouldContinue);
+        return;
       }
-    })();
+      if (!loaded || loaded.status === 'extracting') {
+        setAnalysis(null);
+        setAnalysisError('The analysis finished but could not be loaded');
+        return;
+      }
+      setAnalysisError(null);
+      setAnalysis(loaded);
+      if (loaded.vector?.gpuStartedAt) setGpuStartedAt(loaded.vector.gpuStartedAt);
+      rememberReading(loaded.id);
+      noteFinished(choice.jobId);
+      return;
+    }
+    if (choice.action === 'error') {
+      setAnalyzing(false);
+      setAnalysisProgress('');
+      setAnalysisJobId(null);
+      setAnalysisError(choice.message);
+      if (choice.analysisId) {
+        const loaded = await fetchOcrAnalysis(choice.analysisId, signal).catch(() => null);
+        if (!signal.aborted && shouldContinue() && loaded && loaded.status !== 'extracting') {
+          setAnalysis(loaded);
+          rememberReading(loaded.id);
+        }
+      }
+      noteFinished(choice.jobId);
+      return;
+    }
+    setAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysisJobId(choice.jobId);
+    try {
+      const loaded = await pollOcrJob(choice.jobId, (status, started) => {
+        if (!shouldContinue()) return;
+        if (started) setGpuStartedAt(started);
+        setAnalysisProgress(status);
+      }, shouldContinue, signal);
+      if (signal.aborted || !shouldContinue()) return;
+      setAnalysis(loaded);
+      if (loaded.vector?.gpuStartedAt) setGpuStartedAt(loaded.vector.gpuStartedAt);
+      setAnalyzing(false);
+      setAnalysisProgress('');
+      setAnalysisJobId(null);
+      noteFinished(choice.jobId);
+    } catch (err) {
+      if (signal.aborted || !shouldContinue() || stopped(err)) return;
+      const analysisId = err && typeof err === 'object' && 'analysisId' in err && typeof (err as { analysisId?: unknown }).analysisId === 'string'
+        ? (err as { analysisId: string }).analysisId
+        : undefined;
+      setAnalyzing(false);
+      setAnalysisProgress('');
+      setAnalysisJobId(null);
+      setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+      if (analysisId) {
+        const loaded = await fetchOcrAnalysis(analysisId).catch(() => null);
+        if (shouldContinue() && loaded && loaded.status !== 'extracting') setAnalysis(loaded);
+      }
+      noteFinished(choice.jobId);
+    }
+  }, [noteFinished]);
+
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const ack = () => {
+      const jobId = pendingAck.current;
+      if (!jobId || document.visibilityState === 'hidden' || node.getClientRects().length === 0) return;
+      pendingAck.current = null;
+      acknowledgeJob(jobId);
+    };
+    const observer = new IntersectionObserver(() => ack());
+    observer.observe(node);
+    document.addEventListener('visibilitychange', ack);
     return () => {
-      cancelled = true;
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', ack);
     };
   }, []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('handoff')) return;
+    const controller = new AbortController();
+    followAbort.current = controller;
+    const token = ++watchRef.current;
+    const shouldContinue = () => watchRef.current === token;
+    void (async () => {
+      let launch: OcrLaunchTarget | null = null;
+      try {
+        launch = readStoredLaunch(sessionStorage.getItem(hubOpenTargetKey('ocr')));
+        if (launch) sessionStorage.removeItem(hubOpenTargetKey('ocr'));
+      } catch {
+        launch = null;
+      }
+      try {
+        if (launch) {
+          const job = launch.jobId ? await fetchResumeJob(launch.jobId, controller.signal) : null;
+          if (!shouldContinue()) return;
+          await presentChoice(chooseOcrResume({ launch, job }), controller.signal, shouldContinue);
+          return;
+        }
+        const response = await fetch(hubApiPath('/api/ocr/active'), {
+          credentials: 'include', cache: 'no-store', signal: controller.signal,
+        });
+        if (response.ok) {
+          const data = (await response.json()) as { job?: OcrResumeJob | null };
+          const choice = chooseFromJob(data.job ?? null);
+          if (choice.action !== 'none') {
+            await presentChoice(choice, controller.signal, shouldContinue);
+            return;
+          }
+        }
+        if (!shouldContinue()) return;
+        const savedId = sessionStorage.getItem('sorye.ocr.reading');
+        if (!savedId) return;
+        const saved = await fetchOcrAnalysis(savedId, controller.signal);
+        if (!saved || !shouldContinue()) return;
+        if (saved.status === 'extracting') {
+          setAnalyzing(true);
+          const done = await followAnalysis(saved, (next) => {
+            if (shouldContinue()) setAnalysis(next);
+          });
+          if (!shouldContinue()) return;
+          setAnalysis(done);
+          setAnalyzing(false);
+          return;
+        }
+        setAnalysis(saved);
+        if (saved.vector?.gpuStartedAt) setGpuStartedAt(saved.vector.gpuStartedAt);
+      } catch (err) {
+        if (!shouldContinue() || stopped(err)) return;
+        setAnalyzing(false);
+        setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+      }
+    })();
+    return () => controller.abort();
+  }, [presentChoice]);
+
+  useEffect(() => {
+    function onOpen(event: Event) {
+      const detail = (event as CustomEvent<HubOpenAppDetail>).detail;
+      if (!detail || detail.appId !== 'ocr') return;
+      if (!detail.analysisId && !detail.jobId && !detail.outcome) return;
+      try { sessionStorage.removeItem(hubOpenTargetKey('ocr')); } catch { /* already consumed */ }
+      followAbort.current?.abort();
+      const controller = new AbortController();
+      followAbort.current = controller;
+      const token = ++watchRef.current;
+      const shouldContinue = () => watchRef.current === token;
+      const launch: OcrLaunchTarget = {
+        analysisId: detail.analysisId,
+        jobId: detail.jobId,
+        outcome: detail.outcome,
+      };
+      void (async () => {
+        try {
+          const job = launch.jobId ? await fetchResumeJob(launch.jobId, controller.signal) : null;
+          if (!shouldContinue()) return;
+          await presentChoice(chooseOcrResume({ launch, job }), controller.signal, shouldContinue);
+        } catch (err) {
+          if (!shouldContinue() || stopped(err)) return;
+          setAnalyzing(false);
+          setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+        }
+      })();
+    }
+    window.addEventListener(HUB_OPEN_APP_EVENT, onOpen);
+    return () => {
+      window.removeEventListener(HUB_OPEN_APP_EVENT, onOpen);
+      followAbort.current?.abort();
+    };
+  }, [presentChoice]);
 
   useEffect(() => {
     warmOcrEngine();
@@ -601,15 +944,22 @@ export default function App() {
   async function analyzeWithQwen() {
     const file = uploadedFileRef.current;
     if (!file || analyzing || comparisonBusy) return;
+    followAbort.current?.abort();
+    const controller = new AbortController();
+    followAbort.current = controller;
+    const token = ++watchRef.current;
+    const shouldContinue = () => watchRef.current === token;
     setAnalyzing(true);
     setAnalysisError(null);
     setAnalysis(null);
     setGpuStartedAt(null);
+    let startedJob: string | null = null;
     try {
       const body = new FormData();
       if (!driveFileIdRef.current) throw new Error('Save this PDF to Drive before analyzing it');
       body.append('fileId', driveFileIdRef.current);
       const current = await submitAndFollowAnalysis(body, (next) => {
+        if (!shouldContinue()) return;
         setAnalysis(next);
         if (next.vector?.gpuStartedAt) setGpuStartedAt(next.vector.gpuStartedAt);
         const cursor = next.vector?.cursor;
@@ -617,10 +967,17 @@ export default function App() {
           ? `Qwen is reading section ${Math.min(cursor.next + 1, cursor.total)} of ${cursor.total}.`
           : 'Qwen is reading this document. A few pages usually take a minute.');
       }, (status, started) => {
+        if (!shouldContinue()) return;
         if (started) setGpuStartedAt(started);
         setAnalysisProgress(status);
-      }, setAnalysisJobId);
+      }, (jobId) => {
+        startedJob = jobId;
+        setAnalysisJobId(jobId);
+      }, gpuPref.target, shouldContinue, controller.signal);
+      if (!shouldContinue()) return;
       setAnalysis(current);
+      if (current.vector?.gpuStartedAt) setGpuStartedAt(current.vector.gpuStartedAt);
+      noteFinished(startedJob ?? undefined);
       const summary =
         current.pattern?.summary ||
         current.error ||
@@ -637,11 +994,22 @@ export default function App() {
         },
       });
     } catch (err) {
+      if (!shouldContinue() || stopped(err)) return;
+      const analysisId = err && typeof err === 'object' && 'analysisId' in err && typeof (err as { analysisId?: unknown }).analysisId === 'string'
+        ? (err as { analysisId: string }).analysisId
+        : undefined;
       setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+      if (analysisId) {
+        const loaded = await fetchOcrAnalysis(analysisId).catch(() => null);
+        if (shouldContinue() && loaded && loaded.status !== 'extracting') setAnalysis(loaded);
+      }
+      noteFinished(startedJob ?? undefined);
     } finally {
-      setAnalyzing(false);
-      setAnalysisProgress('');
-      setAnalysisJobId(null);
+      if (shouldContinue()) {
+        setAnalyzing(false);
+        setAnalysisProgress('');
+        setAnalysisJobId(null);
+      }
     }
   }
 
@@ -664,6 +1032,11 @@ export default function App() {
       setComparisonError('Choose one or more PDF files.');
       return;
     }
+    followAbort.current?.abort();
+    const controller = new AbortController();
+    followAbort.current = controller;
+    const token = ++watchRef.current;
+    const shouldContinue = () => watchRef.current === token;
     setComparisonBusy(true);
     setComparisonError(null);
     const errors: string[] = [];
@@ -677,11 +1050,14 @@ export default function App() {
           body.append('fileId', saved.id);
           setGpuStartedAt(null);
           const complete = await submitAndFollowAnalysis(body, (next) => {
+            if (!shouldContinue()) return;
             if (next.vector?.gpuStartedAt) setGpuStartedAt(next.vector.gpuStartedAt);
           }, (status, started) => {
+            if (!shouldContinue()) return;
             if (started) setGpuStartedAt(started);
             setComparisonProgress(`Analyzing ${index + 1} of ${pdfs.length}: ${file.name} · ${status}`);
-          });
+          }, undefined, gpuPref.target, shouldContinue, controller.signal);
+          if (!shouldContinue()) return;
           setComparisonDocuments((previous) => [
             ...previous.filter((item) => item.analysis.id !== complete.id),
             {
@@ -696,6 +1072,7 @@ export default function App() {
             },
           ]);
         } catch (err) {
+          if (!shouldContinue() || stopped(err)) return;
           errors.push(`${file.name}: ${err instanceof Error ? err.message : 'Analysis failed'}`);
         }
       }
@@ -733,16 +1110,7 @@ export default function App() {
   const scanningMultiPage = pdfPageCount > 1;
 
   return (
-    <div className="ocr-app">
-      <header className="ocr-header">
-        <div>
-          <p className="ocr-eyebrow">DOCUMENT WORKSPACE</p>
-          <h1>Turn documents into useful data</h1>
-          <p>Extract PDF tables, compare schedules by address ID, and review unclear values by page.</p>
-        </div>
-        <span className="ocr-badge">PDF only · EN + DE</span>
-      </header>
-
+    <div className="ocr-app" ref={rootRef}>
       <ol className="ocr-workflow" role="list" aria-label="Document workflow">
         <li aria-current={!ready ? 'step' : undefined}><span>01</span><div><strong>Upload</strong><small>Choose a PDF</small></div></li>
         <li aria-current={ready && !analysis ? 'step' : undefined}><span>02</span><div><strong>Review</strong><small>Check extracted tables</small></div></li>
@@ -840,8 +1208,24 @@ export default function App() {
               >
                 Show matrix
               </button>
+              <label className="ocr-gpu-select" aria-label="LLM GPU target">
+                <select
+                  value={gpuPref.target}
+                  disabled={analyzing || comparisonBusy}
+                  onChange={(e) => switchOcrGpuTarget(e.target.value as LlmExecutionTarget)}
+                >
+                  <option value="hub-server">Hub Server GPU (Qwen3-8B)</option>
+                  <option value="client-webgpu">
+                    My GPU (WebGPU{webGpuInfo?.available ? ` · ${webGpuInfo.vendor}` : ''})
+                  </option>
+                </select>
+              </label>
               <Button variant="primary" loading={analyzing} disabled={analyzing || comparisonBusy} onClick={() => void analyzeWithQwen()}>
-                {analyzing ? 'Reading document…' : 'Analyze with Qwen'}
+                {analyzing
+                  ? 'Reading document…'
+                  : gpuPref.target === 'client-webgpu'
+                    ? 'Analyze with Qwen (My WebGPU)'
+                    : 'Analyze with Qwen'}
               </Button>
               <button
                 type="button"

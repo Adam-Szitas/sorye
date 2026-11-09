@@ -1,135 +1,140 @@
-import { CALENDAR_LOCAL_STORAGE_KEY } from '@sorye/types';
-import {
-  normalizeLegacyEvent,
-  type CalendarEvent,
-} from './event-schedule';
+import { createDurableActionQueue, type DurableActionQueue } from '@sorye/platform';
+import type { RodrigoAction, RodrigoActionBatchResult, UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
+import { normalizeLegacyEvent, type CalendarEvent } from './event-schedule';
 
 export type { CalendarEvent, EventKind } from './event-schedule';
+export interface CalendarQueueState { pending: number; failed: number; conflicts: number; rejected: number; }
 
 export function createCalendarStorage() {
-let revision = 0;
-let conflicted = false;
-let queue: Promise<void> = Promise.resolve();
-const conflictDraftKey = 'sorye:calendar:conflict-draft:v1';
-class ApiError extends Error {
-  status: number;
+  let activeScope: string | null = null;
+  let events = new Map<string, CalendarEvent>();
+  let revisions = new Map<string, number>();
+  let lastLoad: UserLoadPartition<CalendarEvent> | null = null;
+  let lastWorkspace: UserLoadWorkspace | null = null;
+  const queues = new Map<string, DurableActionQueue<RodrigoAction>>();
+  const conflictDraftKey = () => `sorye:calendar:conflict-draft:v1:${activeScope ?? 'unscoped'}`;
+  class ApiError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 
-  constructor(status: number, body: string) {
-    super(body || `Request failed (${status})`);
-    this.status = status;
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (init?.method === "PUT") {
-    if (conflicted) throw new Error("Another session changed this document. Your draft is kept; reload before merging changes.");
-    init = { ...init, body: JSON.stringify({ ...JSON.parse(String(init.body)), expectedRevision: revision }) };
-  }
-  const res = await fetch(path, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (res.status === 409) {
-    conflicted = true;
-    try {
-      const parsed = JSON.parse(String(init?.body)) as { events?: CalendarEvent[] };
-      if (parsed.events) localStorage.setItem(conflictDraftKey, JSON.stringify({ savedAt: new Date().toISOString(), events: parsed.events }));
-    } catch { /* The in-memory events remain available if browser storage is unavailable. */ }
-  }
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    const text = typeof error.error === 'string' ? error.error : 'Could not save the workspace document.';
-    throw new ApiError(res.status, text);
-  }
-  const data = await res.json();
-  if (!Number.isInteger(data.revision)) throw new Error("Workspace response is missing a revision. Reload the app.");
-  revision = data.revision;
-  if (!init?.method) conflicted = false;
-  return data as T;
-}
-
-function readLegacyEvents(): CalendarEvent[] | null {
-  try {
-    const raw = localStorage.getItem(CALENDAR_LOCAL_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return null;
-    const events = parsed
-      .map(normalizeLegacyEvent)
-      .filter((event): event is CalendarEvent => event !== null);
-    return events;
-  } catch {
-    return null;
-  }
-}
-
-function clearLegacyEvents() {
-  try {
-    localStorage.removeItem(CALENDAR_LOCAL_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-async function loadEvents(): Promise<CalendarEvent[]> {
-  const data = await api<{ events: CalendarEvent[]; empty: boolean }>(
-    '/api/calendar',
-  );
-  if (data.empty) {
-    const legacy = readLegacyEvents();
-    if (legacy && legacy.length > 0) {
-      const migrated = await api<{ events: CalendarEvent[] }>('/api/calendar', {
-        method: 'PUT',
-        body: JSON.stringify({ events: legacy, migrate: true }),
-      });
-      clearLegacyEvents();
-      return migrated.events;
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    let response: Response;
+    try { response = await fetch(path, { credentials: 'include', ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } }); }
+    catch { throw new ApiError(0, 'Rodrigo could not be reached. The calendar action remains queued in this browser.'); }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const code = typeof data.error?.code === 'string' ? data.error.code : 'request_failed';
+      throw new ApiError(response.status, code === 'rodrigo_unavailable' || response.status >= 500
+        ? 'Rodrigo could not confirm this calendar change. It remains queued in this browser.' : `Calendar action failed (${code}).`);
     }
-    return data.events;
+    return data as T;
   }
-  clearLegacyEvents();
-  return data.events;
-}
 
-async function saveEvents(
-  events: CalendarEvent[],
-): Promise<CalendarEvent[]> {
-  const saved = await api<{ events: CalendarEvent[] }>('/api/calendar', {
-    method: 'PUT',
-    body: JSON.stringify({ events }),
-  });
-  clearLegacyEvents();
-  clearConflictDraft();
-  return saved.events;
-}
+  async function getQueue() {
+    const response = await request<{ queueScope: string }>('/api/calendar/scope');
+    if (!/^[a-f0-9]{64}$/.test(response.queueScope)) throw new Error('Hub returned an invalid Calendar queue scope.');
+    activeScope = response.queueScope;
+    let current = queues.get(activeScope);
+    if (!current) { current = createDurableActionQueue<RodrigoAction>({ appId: 'calendar', scope: activeScope, maxRows: 500 }); queues.set(activeScope, current); }
+    return current;
+  }
 
-function readConflictDraft(): CalendarEvent[] | null {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(conflictDraftKey) ?? 'null') as { events?: unknown } | null;
-    if (Array.isArray(parsed?.events)) return parsed.events as CalendarEvent[];
-  } catch { /* ignore invalid local draft */ }
-  return null;
-}
+  function saveConflictDraft(value: CalendarEvent[]) {
+    try { localStorage.setItem(conflictDraftKey(), JSON.stringify({ savedAt: new Date().toISOString(), events: value })); } catch { /* IndexedDB queue remains authoritative for pending actions. */ }
+  }
 
-function clearConflictDraft() {
-  try { localStorage.removeItem(conflictDraftKey); } catch { /* ignore */ }
-}
+  async function readCollection(): Promise<CalendarEvent[]> {
+    const collected: CalendarEvent[] = [];
+    const nextRevisions = new Map<string, number>();
+    let cursor: string | undefined;
+    do {
+      const params = new URLSearchParams({ limit: '100' });
+      if (cursor) params.set('cursor', cursor);
+      const page = await request<{ items: Array<{ resourceId: string; revision: number; resource: Record<string, unknown> }>; nextCursor?: string | null }>(`/api/backend/resources/calendar/event?${params}`);
+      for (const item of page.items) {
+        const event = normalizeLegacyEvent(item.resource);
+        if (!event) continue;
+        collected.push(event);
+        nextRevisions.set(item.resourceId, item.revision);
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    events = new Map(collected.map((event) => [event.id, event]));
+    revisions = nextRevisions;
+    return collected;
+  }
 
-function isConflict(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 409;
-}
+  async function flush(): Promise<void> {
+    const q = await getQueue();
+    const scope = activeScope!;
+    const queued = await q.list();
+    const candidates = queued.filter((item) => item.status === 'pending' || item.status === 'failed');
+    if (!candidates.length) return;
+    for (const item of candidates) await q.markAttempt(item.action.actionId);
+    let result: RodrigoActionBatchResult;
+    try { result = await request('/api/backend/actions/batch', { method: 'POST', headers: { 'X-Sorye-Queue-Scope': scope }, body: JSON.stringify({ actions: candidates.map((item) => item.action) }) }); }
+    catch (error) {
+      for (const item of candidates) await q.markTransportFailure(item.action.actionId, { code: 'rodrigo_unavailable', message: error instanceof Error ? error.message : 'Rodrigo could not be reached.' });
+      throw error;
+    }
+    const outcomes = new Map(result.results.map((outcome) => [outcome.actionId, outcome]));
+    for (const item of candidates) {
+      const outcome = outcomes.get(item.action.actionId);
+      if (!outcome) { await q.markTransportFailure(item.action.actionId, { code: 'missing_action_result', message: 'Rodrigo returned no result for this action.' }); continue; }
+      await q.settle({ actionId: outcome.actionId, status: outcome.status, error: outcome.error });
+      if ((outcome.status === 'committed' || outcome.status === 'duplicate') && outcome.revision) revisions.set(item.action.resourceId, outcome.revision);
+      else if (outcome.status === 'conflict' || outcome.status === 'rejected') {
+        const actionEvent = normalizeLegacyEvent(item.action.payload);
+        const draft = [...events.values()].filter((event) => event.id !== item.action.resourceId);
+        if (actionEvent) draft.push(actionEvent);
+        saveConflictDraft(draft);
+      }
+    }
+  }
 
-function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const run = queue.then(() => request<T>(path, init));
-  queue = run.then(() => undefined, () => undefined);
-  return run;
-}
+  async function loadEvents(): Promise<CalendarEvent[]> {
+    await getQueue();
+    await flush().catch(() => undefined);
+    lastLoad = null;
+    lastWorkspace = null;
+    return readCollection();
+  }
 
-return { loadEvents, saveEvents, readConflictDraft, clearConflictDraft, isConflict };
+  async function saveEvents(next: CalendarEvent[]): Promise<CalendarEvent[]> {
+    const q = await getQueue();
+    const nextById = new Map(next.map((event) => [event.id, event]));
+    const actions: RodrigoAction[] = [];
+    const occurredAt = new Date().toISOString();
+    const payload = (event: CalendarEvent) => ({ id: event.id, title: event.title, kind: event.kind, dates: event.dates, ...(event.startTime ? { startTime: event.startTime } : {}), ...(event.endTime ? { endTime: event.endTime } : {}) });
+    for (const event of next) {
+      const previous = events.get(event.id);
+      if (previous && JSON.stringify(previous) === JSON.stringify(event)) continue;
+      actions.push({ actionId: crypto.randomUUID(), appId: 'calendar', resourceType: 'event', operation: previous ? 'update' : 'create', resourceId: event.id,
+        ...(previous ? { expectedRevision: revisions.get(event.id) ?? 1 } : {}), payloadVersion: 1, payload: payload(event), occurredAt });
+    }
+    for (const [id] of events) if (!nextById.has(id)) actions.push({ actionId: crypto.randomUUID(), appId: 'calendar', resourceType: 'event', operation: 'delete', resourceId: id, expectedRevision: revisions.get(id) ?? 1, payloadVersion: 1, payload: {}, occurredAt });
+    for (const action of actions) await q.enqueue(action);
+    events = nextById;
+    await flush();
+    const remaining = await q.list();
+    if (remaining.some((item) => item.status === 'conflict')) throw new ApiError(409, 'A calendar event changed in another session. Reload and reconcile the saved draft.');
+    if (remaining.some((item) => item.status !== 'pending' && item.status !== 'failed')) throw new ApiError(400, 'Rodrigo rejected a calendar action. Review and reconcile it before continuing.');
+    if (remaining.length) throw new ApiError(503, 'Rodrigo has not confirmed every calendar change. Use Resend when the connection is available.');
+    clearConflictDraft();
+    return next;
+  }
+
+  async function queueState(): Promise<CalendarQueueState> {
+    const items = await (await getQueue()).list();
+    return { pending: items.filter((item) => item.status === 'pending').length, failed: items.filter((item) => item.status === 'failed').length, conflicts: items.filter((item) => item.status === 'conflict').length, rejected: items.filter((item) => item.status === 'rejected').length };
+  }
+  async function resendPending() { await flush(); }
+  async function discardConflictsAndRejected() {
+    const q = await getQueue();
+    for (const item of await q.list()) if (item.status === 'conflict' || item.status === 'rejected') await q.discard(item.action.actionId);
+  }
+  function readConflictDraft(): CalendarEvent[] | null { try { const data = JSON.parse(localStorage.getItem(conflictDraftKey()) ?? 'null') as { events?: unknown } | null; return Array.isArray(data?.events) ? data.events as CalendarEvent[] : null; } catch { return null; } }
+  function clearConflictDraft() { try { localStorage.removeItem(conflictDraftKey()); } catch { /* optional draft */ } }
+  function isConflict(error: unknown) { return error instanceof ApiError && error.status === 409; }
+  return { loadEvents, saveEvents, readConflictDraft, clearConflictDraft, isConflict, queueState, resendPending, discardConflictsAndRejected, readLoad: () => ({ load: lastLoad, workspace: lastWorkspace }) };
 }
 
 export function toDateKey(year: number, month: number, day: number): string {
@@ -141,50 +146,22 @@ export function parseDateKey(key: string): Date {
   return new Date(y, m - 1, d);
 }
 
-export function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-export function addMonths(date: Date, delta: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
-}
-
+export function startOfMonth(date: Date): Date { return new Date(date.getFullYear(), date.getMonth(), 1); }
+export function addMonths(date: Date, delta: number): Date { return new Date(date.getFullYear(), date.getMonth() + delta, 1); }
 export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export function buildMonthGrid(viewDate: Date): Array<{
-  dateKey: string;
-  day: number;
-  inMonth: boolean;
-}> {
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const first = new Date(year, month, 1);
-  const startOffset = (first.getDay() + 6) % 7;
+export function buildMonthGrid(viewDate: Date): Array<{ dateKey: string; day: number; inMonth: boolean }> {
+  const year = viewDate.getFullYear(); const month = viewDate.getMonth();
+  const first = new Date(year, month, 1); const startOffset = (first.getDay() + 6) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: Array<{ dateKey: string; day: number; inMonth: boolean }> = [];
-
   for (let i = 0; i < 42; i++) {
     const dayNum = i - startOffset + 1;
     if (dayNum < 1 || dayNum > daysInMonth) {
       const adj = dayNum < 1 ? dayNum : dayNum - daysInMonth;
-      const adjDate = new Date(year, month + (dayNum < 1 ? -1 : 1), adj);
-      cells.push({
-        dateKey: toDateKey(
-          adjDate.getFullYear(),
-          adjDate.getMonth(),
-          adjDate.getDate(),
-        ),
-        day: adjDate.getDate(),
-        inMonth: false,
-      });
-    } else {
-      cells.push({
-        dateKey: toDateKey(year, month, dayNum),
-        day: dayNum,
-        inMonth: true,
-      });
-    }
+      const date = new Date(year, month + (dayNum < 1 ? -1 : 1), adj);
+      cells.push({ dateKey: toDateKey(date.getFullYear(), date.getMonth(), date.getDate()), day: date.getDate(), inMonth: false });
+    } else cells.push({ dateKey: toDateKey(year, month, dayNum), day: dayNum, inMonth: true });
   }
-
   return cells;
 }

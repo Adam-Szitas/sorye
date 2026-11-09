@@ -111,7 +111,7 @@ jobs:
             .
           docker push "$image:$tag"
           docker image inspect "$image:$tag" --format '{{json .RepoDigests}}'
-          for app in dashboard calendar notes tasks relay protocolio canvas devkit messenger ocr studio catalog contact storefront site mail files susm espm reports; do
+          for app in dashboard calendar notes tasks relay protocolio canvas devkit messenger ocr studio catalog contact storefront site mail files susm espm reports operator; do
             target=gateway
             case "$app" in dashboard|calendar|notes|tasks|relay|protocolio|canvas|devkit|messenger|ocr|studio) target=remote ;; esac
             app_image="$image-$app:$tag"

@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import * as schema from '@sorye/db/schema';
 import {
   dmChannelId,
+  withMessengerMentions,
   type MessengerChannel,
   type MessengerMessage,
   type MessengerMessageKind,
@@ -30,8 +31,8 @@ async function assertMember(userId: string, workspaceId: string) {
 }
 
 function canSeeChannel(channel: MessengerChannel, userId: string) {
-  if (channel.kind === 'channel') return true;
-  return channel.memberIds.includes(userId);
+  if (channel.memberIds.length > 0) return channel.memberIds.includes(userId);
+  return channel.kind === 'channel';
 }
 
 function rowToChannel(
@@ -51,7 +52,7 @@ function rowToChannel(
 function rowToMessage(
   row: typeof schema.messengerMessages.$inferSelect,
 ): MessengerMessage {
-  return {
+  return withMessengerMentions({
     id: row.id,
     channelId: row.channelId,
     workspaceId: row.workspaceId,
@@ -63,7 +64,21 @@ function rowToMessage(
     imageHeight: row.imageHeight ?? undefined,
     author: row.author,
     createdAt: row.createdAt.toISOString(),
-  };
+  });
+}
+
+export async function getMessengerChannel(
+  db: WorkspaceDb,
+  workspaceId: string,
+  channelId: string,
+): Promise<MessengerChannel | null> {
+  const [row] = await db
+    .select()
+    .from(schema.messengerChannels)
+    .where(eq(schema.messengerChannels.id, channelId))
+    .limit(1);
+  if (!row || row.workspaceId !== workspaceId) return null;
+  return rowToChannel(row);
 }
 
 async function ensureDefaults(
@@ -193,12 +208,12 @@ export async function bootstrapMessenger(
   db: WorkspaceDb,
   userId: string,
   workspaceId: string,
-  options?: { includeMessages?: boolean },
+  options?: { includeMessages?: boolean; seedDefaults?: boolean },
 ) {
   const session = await assertMember(userId, workspaceId);
   if (!session) return null;
 
-  await ensureDefaults(db, workspaceId, userId);
+  if (options?.seedDefaults !== false) await ensureDefaults(db, workspaceId, userId);
   const members = await getWorkspaceMembers(workspaceId);
 
   const channelRows = await db

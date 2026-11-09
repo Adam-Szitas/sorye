@@ -6,7 +6,7 @@ import {
   type CanvasDocument,
 } from '@sorye/types';
 import { jsonDataFile } from './json-file';
-import { getHubSession } from './json-store';
+import { getHubSession, getHubSessionForWorkspace } from './json-store';
 
 interface CanvasStoreData {
   boards: Record<string, CanvasBoard>;
@@ -21,6 +21,14 @@ const readStore = () => storeFile.read();
 async function assertMember(userId: string, workspaceId: string) {
   const session = await getHubSession(userId);
   if (!session) return null;
+  if (session.workspace.id !== workspaceId) return null;
+  if (!session.workspace.memberIds.includes(userId)) return null;
+  return session;
+}
+
+async function assertReadableMember(userId: string, workspaceId: string) {
+  const session = await getHubSessionForWorkspace(userId, workspaceId);
+  if (!session || session.user.id !== userId) return null;
   if (session.workspace.id !== workspaceId) return null;
   if (!session.workspace.memberIds.includes(userId)) return null;
   return session;
@@ -44,7 +52,7 @@ export async function listCanvasBoards(
   userId: string,
   workspaceId: string,
 ): Promise<CanvasBoardSummary[] | null> {
-  if (!(await assertMember(userId, workspaceId))) return null;
+  if (!(await assertReadableMember(userId, workspaceId))) return null;
   const store = await readStore();
   return Object.values(store.boards)
     .filter((b) => b.workspaceId === workspaceId)

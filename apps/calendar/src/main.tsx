@@ -1,3 +1,4 @@
+import { StandaloneFrame } from '@sorye/platform/react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@sorye/sdk/register';
@@ -7,6 +8,8 @@ import './styles.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <StandaloneFrame appName="Calendar">
+      <App />
+    </StandaloneFrame>
   </StrictMode>,
 );

@@ -6,7 +6,10 @@ import {
   type EmbedWidget,
   type HubSession,
   type Note,
+  type RelayMessage,
+  type TaskItem,
   type TasksBoard,
+  type UserLoadPartition,
   type WorkspaceEventSettings,
   type WorkspaceStorageInfo,
 } from '@sorye/types';
@@ -41,7 +44,9 @@ export interface DashboardData {
   session: HubSession;
   snapshots: LocalAppSnapshots;
   activity: ActivityItem[];
+  activityLoad: UserLoadPartition<ActivityItem> | null;
   widgets: EmbedWidget[];
+  widgetLoad: UserLoadPartition<EmbedWidget> | null;
   storage: WorkspaceStorageInfo | null;
   events: EventsStatus | null;
   hubOrigin: string;
@@ -247,6 +252,62 @@ function buildActivityFeed(
     .slice(0, 12);
 }
 
+function combineActivity(
+  notes: UserLoadPartition<Note> | undefined,
+  tasks: UserLoadPartition<TaskItem> | undefined,
+  events: UserLoadPartition<CalendarEvent> | undefined,
+  relay: UserLoadPartition<RelayMessage> | undefined,
+): UserLoadPartition<ActivityItem> | null {
+  if (!notes && !tasks && !events && !relay) return null;
+  const fold = (kind: 'personal' | 'work') => {
+    const groups = new Map<string, UserLoadPartition<ActivityItem>['personal'][number]>();
+    const take = <T>(
+      partition: UserLoadPartition<T> | undefined,
+      toItem: (value: T) => ActivityItem,
+    ) => {
+      for (const group of partition?.[kind] ?? []) {
+        const current = groups.get(group.workspace.id) ?? { workspace: group.workspace, items: [] };
+        current.items.push(...group.items.map((item) => ({
+          workspaceId: item.workspaceId,
+          workspaceName: item.workspaceName,
+          workspaceKind: item.workspaceKind,
+          value: toItem(item.value),
+        })));
+        groups.set(group.workspace.id, current);
+      }
+    };
+    take(notes, (note) => ({
+      id: `note-${note.id}`,
+      at: note.updatedAt,
+      title: note.title || 'Untitled note',
+      source: 'Notes',
+    }));
+    take(tasks, (task) => ({
+      id: `task-${task.id}`,
+      at: task.updatedAt,
+      title: task.title,
+      source: 'Tasks',
+    }));
+    take(events, (event) => ({
+      id: `cal-${event.id}`,
+      at: event.dates[0] ? `${event.dates[0]}T09:00:00.000Z` : new Date(0).toISOString(),
+      title: event.title,
+      source: 'Calendar',
+    }));
+    take(relay, (message) => ({
+      id: `relay-${message.id}`,
+      at: message.createdAt,
+      title: message.title,
+      source: 'Relay',
+    }));
+    return [...groups.values()].map((group) => ({
+      ...group,
+      items: [...group.items].sort((a, b) => b.value.at.localeCompare(a.value.at)).slice(0, 12),
+    }));
+  };
+  return { personal: fold('personal'), work: fold('work') };
+}
+
 export async function loadDashboardData(): Promise<DashboardData> {
   const res = await fetch('/api/workspace', { credentials: 'include' });
   if (!res.ok) {
@@ -260,13 +321,18 @@ export async function loadDashboardData(): Promise<DashboardData> {
   const session = (await res.json()) as HubSession;
 
   let widgets: EmbedWidget[] = [];
+  let widgetLoad: UserLoadPartition<EmbedWidget> | null = null;
   try {
     const widgetsRes = await fetch('/api/embed/widgets', {
       credentials: 'include',
     });
     if (widgetsRes.ok) {
-      const data = (await widgetsRes.json()) as { widgets: EmbedWidget[] };
+      const data = (await widgetsRes.json()) as {
+        widgets: EmbedWidget[];
+        load?: UserLoadPartition<EmbedWidget>;
+      };
       widgets = data.widgets ?? [];
+      widgetLoad = data.load ?? null;
     }
   } catch {
     widgets = [];
@@ -303,11 +369,20 @@ export async function loadDashboardData(): Promise<DashboardData> {
     migrateCalendarIfNeeded(),
   ]);
 
+  const [notesDoc, tasksDoc, calendarDoc, relayDoc] = await Promise.all([
+    fetchJson<{ load?: UserLoadPartition<Note> }>('/api/notes'),
+    fetchJson<{ load?: UserLoadPartition<TaskItem> }>('/api/tasks'),
+    fetchJson<{ load?: UserLoadPartition<CalendarEvent> }>('/api/calendar'),
+    fetchJson<{ load?: UserLoadPartition<RelayMessage> }>('/api/relay'),
+  ]);
+
   return {
     session,
     snapshots: buildSnapshots(board, notes, calendarEvents),
     activity: buildActivityFeed(board, notes, calendarEvents),
+    activityLoad: combineActivity(notesDoc?.load, tasksDoc?.load, calendarDoc?.load, relayDoc?.load),
     widgets,
+    widgetLoad,
     storage,
     events,
     hubOrigin: window.location.origin,

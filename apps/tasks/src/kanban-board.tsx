@@ -6,9 +6,10 @@ interface KanbanBoardProps {
   handler: StatusHandler;
   searchQuery: string;
   onChange: (handler: StatusHandler) => void;
+  onOpen: (taskId: string) => void;
 }
 
-export function KanbanBoard({ handler, searchQuery, onChange }: KanbanBoardProps) {
+export function KanbanBoard({ handler, searchQuery, onChange, onOpen }: KanbanBoardProps) {
   const statuses = handler.getStatuses();
   const isSearching = searchQuery.trim().length > 0;
 
@@ -27,7 +28,9 @@ export function KanbanBoard({ handler, searchQuery, onChange }: KanbanBoardProps
             key={status.id}
             className="kanban-column"
             onDragOver={(e) => {
+              if (e.dataTransfer.types.includes('Files')) return;
               e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
               e.currentTarget.classList.add('drop-target');
             }}
             onDragLeave={(e) => {
@@ -35,9 +38,11 @@ export function KanbanBoard({ handler, searchQuery, onChange }: KanbanBoardProps
             }}
             onDrop={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               e.currentTarget.classList.remove('drop-target');
-              const taskId = e.dataTransfer.getData('text/task-id');
-              if (taskId) handleDrop(taskId, status.id);
+              if (e.dataTransfer.files.length > 0) return;
+              const taskId = e.dataTransfer.getData('application/x-sorye-task') || e.dataTransfer.getData('text/plain');
+              if (taskId && !taskId.includes('\n') && !taskId.includes('/')) handleDrop(taskId, status.id);
             }}
           >
             <header
@@ -58,11 +63,9 @@ export function KanbanBoard({ handler, searchQuery, onChange }: KanbanBoardProps
                   <TaskCard
                     task={task}
                     statuses={statuses}
+                    onOpen={onOpen}
                     onMove={(taskId, nextStatusId) =>
                       onChange(handler.moveTaskToStatus(taskId, nextStatusId))
-                    }
-                    onUpdate={(taskId, patch) =>
-                      onChange(handler.updateTask(taskId, patch))
                     }
                     onRemove={(taskId) =>
                       onChange(handler.removeTask(taskId))

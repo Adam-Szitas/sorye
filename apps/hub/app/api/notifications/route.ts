@@ -4,7 +4,9 @@ import {
   markNotificationsRead,
   setNotificationSettings,
 } from '@/lib/notifications';
-import type { NotificationCenterSettings } from '@sorye/types';
+import { NOTIFIABLE_APP_IDS, type NotificationCenterSettings } from '@sorye/types';
+import { viewerPersonalPackageAppIds } from '@/lib/personal-package';
+import { readPartitionedLoad } from '@/lib/user-load-read';
 import { NextResponse } from 'next/server';
 import { ServerTimings } from '@/lib/server-timing';
 
@@ -19,8 +21,28 @@ export async function GET() {
     workspaceId: session.workspace.id,
     userId: session.user.id,
   }));
+  const packageIds = new Set(await viewerPersonalPackageAppIds(session));
+  const notifications = session.workspace.kind === 'personal'
+    ? snapshot.notifications.filter((notice) => packageIds.has(notice.appId))
+    : snapshot.notifications;
+  const load = await timings.measure('notification_load', () => readPartitionedLoad(session, async (scope) => {
+    const side = await getNotificationSnapshot({
+      workspaceId: scope.id,
+      userId: session.user.id,
+    });
+    return side.notifications.map((notice) => ({ workspaceId: scope.id, value: notice }));
+  }, {
+    itemAppId: (notice) => notice.appId,
+    personalApps: NOTIFIABLE_APP_IDS,
+  }));
+  const otherUnread = [...load.personal, ...load.work]
+    .filter((group) => group.workspace.id !== session.workspace.id)
+    .reduce((sum, group) => sum + group.items.filter((item) => !item.value.read).length, 0);
 
-  return NextResponse.json(snapshot, { headers: { ...timings.headers(), 'Cache-Control': 'private, no-store' } });
+  return NextResponse.json(
+    { ...snapshot, notifications, load, unreadTotal: snapshot.unreadTotal + otherUnread },
+    { headers: { ...timings.headers(), 'Cache-Control': 'private, no-store' } },
+  );
 }
 
 export async function PATCH(req: Request) {

@@ -19,9 +19,10 @@
 
 .studio-top {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 1rem;
-  align-items: flex-start;
+  align-items: safe center;
   padding: 1rem 1.15rem 0.7rem;
 }
 

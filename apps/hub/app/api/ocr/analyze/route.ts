@@ -47,7 +47,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (getStoreDriver() === 'postgres') return submitOcr(req, session);
+  const url = new URL(req.url);
+  const clientWebGpu = url.searchParams.get('executionTarget') === 'client-webgpu';
+  if (getStoreDriver() === 'postgres' && !clientWebGpu) return submitOcr(req, session);
   try {
     assertOcrAnalyzeRateLimit(session.workspace.id, session.user.id);
   } catch (err) {
@@ -60,6 +62,11 @@ export async function POST(req: Request) {
   const contentLength = Number(req.headers.get('content-length'));
   if (Number.isFinite(contentLength) && contentLength > MAX_OCR_PDF_BYTES + 1_000_000) {
     return NextResponse.json({ error: 'Upload is too large' }, { status: 413 });
+  }
+
+  if (clientWebGpu) {
+    const signal = AbortSignal.any([req.signal, AbortSignal.timeout(120_000)]);
+    return await analyzeUpload(req, session, signal, { model: false }, true);
   }
 
   const release = acquireOcrSlot();
@@ -84,6 +91,7 @@ async function analyzeUpload(
   session: NonNullable<Awaited<ReturnType<typeof ensureHubUser>>>,
   signal: AbortSignal,
   hold: { model: boolean },
+  extractOnly = false,
 ) {
   let form: FormData;
   try {
@@ -186,6 +194,13 @@ async function analyzeUpload(
   }
   if (!saved) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  if (extractOnly || form.get('executionTarget') === 'client-webgpu') {
+    return NextResponse.json(
+      { analysis: saved },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   }
 
   let current = saved;

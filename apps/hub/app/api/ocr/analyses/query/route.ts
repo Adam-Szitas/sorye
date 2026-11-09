@@ -1,6 +1,7 @@
 import { ensureHubUser } from '@/lib/ensure-user';
 import { parseLibraryQuery } from '@/lib/ocr/library-query';
 import { queryOcrLibrary } from '@/lib/store/ocr-analyses';
+import { readPartitionedLoad } from '@/lib/user-load-read';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
@@ -34,11 +35,16 @@ export async function POST(req: Request) {
   }
 
   const result = await queryOcrLibrary(session.user.id, session.workspace.id, query);
+  const load = await readPartitionedLoad(session, async (scope) => {
+    const listed = await queryOcrLibrary(session.user.id, scope.id, query);
+    if (listed.access === 'denied') return [];
+    return listed.hits.map((hit) => ({ workspaceId: scope.id, value: hit }));
+  }, { appId: 'ocr' });
   if (result.access === 'denied') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   return NextResponse.json(
-    { hits: result.hits },
+    { hits: result.hits, load },
     { headers: { 'Cache-Control': 'private, no-store' } },
   );
 }

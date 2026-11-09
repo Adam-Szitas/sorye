@@ -387,6 +387,13 @@ function normalizeStored(
   };
 }
 
+export async function getSavedSite(workspaceId: string): Promise<SitePage | null> {
+  const snapshot = await siteFile.read();
+  const existing = snapshot.byWorkspaceId[workspaceId];
+  if (!existing) return null;
+  return clonePage(normalizeStored(existing, existing.displayName || 'Site'));
+}
+
 export async function getSiteForWorkspace(
   workspaceId: string,
   workspaceName: string,
@@ -433,6 +440,37 @@ export async function saveSiteForWorkspace(
   });
 }
 
+/** Maps a Rodrigo public-site projection into the renderer shape. Unsafe blocks become no page. */
+export function projectPublishedSite(input: {
+  slug: string;
+  title: string;
+  blocks: Array<{ id: string; kind: string; content: Record<string, unknown> }>;
+  products: Array<{ id: string; title: string; summary: string; priceCents: number; category: string; accent: string }>;
+}): SitePublicPage | null {
+  if (!isSiteSlug(input.slug)) return null;
+  const displayName = clip(input.title, SITE_DISPLAY_NAME_MAX);
+  if (!displayName) return null;
+  const raw: SiteBlock[] = [];
+  for (const block of input.blocks) {
+    const type = block.kind === 'shop' ? 'storefront' : block.kind;
+    if (!isSiteBlockType(type)) return null;
+    raw.push({ id: block.id, type, ...block.content } as SiteBlock);
+  }
+  try {
+    return toSitePublicPage({
+      workspaceId: 'public',
+      slug: input.slug,
+      published: true,
+      displayName,
+      blocks: parseBlocks(raw),
+      updatedAt: new Date(0).toISOString(),
+    }, input.products.map(toStorefrontPublicProduct));
+  } catch {
+    return null;
+  }
+}
+
+/** Legacy Hub JSON lookup. The public `/s/[slug]` route must not call this. */
 export async function getPublishedSiteBySlug(
   slug: string,
 ): Promise<SitePublicPage | null> {

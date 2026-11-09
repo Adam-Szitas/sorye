@@ -1,91 +1,52 @@
-import { ensureHubUser } from '@/lib/ensure-user';
-import { parseTasksBoard } from '@/lib/workspace-docs-validate';
-import {
-  getWorkspaceDoc,
-  putWorkspaceDoc,
-} from '@/lib/store/workspace-docs';
-import { createDefaultTasksBoard } from '@sorye/types';
+import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { documentRouteError } from '@/lib/document-route-error';
+import { createDefaultTasksBoard } from '@sorye/types';
+import { ensureHubUser } from '@/lib/ensure-user';
+import { getRodrigoResource, RodrigoResponseError } from '@/lib/rodrigo/service-client';
+import { parseTasksBoard } from '@/lib/workspace-docs-validate';
+import { readPartitionedLoad, sessionWorkspace } from '@/lib/user-load-read';
+
+function queueScope(userId: string, workspaceId: string) {
+  return createHash('sha256').update(`sorye-tasks-queue-v1\0${userId}\0${workspaceId}`).digest('hex');
+}
+
+async function authorize() {
+  const session = await ensureHubUser();
+  if (!session) return { response: NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 }) };
+  if (!session.workspace.memberIds.includes(session.user.id) || !session.workspace.selectedAppIds.includes('tasks')) {
+    return { response: NextResponse.json({ error: { code: 'app_access_denied' } }, { status: 403 }) };
+  }
+  return { session };
+}
 
 export async function GET() {
-  const session = await ensureHubUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  let result;
+  const auth = await authorize();
+  if ('response' in auth) return auth.response;
+  const { session } = auth;
   try {
-    result = await getWorkspaceDoc(session.user.id, session.workspace.id, 'tasks', session);
+    const context = { userId: session.user.id, workspaceId: session.workspace.id };
+    const snapshot = await getRodrigoResource(context, 'tasks', 'taskBoard', 'main');
+    const board = snapshot.resource ? parseTasksBoard(snapshot.resource) : createDefaultTasksBoard();
+    const load = await readPartitionedLoad(session, async (scope) => {
+      const other = await getRodrigoResource({ userId: session.user.id, workspaceId: scope.id }, 'tasks', 'taskBoard', 'main');
+      if (!other.resource) return [];
+      return parseTasksBoard(other.resource).tasks.map((task) => ({ workspaceId: scope.id, value: task }));
+    }, { appId: 'tasks' });
+    return NextResponse.json({
+      board, empty: snapshot.resource === null, revision: snapshot.revision,
+      queueScope: queueScope(session.user.id, session.workspace.id), load, workspace: sessionWorkspace(session),
+    }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    return documentRouteError(error);
-  }
-  if (result.access === 'denied') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  if (!result.doc) {
-    return NextResponse.json({
-      board: createDefaultTasksBoard(),
-      empty: true, revision: result.revision ?? 0,
-    });
-  }
-
-  try {
-    return NextResponse.json({
-      board: parseTasksBoard(result.doc.payload.board ?? result.doc.payload),
-      empty: false, revision: result.doc.revision,
-    });
-  } catch {
-    return NextResponse.json({ error: 'Stored document is invalid. Contact an administrator.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    const status = error instanceof RodrigoResponseError ? error.status : 503;
+    const code = error instanceof RodrigoResponseError ? error.code : 'rodrigo_unavailable';
+    const requestId = error instanceof RodrigoResponseError ? error.requestId : undefined;
+    return NextResponse.json({ error: { code, ...(requestId ? { requestId } : {}) } }, { status, headers: { 'Cache-Control': 'no-store' } });
   }
 }
 
-export async function PUT(req: Request) {
-  const session = await ensureHubUser();
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const body = (await req.json().catch(() => ({}))) as {
-    board?: unknown;
-    migrate?: boolean;
-    expectedRevision?: number;
-  };
-
-  let board;
-  try {
-    board = parseTasksBoard(body.board);
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Invalid board' },
-      { status: 400 },
-    );
-  }
-
-  let saved;
-  try {
-    saved = await putWorkspaceDoc(
-      session.user.id,
-      session.workspace.id,
-      'tasks',
-      { board },
-      { migrate: body.migrate === true, expectedRevision: body.expectedRevision },
-      session,
-    );
-  } catch (err) {
-    return documentRouteError(err);
-  }
-  if (!saved) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  try {
-    return NextResponse.json({
-      board: parseTasksBoard(saved.payload.board ?? saved.payload),
-      empty: false, revision: saved.revision,
-    });
-  } catch {
-    return NextResponse.json({ error: 'Stored document is invalid. Contact an administrator.' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
-  }
+/** The legacy whole-document writer is disabled. Tasks mutations use v2 action batches. */
+export async function PUT() {
+  const auth = await authorize();
+  if ('response' in auth) return auth.response;
+  return NextResponse.json({ error: { code: 'legacy_writer_disabled' } }, { status: 410, headers: { 'Cache-Control': 'no-store' } });
 }

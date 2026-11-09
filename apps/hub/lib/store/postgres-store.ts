@@ -14,6 +14,7 @@ import {
 } from '@sorye/types';
 import { randomUUID } from 'crypto';
 import { and, eq, sql } from 'drizzle-orm';
+import { assignPlanInWorkspaceMap, type OperatorWorkspaceRecord } from '@/lib/operator/plan-record';
 import { toPublicStorage } from '@/lib/workspace-storage-util';
 
 async function loadConnections(workspaceId: string): Promise<ConnectedApp[]> {
@@ -457,6 +458,56 @@ export async function adminAssignSubscription(
 
   const memberIds = await loadMemberIds(userRow.personalWorkspaceId);
   return loadWorkspaceRow(userRow.personalWorkspaceId, memberIds);
+}
+
+export async function assignWorkspacePlan(
+  workspaceId: string,
+  subscriptionId: SubscriptionTierId,
+): Promise<Workspace | null> {
+  const memberIds = await loadMemberIds(workspaceId);
+  const current = await loadWorkspaceRow(workspaceId, memberIds);
+  if (!current) return null;
+  const map: Record<string, Workspace> = { [current.id]: current };
+  const trimmed = assignPlanInWorkspaceMap(map, workspaceId, subscriptionId);
+  if (!trimmed) return null;
+  const db = getDb();
+  await db
+    .update(schema.workspaces)
+    .set({
+      subscriptionId: trimmed.subscriptionId,
+      subscriptionSource: 'admin',
+      selectedAppIds: trimmed.selectedAppIds,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.workspaces.id, workspaceId));
+  if (trimmed.connectedApps.length !== current.connectedApps.length) {
+    await updateWorkspace(current.ownerId, workspaceId, {
+      connectedApps: trimmed.connectedApps,
+    });
+  }
+  return trimmed;
+}
+
+export async function operatorWorkspaceExists(workspaceId: string): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ id: schema.workspaces.id })
+    .from(schema.workspaces)
+    .where(eq(schema.workspaces.id, workspaceId))
+    .limit(1);
+  return Boolean(row);
+}
+
+export async function listOperatorWorkspaces(): Promise<OperatorWorkspaceRecord[]> {
+  const rows = await getDb()
+    .select({
+      id: schema.workspaces.id,
+      name: schema.workspaces.name,
+      kind: schema.workspaces.kind,
+      subscriptionId: schema.workspaces.subscriptionId,
+      selectedAppIds: schema.workspaces.selectedAppIds,
+    })
+    .from(schema.workspaces);
+  return rows;
 }
 
 export async function listUsers(): Promise<

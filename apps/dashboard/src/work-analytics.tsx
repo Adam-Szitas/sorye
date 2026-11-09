@@ -1,7 +1,10 @@
+import { UserLoadSections } from '@sorye/platform/react';
 import { useEffect, useState } from 'react';
 import type {
   AnalyticsAppSection,
   AnalyticsOcrJob,
+  UserLoadPartition,
+  UserLoadWorkspace,
   WorkspaceAnalyticsSnapshot,
 } from '@sorye/types';
 
@@ -123,6 +126,8 @@ function EventSection({ section }: { section: Extract<AnalyticsAppSection, { kin
 
 export function WorkAnalytics() {
   const [snapshot, setSnapshot] = useState<WorkspaceAnalyticsSnapshot | null>(null);
+  const [analyticsLoad, setAnalyticsLoad] = useState<UserLoadPartition<WorkspaceAnalyticsSnapshot> | null>(null);
+  const [analyticsWorkspace, setAnalyticsWorkspace] = useState<UserLoadWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -135,7 +140,15 @@ export function WorkAnalytics() {
         }
         const body: unknown = await res.json();
         if (!isSnapshot(body)) throw new Error('Could not load work analytics.');
-        if (!cancelled) setSnapshot(body);
+        if (!cancelled) {
+          setSnapshot(body);
+          const extra = body as WorkspaceAnalyticsSnapshot & {
+            load?: UserLoadPartition<WorkspaceAnalyticsSnapshot>;
+            workspace?: UserLoadWorkspace;
+          };
+          setAnalyticsLoad(extra.load ?? null);
+          setAnalyticsWorkspace(extra.workspace ?? null);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Could not load work analytics.');
@@ -161,11 +174,32 @@ export function WorkAnalytics() {
       : section.kind === 'events' && section.count > 0,
   );
 
+  const other = analyticsLoad && analyticsWorkspace
+    ? {
+        personal: analyticsWorkspace.kind === 'personal' ? [] : analyticsLoad.personal,
+        work: analyticsLoad.work.filter((group) => group.workspace.id !== analyticsWorkspace.id),
+      }
+    : null;
+
   if (sections.length === 0) {
     return (
       <section className="panel" aria-labelledby="work-empty-heading">
-        <h2 id="work-empty-heading">Work by app</h2>
+        <h2 id="work-empty-heading">{analyticsWorkspace?.kind === 'team' ? `Work · ${analyticsWorkspace.name}` : 'Personal'}</h2>
         <p className="panel-empty">No finished work is stored for this workspace yet.</p>
+        {other ? (
+          <UserLoadSections
+            load={other}
+            empty="No finished work is stored for this workspace yet."
+            heading="h3"
+            renderItems={(items) => (
+              <ul>
+                {items.flatMap((item) => item.value.sections.map((section) => (
+                  <li key={`${item.workspaceId}:${section.appId}`}>{section.appName}: {section.count}</li>
+                )))}
+              </ul>
+            )}
+          />
+        ) : null}
       </section>
     );
   }
@@ -174,6 +208,25 @@ export function WorkAnalytics() {
 
   return (
     <div className="work-analytics">
+      <h2 className="work-kicker">
+        {analyticsWorkspace?.kind === 'team' ? `Work · ${analyticsWorkspace.name}` : 'Personal'}
+      </h2>
+      {other ? (
+        <UserLoadSections
+          load={other}
+          empty="No finished work is stored for this workspace yet."
+          heading="h3"
+          renderItems={(items) => (
+            <ul>
+              {items.flatMap((item) => item.value.sections.map((section) => (
+                <li key={`${item.workspaceId}:${section.appId}`}>
+                  {section.appName}: {section.count}
+                </li>
+              )))}
+            </ul>
+          )}
+        />
+      ) : null}
       {sections.map((section) =>
         section.kind === 'ocr'
           ? <OcrSection key={section.appId} section={section} />

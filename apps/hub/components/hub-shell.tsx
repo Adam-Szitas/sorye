@@ -4,7 +4,9 @@ import {
   APP_CATALOG,
   HUB_MANAGE_APPS_EVENT,
   HUB_OPEN_APP_EVENT,
+  hubOpenTargetKey,
   SUBSCRIPTION_PLANS,
+  type HubOpenAppDetail,
   canAddConnection,
   canSelectMoreApps,
   getPlanById,
@@ -19,7 +21,10 @@ import dynamic from 'next/dynamic';
 import { signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { flushPendingActions } from '@sorye/platform';
 import { AppLauncher } from '@/components/app-launcher';
+import { requestHubOpenApp } from '@/components/app-catalog';
+import { AiAssistantOverlay } from '@/components/ai-assistant-overlay';
 import { HubKernelProvider } from '@/components/hub-kernel';
 import {
   AppWorkspace,
@@ -29,6 +34,7 @@ import { Dock } from '@/components/dock';
 import { MailComposeHost } from '@/components/app-mail';
 import { NotificationCenter } from '@/components/notification-center';
 import { NotificationToasts } from '@/components/notification-toasts';
+import { OperatorNoticeBanner } from '@/components/operator-notice-banner';
 import { PanelSkeleton } from '@/components/panel-skeleton';
 import { StatusBar } from '@/components/status-bar';
 import { TopBar } from '@/components/top-bar';
@@ -363,17 +369,8 @@ export function HubShell({ initialSession }: HubShellProps) {
   return (
     <NotificationProvider
       workspaceId={workspace.id}
-      onNavigateToApp={(appId) => {
-        const app = APP_CATALOG.find((a) => a.id === appId);
-        if (!app) return;
-        if (app.adminOnly && !session.user.isAdmin) return;
-        if (app.status !== 'available' && app.status !== 'beta') return;
-        if (app.microFrontend || app.external || app.alwaysAvailable) {
-          setPanel('workspace');
-          openApp(app, 'left');
-        } else {
-          router.push(app.mountPath);
-        }
+      onNavigateToApp={(appId, target) => {
+        requestHubOpenApp(appId, 'left', target);
       }}
     >
       <HubShellLoaded
@@ -401,8 +398,14 @@ export function HubShell({ initialSession }: HubShellProps) {
         logState={logState}
         switchWorkspace={switchWorkspace}
         createTeam={createTeam}
-        signOut={() => {
+        signOut={async () => {
           logState('auth.signOut');
+          const pending = await flushPendingActions(1200);
+          if (pending.remaining > 0 || pending.failedApps > 0) {
+            const count = pending.remaining > 0 ? `${pending.remaining} action(s) remain unresolved` : 'Some app queues could not confirm their status';
+            const timedOut = pending.failedApps > 0 ? ` ${pending.failedApps} app queue(s) did not finish flushing.` : '';
+            window.alert(`${count}.${timedOut} Queued actions remain in this browser and are available after signing in again with the same account and workspace.`);
+          }
           signOut({ callbackUrl: '/login' });
         }}
       />
@@ -471,6 +474,7 @@ function HubShellLoaded({
     openCenter,
     markAppRead,
   } = useNotifications();
+  const [aiOverlayOpen, setAiOverlayOpen] = useState(false);
 
   const openApp = useCallback(
     (app: AppCatalogEntry, side?: PaneSide) => {
@@ -482,10 +486,21 @@ function HubShellLoaded({
 
   useEffect(() => {
     function onOpen(event: Event) {
-      const detail = (event as CustomEvent<{ appId?: string; side?: PaneSide }>)
-        .detail;
+      const detail = (event as CustomEvent<HubOpenAppDetail>).detail;
       const app = APP_CATALOG.find((entry) => entry.id === detail?.appId);
-      if (!app) return;
+      if (!app || !detail) return;
+      if (detail.analysisId || detail.jobId || detail.outcome || detail.channelId) {
+        try {
+          sessionStorage.setItem(hubOpenTargetKey(detail.appId), JSON.stringify({
+            analysisId: detail.analysisId,
+            jobId: detail.jobId,
+            outcome: detail.outcome,
+            channelId: detail.channelId,
+          }));
+        } catch {
+          // The event detail still reaches a remote that is already mounted.
+        }
+      }
       openApp(app, detail.side);
       event.preventDefault();
     }
@@ -526,6 +541,10 @@ function HubShellLoaded({
         workspace={workspace}
         plan={plan}
         notificationCount={unreadTotal}
+        aiOverlayOpen={aiOverlayOpen}
+        onToggleAiOverlay={() => setAiOverlayOpen((prev) => !prev)}
+        hubMenuActive={panel === 'launcher'}
+        onOpenHub={() => navigatePanel('launcher')}
         onOpenNotifications={openCenter}
         onOpenPicker={() => {
           logState('panel.open', { panel: 'picker' });
@@ -537,6 +556,7 @@ function HubShellLoaded({
         }}
         onSignOut={signOut}
       />
+      <OperatorNoticeBanner />
 
       <div className="flex justify-center px-4 pt-3 sm:px-8">
         <WorkspaceSwitcher
@@ -689,6 +709,20 @@ function HubShellLoaded({
       <NotificationCenter />
       <NotificationToasts />
       <MailComposeHost />
+      <AiAssistantOverlay
+        open={aiOverlayOpen}
+        activeAppId={activeAppId}
+        workspaceName={workspace.name}
+        workspaceKind={workspace.kind}
+        ownedByUser={workspace.ownerId === user.id}
+        onClose={() => setAiOverlayOpen(false)}
+        onOpenApp={openApp}
+        onOpenPicker={() => navigatePanel('picker')}
+        onSwitchWorkspace={async (workspaceId) => {
+          await switchWorkspace(workspaceId);
+          logState('workspace.switch', { workspaceId, via: 'assistant' });
+        }}
+      />
     </HubKernelProvider>
   );
 }

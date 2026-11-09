@@ -10,6 +10,15 @@ export interface WorkspaceNotification {
   body: string;
   eventName?: string;
   createdAt: string;
+  /** When set, only this member of the workspace sees the notice. */
+  userId?: string;
+  /** Background job that produced the notice. */
+  jobId?: string;
+  /** Stored OCR analysis to open. Present for a successful OCR job. */
+  analysisId?: string;
+  /** Messenger channel to open for a ping in this workspace. */
+  channelId?: string;
+  outcome?: 'success' | 'failure';
 }
 
 /** Notification row returned to the Hub UI (includes read state). */
@@ -30,6 +39,8 @@ export interface NotificationSnapshot {
   unreadByApp: Record<string, number>;
   unreadTotal: number;
   settings: NotificationCenterSettings;
+  /** Personal and work lists. Absent on older responses. */
+  load?: import('./user-load').UserLoadPartition<WorkspaceNotificationItem>;
 }
 
 /** Same-window signal from micro-frontends after POST /api/events (BroadcastChannel is same-origin only). */

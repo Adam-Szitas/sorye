@@ -143,6 +143,14 @@ export async function getRelayConfig(workspaceId: string): Promise<RelayConfig> 
   }, workspaceId);
 }
 
+/** Read-only activity. Does not create a relay config for a workspace that has none. */
+export async function readRelayMessages(workspaceId: string): Promise<RelayConfig['messages']> {
+  const snapshot = await readStore(workspaceId);
+  const raw = snapshot[workspaceId];
+  if (!raw) return [];
+  return normalizeConfig(raw).messages;
+}
+
 /** Read-only failed-delivery counts for one workspace. Does not create config. */
 export async function countFailedRelayDeliveries(
   workspaceId: string,

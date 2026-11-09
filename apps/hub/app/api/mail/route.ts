@@ -1,6 +1,7 @@
 import { ensureHubUser } from '@/lib/ensure-user';
 import { publishWorkspaceEvent } from '@/lib/events';
-import { bootstrapMail, sendMail, updateMailSettings } from '@/lib/mail';
+import { bootstrapMail, listMailboxMessages, sendMail, updateMailSettings } from '@/lib/mail';
+import { readPartitionedLoad, sessionWorkspace } from '@/lib/user-load-read';
 import {
   assertJsonPayloadSize,
   MAX_MAIL_BYTES,
@@ -22,7 +23,14 @@ export async function GET() {
       workspaceName: session.workspace.name,
       userId: session.user.id,
     });
-    return NextResponse.json(mailbox);
+    const load = await readPartitionedLoad(session, async (scope) => {
+      const messages = await listMailboxMessages({
+        workspaceId: scope.id,
+        userId: session.user.id,
+      });
+      return messages.map((message) => ({ workspaceId: scope.id, value: message }));
+    }, { appId: 'mail' });
+    return NextResponse.json({ ...mailbox, load, workspace: sessionWorkspace(session) });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Could not load Mail' },

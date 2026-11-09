@@ -1,6 +1,12 @@
 import { jsonDataFile } from '@/lib/store/json-file';
 import { getEnv } from '@/lib/env';
 import { assertSafeLlmBaseUrl } from '@/lib/security';
+import {
+  DEFAULT_USER_GPU_PREFERENCE,
+  DEFAULT_WEBGPU_MODEL_ID,
+  WEBGPU_MODEL_CATALOG,
+  type UserGpuPreference,
+} from '@sorye/types';
 
 export type LlmProvider = 'ollama' | 'vllm';
 export interface LlmControlSettings {
@@ -10,6 +16,7 @@ export interface LlmControlSettings {
   contextLength: number;
   maxOutputTokens: number;
   minFreeVramMiB: number;
+  gpuIndex?: number;
   paused: boolean;
 }
 
@@ -42,14 +49,21 @@ export interface LlmActivity {
   detail?: string;
 }
 
-interface PersistedSettings { settings: LlmControlSettings | null }
+interface PersistedSettings {
+  settings: LlmControlSettings | null;
+  userGpuPreferences?: Record<string, UserGpuPreference>;
+}
 interface RuntimeState {
   settings: LlmControlSettings;
+  userGpuPreferences: Record<string, UserGpuPreference>;
   initialized: boolean;
   events: LlmActivity[];
 }
 
-const SETTINGS_FILE = jsonDataFile<PersistedSettings>('llm-control.json', () => ({ settings: null }));
+const SETTINGS_FILE = jsonDataFile<PersistedSettings>('llm-control.json', () => ({
+  settings: null,
+  userGpuPreferences: {},
+}));
 const STATE_KEY = Symbol.for('sorye.llm.control.state');
 const globalState = globalThis as typeof globalThis & { [STATE_KEY]?: RuntimeState };
 
@@ -62,13 +76,17 @@ function environmentSettings(): LlmControlSettings {
     contextLength: 8192,
     maxOutputTokens: 1800,
     minFreeVramMiB: 1536,
+    gpuIndex: 0,
     paused: false,
   };
 }
 
 function state(): RuntimeState {
   return globalState[STATE_KEY] ??= {
-    settings: environmentSettings(), initialized: false, events: [],
+    settings: environmentSettings(),
+    userGpuPreferences: {},
+    initialized: false,
+    events: [],
   };
 }
 
@@ -87,7 +105,38 @@ function validateSettings(value: LlmControlSettings): LlmControlSettings {
   if (!Number.isInteger(value.minFreeVramMiB) || value.minFreeVramMiB < 512 || value.minFreeVramMiB > 8192) {
     throw new Error('Free VRAM reserve must be between 512 and 8192 MiB.');
   }
-  return { ...value, baseUrl: value.baseUrl.trim(), model: value.model.trim() };
+  const gpuIndex = value.gpuIndex ?? 0;
+  if (!Number.isInteger(gpuIndex) || gpuIndex < 0 || gpuIndex > 15) {
+    throw new Error('GPU index must be an integer between 0 and 15.');
+  }
+  return { ...value, gpuIndex, baseUrl: value.baseUrl.trim(), model: value.model.trim() };
+}
+
+export function validateUserGpuPreference(raw: unknown): UserGpuPreference {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_USER_GPU_PREFERENCE };
+  const record = raw as Record<string, unknown>;
+  const target = record.target === 'client-webgpu' ? 'client-webgpu' : 'hub-server';
+  const webGpuPowerPreference =
+    record.webGpuPowerPreference === 'low-power' ? 'low-power' : 'high-performance';
+  const webGpuModelId =
+    typeof record.webGpuModelId === 'string' &&
+    WEBGPU_MODEL_CATALOG.some((item) => item.id === record.webGpuModelId)
+      ? record.webGpuModelId
+      : DEFAULT_WEBGPU_MODEL_ID;
+  const hostGpuIndex =
+    typeof record.hostGpuIndex === 'number' &&
+    Number.isInteger(record.hostGpuIndex) &&
+    record.hostGpuIndex >= 0 &&
+    record.hostGpuIndex <= 15
+      ? record.hostGpuIndex
+      : 0;
+  return {
+    target,
+    webGpuPowerPreference,
+    webGpuModelId,
+    hostGpuIndex,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export async function initializeLlmControl(): Promise<void> {
@@ -96,6 +145,9 @@ export async function initializeLlmControl(): Promise<void> {
   const stored = await SETTINGS_FILE.read();
   if (stored.settings) {
     try { current.settings = validateSettings(stored.settings); } catch { current.settings = environmentSettings(); }
+  }
+  if (stored.userGpuPreferences && typeof stored.userGpuPreferences === 'object') {
+    current.userGpuPreferences = { ...stored.userGpuPreferences };
   }
   current.initialized = true;
 }
@@ -110,6 +162,26 @@ export async function saveLlmControlSettings(settings: LlmControlSettings): Prom
   const next = validateSettings(settings);
   await SETTINGS_FILE.update((stored) => { stored.settings = next; });
   state().settings = next;
+  return { ...next };
+}
+
+export function getUserGpuPreference(userId: string): UserGpuPreference {
+  const current = state();
+  const existing = current.userGpuPreferences[userId];
+  return existing ? { ...existing } : { ...DEFAULT_USER_GPU_PREFERENCE };
+}
+
+export async function saveUserGpuPreference(
+  userId: string,
+  preference: unknown,
+): Promise<UserGpuPreference> {
+  await initializeLlmControl();
+  const next = validateUserGpuPreference(preference);
+  await SETTINGS_FILE.update((stored) => {
+    stored.userGpuPreferences ??= {};
+    stored.userGpuPreferences[userId] = next;
+  });
+  state().userGpuPreferences[userId] = next;
   return { ...next };
 }
 

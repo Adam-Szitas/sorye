@@ -5,8 +5,11 @@ import type {
 } from '@sorye/types';
 import {
   APP_CATALOG,
+  APP_RUNNING_COST,
+  appMinimumYearlyCents,
   canSelectMoreApps,
   filterCatalogForViewer,
+  formatEur,
   isAlwaysAvailableApp,
   selectableAppCount,
   workspaceCatalogEntries,
@@ -37,6 +40,15 @@ export function AppPicker({
   const selectedSet = new Set(selectedIds);
   const usedSlots = selectableAppCount(APP_CATALOG, selectedIds);
   const atLimit = !canSelectMoreApps(plan, usedSlots);
+  const visible = filterCatalogForViewer(
+    workspaceCatalogEntries(catalog),
+    isAdmin,
+  );
+  const enabledCents = visible.reduce((sum, app) => {
+    const pinned = isAlwaysAvailableApp(APP_CATALOG, app.id);
+    if (!pinned && !selectedSet.has(app.id)) return sum;
+    return sum + appMinimumYearlyCents(app.id);
+  }, 0);
 
   return (
     <section className="mx-auto w-full max-w-4xl">
@@ -45,7 +57,13 @@ export function AppPicker({
           <h2 className="text-2xl font-semibold">App Library</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Select up to {plan.maxApps === 999 ? 'unlimited' : plan.maxApps}{' '}
-            optional apps. Catalog is always included and free.
+            optional apps. Catalog is always included.
+          </p>
+          <p className="mt-2 max-w-2xl text-sm text-[var(--color-text-muted)]">
+            The yearly subscription that covers one running stack is{' '}
+            {formatEur(APP_RUNNING_COST.yearlyCents)}. Enabled apps currently
+            account for {formatEur(enabledCents)} of that. Each price is that
+            app’s share of the electricity, not an extra charge on top.
           </p>
         </div>
         <button
@@ -88,7 +106,7 @@ export function AppPicker({
       </div>
 
       <ul className="grid gap-3 sm:grid-cols-2">
-        {filterCatalogForViewer(workspaceCatalogEntries(catalog), isAdmin).map(
+        {visible.map(
           (app) => {
           const pinned = isAlwaysAvailableApp(APP_CATALOG, app.id);
           const isSelected = pinned || selectedSet.has(app.id);
@@ -146,6 +164,11 @@ export function AppPicker({
                   </div>
                   <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                     {app.description}
+                  </p>
+                  <p className="mt-1 text-xs font-medium tabular-nums">
+                    {appMinimumYearlyCents(app.id) > 0
+                      ? `${formatEur(appMinimumYearlyCents(app.id))} / year`
+                      : 'Included'}
                   </p>
                 </div>
                 <div

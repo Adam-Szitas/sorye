@@ -7,9 +7,12 @@ import {
   shouldToastForApp,
   type NotificationCenterSettings,
   type NotificationSnapshot,
+  type HubOpenAppDetail,
+  type UserLoadPartition,
   type WorkspaceNotificationItem,
 } from '@sorye/types';
 import { startVisibleRefresh, type VisibleRefresh } from '@sorye/platform/host';
+import { switchAuthorizedWorkspace } from '@sorye/platform';
 import {
   createContext,
   useCallback,
@@ -30,6 +33,7 @@ interface ToastItem {
 
 interface NotificationContextValue {
   notifications: WorkspaceNotificationItem[];
+  load: UserLoadPartition<WorkspaceNotificationItem>;
   unreadByApp: Record<string, number>;
   unreadTotal: number;
   settings: NotificationCenterSettings;
@@ -60,7 +64,10 @@ export function useNotifications(): NotificationContextValue {
 
 interface NotificationProviderProps {
   workspaceId: string | undefined;
-  onNavigateToApp: (appId: string) => void;
+  onNavigateToApp: (
+    appId: string,
+    target?: Pick<HubOpenAppDetail, 'analysisId' | 'jobId' | 'outcome' | 'channelId'>,
+  ) => void;
   children: ReactNode;
 }
 
@@ -262,16 +269,28 @@ export function NotificationProvider({
   const openNotification = useCallback(
     (notification: WorkspaceNotificationItem) => {
       setCenterOpen(false);
-      void markRead([notification.id]);
-      dismissToast(notification.id);
-      onNavigateRef.current(notification.appId);
+      void (async () => {
+        if (workspaceId && notification.workspaceId !== workspaceId) {
+          const switched = await switchAuthorizedWorkspace(notification.workspaceId);
+          if (!switched) return;
+        }
+        await markRead([notification.id]);
+        dismissToast(notification.id);
+        onNavigateRef.current(notification.appId, {
+          analysisId: notification.analysisId,
+          jobId: notification.jobId,
+          outcome: notification.outcome,
+          channelId: notification.channelId,
+        });
+      })();
     },
-    [markRead, dismissToast],
+    [markRead, dismissToast, workspaceId],
   );
 
   const value = useMemo<NotificationContextValue>(
     () => ({
       notifications: snapshot?.notifications ?? [],
+      load: snapshot?.load ?? { personal: [], work: [] },
       unreadByApp: snapshot?.unreadByApp ?? {},
       unreadTotal: snapshot?.unreadTotal ?? 0,
       settings: snapshot?.settings ?? {

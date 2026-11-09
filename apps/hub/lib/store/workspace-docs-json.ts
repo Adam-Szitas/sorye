@@ -1,5 +1,5 @@
 import { jsonDataFile } from './json-file';
-import { getHubSession } from './json-store';
+import { getHubSession, getHubSessionForWorkspace } from './json-store';
 import { WorkspaceDocConflict, type WorkspaceDocWriteOptions } from './workspace-doc-conflict';
 
 export type WorkspaceDocKind = 'tasks' | 'notes' | 'calendar';
@@ -25,9 +25,17 @@ function docKey(workspaceId: string, kind: WorkspaceDocKind) {
   return `${workspaceId}:${kind}`;
 }
 
-async function assertMember(userId: string, workspaceId: string) {
+async function assertActiveMember(userId: string, workspaceId: string) {
   const session = await getHubSession(userId);
   if (!session) return null;
+  if (session.workspace.id !== workspaceId) return null;
+  if (!session.workspace.memberIds.includes(userId)) return null;
+  return session;
+}
+
+async function assertReadableMember(userId: string, workspaceId: string) {
+  const session = await getHubSessionForWorkspace(userId, workspaceId);
+  if (!session || session.user.id !== userId) return null;
   if (session.workspace.id !== workspaceId) return null;
   if (!session.workspace.memberIds.includes(userId)) return null;
   return session;
@@ -42,7 +50,7 @@ export async function getWorkspaceDoc(
   workspaceId: string,
   kind: WorkspaceDocKind,
 ): Promise<WorkspaceDocRead> {
-  if (!(await assertMember(userId, workspaceId))) return { access: 'denied' };
+  if (!(await assertReadableMember(userId, workspaceId))) return { access: 'denied' };
   const store = await storeFile.read();
   return { access: 'ok', doc: store.docs[docKey(workspaceId, kind)] ?? null };
 }
@@ -54,7 +62,7 @@ export async function putWorkspaceDoc(
   payload: Record<string, unknown>,
   options?: WorkspaceDocWriteOptions,
 ): Promise<WorkspaceAppDoc | null> {
-  if (!(await assertMember(userId, workspaceId))) return null;
+  if (!(await assertActiveMember(userId, workspaceId))) return null;
   const key = docKey(workspaceId, kind);
   return storeFile.update((store) => {
     const existing = store.docs[key];

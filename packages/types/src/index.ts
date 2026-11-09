@@ -1,4 +1,5 @@
 export * from './subscription';
+export * from './running-cost';
 export * from './rodrigo';
 export * from './workspace';
 export * from './apps';
@@ -17,12 +18,15 @@ export * from './relay';
 export * from './notifications';
 export * from './studio';
 export * from './reports';
+export * from './operator';
 export * from './analytics';
 export * from './storefront';
 export * from './site';
 export * from './mail';
 export * from './files';
 export * from './cloud-storage';
+export * from './llm';
+export * from './user-load';
 
 import type { SubscriptionTierId } from './subscription';
 import type { UserWorkspace } from './workspace';

@@ -7,6 +7,8 @@ import {
   FILE_MAX_PER_WORKSPACE,
   APP_CATALOG,
   STUDIO_MESH_EXTENSIONS,
+  TASK_PHOTO_MAX_BYTES,
+  isTaskPhotoMime,
   type WorkspaceFile,
 } from '@sorye/types';
 import { jsonDataFile } from '@/lib/store/json-file';
@@ -136,6 +138,15 @@ function findInWorkspace(
 ): WorkspaceFile | undefined {
   const id = assertFileId(fileId);
   return listForWorkspace(store, workspaceId).find((row) => row.id === id);
+}
+
+/** Tasks section photos are raster images under the task photo cap. Other Drive files keep the general policy. */
+export function taskSectionPhotoError(byteLength: number, mime: string): string | null {
+  if (!isTaskPhotoMime(mime)) return 'Tasks photos must be JPEG, PNG, WebP, or GIF images';
+  if (byteLength <= 0 || byteLength > TASK_PHOTO_MAX_BYTES) {
+    return `Tasks photos must be under ${Math.floor(TASK_PHOTO_MAX_BYTES / (1024 * 1024))} MB`;
+  }
+  return null;
 }
 
 export function sanitizeDisplayName(raw: string): string {
@@ -406,6 +417,10 @@ export async function createWorkspaceFile(input: {
 
   const displayName = sanitizeDisplayName(input.displayName);
   const mime = resolveMime(input.bytes, displayName);
+  if (sourceAppId === 'tasks') {
+    const photoError = taskSectionPhotoError(input.bytes.length, mime);
+    if (photoError) throw new FileAccessError(photoError, 400);
+  }
   const id = randomUUID();
   const relativePath = relativeStoragePath(workspaceId, id);
   const abs = storedAbsolutePath(workspaceId, id);

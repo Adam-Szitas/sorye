@@ -8,7 +8,7 @@ import { resolve, join } from 'node:path';
 import { test } from 'node:test';
 import { signRodrigoRequest } from '../lib/rodrigo/sign-request';
 import type { RodrigoCapabilities } from '@sorye/types';
-import { getRodrigoCapabilities, getRodrigoTopology, getRodrigoSnapshot, putRodrigoDocument, deleteRodrigoDocument, RodrigoResponseError, RodrigoUnavailableError } from '../lib/rodrigo/service-client';
+import { getRodrigoCapabilities, getRodrigoTopology, getRodrigoSnapshot, putRodrigoDocument, deleteRodrigoDocument, submitRodrigoActionBatch, RodrigoResponseError, RodrigoUnavailableError } from '../lib/rodrigo/service-client';
 
 test('Next.js signer interoperates with the real Rodrigo HTTP server', { timeout: 30000 }, async (t) => {
   const root = resolve(process.cwd(), '../..');
@@ -80,6 +80,16 @@ test('Next.js signer interoperates with the real Rodrigo HTTP server', { timeout
           return true;
         });
       }
+    });
+    await t.test('v2 action client signs narrow app and operation scopes and preserves provider failure', async () => {
+      const action = { actionId: 'fe16c46d-a8ed-4e3d-8a12-c11906ccf72a', appId: 'notes' as const, resourceType: 'note' as const,
+        operation: 'create' as const, resourceId: 'note-1', payloadVersion: 1 as const,
+        payload: { id: 'note-1', title: 'Title', body: 'Body', updatedAt: '2026-11-09T12:00:00.000Z' }, occurredAt: '2026-11-09T12:00:00.000Z' };
+      const response = await call('/v2/actions/batch', 'actions:write', JSON.stringify({ actions: [action] }), 'POST');
+      assert.equal(response.status, 403, 'direct caller without signed app/action scopes is denied');
+      await response.body?.cancel();
+      await assert.rejects(() => submitRodrigoActionBatch(context, { actions: [action] }),
+        (error: unknown) => error instanceof RodrigoResponseError && error.status === 503 && error.code === 'actions_provider_unavailable');
     });
     await t.test('capabilities match the shared fixture and expose no active adapters', async () => {
       const response = await call('/v1/capabilities', 'capabilities:read');

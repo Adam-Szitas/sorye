@@ -10,6 +10,7 @@ import {
   type Workspace,
   type WorkspaceSummary,
 } from '@sorye/types';
+import { assignPlanInWorkspaceMap, type OperatorWorkspaceRecord } from '@/lib/operator/plan-record';
 import { jsonDataFile } from './json-file';
 import {
   getWorkspaceStoragePublic,
@@ -283,6 +284,31 @@ export async function adminAssignSubscription(
 
     return store.workspaces[user.personalWorkspaceId] ?? null;
   });
+}
+
+export async function assignWorkspacePlan(
+  workspaceId: string,
+  subscriptionId: SubscriptionTierId,
+): Promise<Workspace | null> {
+  return storeFile.update((store) =>
+    assignPlanInWorkspaceMap(store.workspaces, workspaceId, subscriptionId),
+  );
+}
+
+export async function operatorWorkspaceExists(workspaceId: string): Promise<boolean> {
+  const store = await readStore();
+  return Boolean(store.workspaces[workspaceId]);
+}
+
+export async function listOperatorWorkspaces(): Promise<OperatorWorkspaceRecord[]> {
+  const store = await readStore();
+  return Object.values(store.workspaces).map((workspace) => ({
+    id: workspace.id,
+    name: workspace.name,
+    kind: workspace.kind,
+    subscriptionId: workspace.subscriptionId,
+    selectedAppIds: [...workspace.selectedAppIds],
+  }));
 }
 
 export async function listUsers(): Promise<

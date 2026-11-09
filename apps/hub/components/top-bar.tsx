@@ -1,5 +1,6 @@
 import type { HubUser, SubscriptionPlan, Workspace } from '@sorye/types';
 import Link from 'next/link';
+import { LanguageSelector } from './language-selector';
 import { SubscriptionBadge } from './subscription-badge';
 
 interface TopBarProps {
@@ -7,6 +8,10 @@ interface TopBarProps {
   workspace: Workspace;
   plan: SubscriptionPlan;
   notificationCount?: number;
+  aiOverlayOpen?: boolean;
+  hubMenuActive?: boolean;
+  onToggleAiOverlay?: () => void;
+  onOpenHub: () => void;
   onOpenNotifications: () => void;
   onOpenPicker: () => void;
   onOpenConnections: () => void;
@@ -18,13 +23,17 @@ export function TopBar({
   workspace,
   plan,
   notificationCount = 0,
+  aiOverlayOpen = false,
+  hubMenuActive = false,
+  onToggleAiOverlay,
+  onOpenHub,
   onOpenNotifications,
   onOpenPicker,
   onOpenConnections,
   onSignOut,
 }: TopBarProps) {
   return (
-    <header className="glass sticky top-0 z-40 flex items-center justify-between px-4 py-3 sm:px-8">
+    <header className="glass sticky top-0 z-40 flex flex-wrap items-[safe_center] justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-8">
       <div className="flex items-center gap-3">
         <div
           className="flex h-8 w-8 items-center justify-center rounded-lg font-bold text-[var(--color-surface)]"
@@ -41,7 +50,30 @@ export function TopBar({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex max-w-full flex-wrap items-[safe_center] justify-end gap-2 sm:gap-3">
+        <button
+          type="button"
+          onClick={onOpenHub}
+          aria-current={hubMenuActive ? 'page' : undefined}
+          className="shrink-0 rounded-lg px-3 py-1.5 text-xs text-[var(--color-text-muted)] transition hover:bg-white/10 hover:text-[var(--color-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
+        >
+          Hub
+        </button>
+        <LanguageSelector placement="navbar" />
+        {onToggleAiOverlay ? (
+          <button
+            type="button"
+            onClick={onToggleAiOverlay}
+            aria-pressed={aiOverlayOpen}
+            className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+              aiOverlayOpen
+                ? 'border-sky-400/60 bg-sky-400/20 text-sky-200'
+                : 'border-white/10 bg-white/5 text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text)]'
+            }`}
+          >
+            AI · MCP
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onOpenNotifications}

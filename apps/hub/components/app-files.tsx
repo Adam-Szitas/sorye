@@ -1,5 +1,6 @@
 'use client';
-import { TranslatedText } from '@sorye/platform/react';
+import { TranslatedText, UserLoadSections } from '@sorye/platform/react';
+import { switchAuthorizedWorkspace } from '@sorye/platform';
 
 
 import {
@@ -10,6 +11,8 @@ import {
   type CloudStorageConnection,
   type CloudStorageObject,
   type FileListResponse,
+  type UserLoadPartition,
+  type UserLoadWorkspace,
   type WorkspaceFile,
 } from '@sorye/types';
 import { isInlinePreviewMime } from '@/lib/file-preview';
@@ -381,6 +384,8 @@ export function AppFiles() {
   const uid = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<WorkspaceFile[] | null>(null);
+  const [fileLoad, setFileLoad] = useState<UserLoadPartition<WorkspaceFile> | null>(null);
+  const [driveWorkspace, setDriveWorkspace] = useState<UserLoadWorkspace | null>(null);
   const [maxBytes, setMaxBytes] = useState(FILE_MAX_BYTES);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -407,6 +412,8 @@ export function AppFiles() {
       throw new Error(data.error ?? 'Could not load Drive');
     }
     setFiles(data.files);
+    setFileLoad(data.load ?? null);
+    setDriveWorkspace(data.workspace ?? null);
     setMaxBytes(data.maxBytes ?? FILE_MAX_BYTES);
     return data.files;
   }, []);
@@ -857,6 +864,48 @@ export function AppFiles() {
                 </li>
               ))}
             </ul>
+          ) : null}
+          {driveWorkspace ? (
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              {driveWorkspace.kind === 'team' ? `Work · ${driveWorkspace.name}` : 'Personal'}
+            </h2>
+          ) : null}
+          {fileLoad && driveWorkspace ? (
+            <UserLoadSections
+              load={{
+                personal: driveWorkspace.kind === 'personal' ? [] : fileLoad.personal,
+                work: fileLoad.work.filter((group) => group.workspace.id !== driveWorkspace.id),
+              }}
+              empty="No files in this workspace."
+              heading="h2"
+              renderItems={(items) => (
+                <ul className="mb-4">
+                  {filterWorkspaceFiles(items.map((item) => item.value), query, regexMode).files.map((file) => (
+                    <li key={file.id}>
+                      <button
+                        type="button"
+                        className="text-left text-sm text-[var(--color-accent)] hover:underline"
+                        onClick={() => {
+                          const owner = items.find((item) => item.value.id === file.id);
+                          if (!owner) return;
+                          void (async () => {
+                            const switched = await switchAuthorizedWorkspace(owner.workspaceId);
+                            if (!switched) {
+                              setError('Could not open that workspace.');
+                              return;
+                            }
+                            await load();
+                            setPreviewTarget(file);
+                          })();
+                        }}
+                      >
+                        {file.displayName}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
           ) : null}
           {visible.length > 0 ? <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
             <caption className="sr-only">Workspace files</caption>

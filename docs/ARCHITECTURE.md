@@ -63,7 +63,7 @@ Every installable app is an `AppCatalogEntry`:
 - **`adminOnly`** — launcher/dock/picker/Catalog hide these from non-admins (`ADMIN_EMAILS` / `HubUser.isAdmin`). Reports is `alwaysAvailable` + `adminOnly`.
 - **`presentationOnly`** — public marketing page (Contact); hidden from customer OS chrome and not a plan slot
 
-Subscription plans cap how many apps and connections a workspace may use (`packages/types/src/subscriptions.ts`).
+Subscription plans cap how many apps and connections a workspace may use (`packages/types/src/subscription.ts`). Each sold app carries a yearly running-cost minimum (`packages/types/src/running-cost.ts`). Those minima sum to the yearly amount that covers electricity for one stack. Catalog, Contact, Reports, and Operator are included in that total and are not priced on their own.
 
 ## Hub shell
 
@@ -238,6 +238,8 @@ Chrome-less MF mount; embed session cookie scoped to widget workspace.
 | `/api/workspace` | Hub session; PATCH selected apps |
 | `/api/events` | Publish + toggle App events |
 | `/api/reports` | Admin-only aggregate event charts (counts, no payloads) |
+| `/api/operator` | Platform-operator dashboard (health, counts, plans, notices). Not for members. |
+| `/api/notices` | Signed-in notice text for the current plan and date window |
 | `/api/relay` | Relay config + test delivery |
 | `/api/notifications` | Feed, settings, mark read |
 | `/api/handoffs` | Cross-app payloads |
@@ -375,7 +377,7 @@ Private app state should be signals (`createAppStore` / `signal` / `computed`), 
 | Layer | Live data |
 |-------|-----------|
 | Postgres (`STORE_DRIVER=postgres`) | Users, workspaces, Messenger, Canvas, Tasks / Notes / Calendar (`workspace_app_docs`), OCR Qwen readings (`ocr_analyses`) |
-| Hub `.data` on disk | Relay, events, notifications, handoffs, Mail, Storefront, Site, reports, Drive metadata and bytes (`.data/files/{workspaceId}/{uuid}`) |
+| Hub `.data` on disk | Relay, events, notifications, handoffs, Mail, Storefront, Site, reports, operator aggregates/notices/schedules, Drive metadata and bytes (`.data/files/{workspaceId}/{uuid}`) |
 | Browser | Temporary UI only |
 
 Production refuses `STORE_DRIVER=json` and `AUTH_DEV_BYPASS`. Local JSON mode is for dev only.

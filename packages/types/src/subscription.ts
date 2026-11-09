@@ -18,6 +18,13 @@ export interface SubscriptionPlan {
   stripePriceId?: string;
 }
 
+/**
+ * These monthly amounts are plan caps, not the electricity bill.
+ * The yearly figure that covers one running stack is
+ * `APP_RUNNING_COST.yearlyCents` in `running-cost.ts`, split per app
+ * by `costWeight` on the catalog.
+ */
+
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: 'free',

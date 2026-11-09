@@ -1,9 +1,11 @@
+import { applyDuePlanForWorkspace } from '@/lib/operator/schedules';
 import {
   getHubSession,
   getHubSessionForWorkspace,
   getOrCreateUser,
   getUserByEmail,
 } from '@/lib/store';
+import type { HubSession } from '@sorye/types';
 import { auth } from '@/auth';
 import {
   DEV_BYPASS_USER_ID,
@@ -15,6 +17,17 @@ import { getAdminEmails } from '@/lib/env';
 import { EMBED_COOKIE, verifyEmbedToken } from '@/lib/embed-token';
 import { cookies, headers } from 'next/headers';
 import type { ServerTimings } from './server-timing';
+
+async function withDuePlan(session: HubSession | null): Promise<HubSession | null> {
+  if (!session) return session;
+  try {
+    const changed = await applyDuePlanForWorkspace(session.workspace.id);
+    if (!changed) return session;
+    return (await getHubSession(session.user.id)) ?? session;
+  } catch {
+    return session;
+  }
+}
 
 async function sessionFromEmbedCookie() {
   const jar = await cookies();
@@ -35,7 +48,7 @@ export async function ensureHubUser(timings?: ServerTimings) {
   // Inside an embed iframe, prefer the embed workspace even if the browser
   // also has a hub Google session cookie.
   if (embedSession && fromEmbed) {
-    return embedSession;
+    return withDuePlan(embedSession);
   }
 
   const session = await measure('auth', () => auth());
@@ -55,14 +68,14 @@ export async function ensureHubUser(timings?: ServerTimings) {
       isAdmin: admins.has(email.toLowerCase()),
     }));
 
-    return measure('hub_session', () => getHubSession(id));
+    return measure('hub_session', async () => withDuePlan(await getHubSession(id)));
   }
 
   if (isAuthDevBypass()) {
     for (const email of getDevBypassLookupEmails()) {
       const existing = await measure('dev_identity', () => getUserByEmail(email));
       if (existing) {
-        return measure('hub_session', () => getHubSession(existing.id));
+        return measure('hub_session', async () => withDuePlan(await getHubSession(existing.id)));
       }
     }
 
@@ -73,8 +86,8 @@ export async function ensureHubUser(timings?: ServerTimings) {
       displayName: profile.displayName,
       isAdmin: true,
     });
-    return getHubSession(profile.id);
+    return withDuePlan(await getHubSession(profile.id));
   }
 
-  return embedSession;
+  return withDuePlan(embedSession);
 }

@@ -1,5 +1,7 @@
-import { TranslatedText } from '@sorye/platform/react';
+import { TranslatedText, UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
+import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { UserLoadPartition } from '@sorye/types';
 import { createNotesStorage, type Note } from './notes-storage';
 import { emitWorkspaceEvent } from './emit-event';
 import './styles.css';
@@ -15,71 +17,116 @@ function formatWhen(iso: string): string {
 
 export default function App() {
   const storage = useMemo(() => createNotesStorage(), []);
-  const { loadNotes, saveNotes } = storage;
+  const { loadSnapshot, saveNotes } = storage;
   const [notes, setNotes] = useState<Note[]>([]);
+  const [partition, setPartition] = useState<UserLoadPartition<Note> | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>(
     'loading',
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
+  const [queueStatus, setQueueStatus] = useState({ pending: 0, failed: 0, conflicts: 0, rejected: 0 });
   const emitTimer = useRef<number | null>(null);
   const persistTimer = useRef<number | null>(null);
   const pendingNotes = useRef<Note[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void loadNotes()
+    void loadSnapshot()
       .then((next) => {
         if (cancelled) return;
-        setNotes(next);
-        setActiveId(next[0]?.id ?? null);
+        setNotes(next.notes);
+        setPartition(next.load ?? null);
+        setWorkspaceId(next.workspace?.id ?? null);
+        setActiveId(next.notes[0]?.id ?? null);
         setLoadState('ready');
+        void storage.queueState().then(setQueueStatus).catch(() => undefined);
       })
       .catch(() => {
-        if (!cancelled) setLoadState('error');
+        if (!cancelled) {
+          setLoadState('error');
+          void storage.queueState().then(setQueueStatus).catch(() => undefined);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  useEffect(() => () => { if (emitTimer.current) window.clearTimeout(emitTimer.current); }, []);
+
   useEffect(() => {
-    return () => {
-      if (persistTimer.current) window.clearTimeout(persistTimer.current);
-      if (pendingNotes.current) {
-        void saveNotes(pendingNotes.current).catch(() => undefined);
-      }
+    const flushBestEffort = async () => {
+      await storage.resendPending().catch(() => undefined);
+      const state = await storage.queueState().catch(() => ({ pending: 1, failed: 0, conflicts: 0, rejected: 0 }));
+      return state.pending + state.failed + state.conflicts + state.rejected;
     };
-  }, []);
+    const unregister = registerPendingActionFlusher('notes', flushBestEffort);
+    const refreshPending = () => { void storage.queueState().then(setQueueStatus).catch(() => undefined); };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushBestEffort(); else refreshPending(); };
+    window.addEventListener('pagehide', flushBestEffort);
+    window.addEventListener('sorye:logout-flush', flushBestEffort);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushBestEffort);
+      window.removeEventListener('sorye:logout-flush', flushBestEffort);
+      document.removeEventListener('visibilitychange', onVisibility);
+      unregister();
+    };
+  }, [storage]);
 
   const activeNote = useMemo(
     () => notes.find((n) => n.id === activeId) ?? null,
     [notes, activeId],
   );
+  const listed = useMemo(
+    () => (partition && workspaceId ? withActiveWorkspaceItems(partition, workspaceId, notes) : null),
+    [partition, workspaceId, notes],
+  );
 
-  const persist = useCallback((next: Note[], immediate = false) => {
-    setNotes(next);
-    pendingNotes.current = next;
-    const flush = () => {
-      persistTimer.current = null;
-      const payload = pendingNotes.current;
-      if (!payload) return;
-      void saveNotes(payload).then(
-        () => { setSaveError(null); setConflictDraftAvailable(false); },
-        (err: unknown) => {
-          setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
-          if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
-        },
-      );
-    };
-    if (persistTimer.current) window.clearTimeout(persistTimer.current);
-    if (immediate) {
-      flush();
+  const openListed = async (itemWorkspaceId: string, noteId: string) => {
+    if (!workspaceId || itemWorkspaceId === workspaceId) {
+      setActiveId(noteId);
       return;
     }
-    persistTimer.current = window.setTimeout(flush, 500);
-  }, [storage]);
+    const switched = await switchAuthorizedWorkspace(itemWorkspaceId);
+    if (!switched) {
+      setSaveError('Could not open that workspace.');
+      return;
+    }
+    const next = await loadSnapshot();
+    setNotes(next.notes);
+    setPartition(next.load ?? null);
+    setWorkspaceId(next.workspace?.id ?? null);
+    setActiveId(noteId);
+  };
+
+  const persist = useCallback((next: Note[], _immediate = false) => {
+    setNotes(next);
+    // Save immediately: saveNotes durably queues action IDs before its first network send.
+    void saveNotes(next).then(
+        () => { setSaveError(null); setConflictDraftAvailable(false); return storage.queueState(); },
+        (err: unknown) => {
+          setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+          setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
+          return storage.queueState();
+        },
+      ).then(setQueueStatus).catch(() => undefined);
+  }, [saveNotes, storage]);
+
+  const resendPending = async () => {
+    try {
+      await storage.resendPending();
+      const latest = await loadSnapshot();
+      setNotes(latest.notes); setPartition(latest.load ?? null); setWorkspaceId(latest.workspace?.id ?? null);
+      setActiveId((current) => latest.notes.some((note) => note.id === current) ? current : latest.notes[0]?.id ?? null);
+      setSaveError(null);
+    }
+    catch (error) { setSaveError(error instanceof Error ? error.message : 'Rodrigo has not confirmed the pending notes.'); }
+    setQueueStatus(await storage.queueState().catch(() => queueStatus));
+  };
 
   const downloadConflictDraft = () => {
     const draft = storage.readConflictDraft();
@@ -94,12 +141,16 @@ export default function App() {
 
   const discardDraftAndReload = async () => {
     try {
-      const latest = await loadNotes();
+      await storage.discardConflictsAndRejected();
+      const latest = await loadSnapshot();
       storage.clearConflictDraft();
-      setNotes(latest);
-      setActiveId(latest[0]?.id ?? null);
+      setNotes(latest.notes);
+      setPartition(latest.load ?? null);
+      setWorkspaceId(latest.workspace?.id ?? null);
+      setActiveId(latest.notes[0]?.id ?? null);
       setConflictDraftAvailable(false);
       setSaveError(null);
+      setQueueStatus(await storage.queueState());
     } catch {
       setSaveError('Could not reload the latest notes. Your draft is still available in this browser.');
     }
@@ -154,14 +205,6 @@ export default function App() {
 
   return (
     <div className="notes-app">
-      <header className="notes-header">
-        <div>
-          <h1>Notes</h1>
-          <p>Quick capture for ideas, docs, and meeting notes</p>
-        </div>
-        <span className="notes-badge">Productivity</span>
-      </header>
-
       {loadState === 'loading' ? (
         <p className="notes-empty">Loading workspace notes…</p>
       ) : null}
@@ -179,6 +222,12 @@ export default function App() {
           </div> : null}
         </div>
       ) : null}
+      {queueStatus.pending + queueStatus.failed + queueStatus.conflicts + queueStatus.rejected > 0 ? (
+        <div className="notes-empty" role="status">
+          {queueStatus.pending + queueStatus.failed} note action(s) await Rodrigo; {queueStatus.conflicts} conflict(s); {queueStatus.rejected} rejected.
+          {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
+        </div>
+      ) : null}
 
       {loadState === 'ready' ? (
         <div className="notes-layout">
@@ -190,21 +239,30 @@ export default function App() {
               </button>
             </div>
 
-            <ul className="notes-list">
-              {notes.map((note) => (
-                <li key={note.id}>
-                  <button
-                    type="button"
-                    className={note.id === activeId ? 'active' : undefined}
-                    onClick={() => setActiveId(note.id)}
-                  >
-                    <strong>{note.title || 'Untitled'}</strong>
-                    <span>{formatWhen(note.updatedAt)}</span>
-                    <p>{note.body.slice(0, 80) || 'Empty note'}</p>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {listed ? (
+              <UserLoadSections
+                load={listed}
+                empty="No notes in this workspace."
+                heading="h3"
+                renderItems={(items) => (
+                  <ul className="notes-list">
+                    {items.map((item) => (
+                      <li key={`${item.workspaceId}:${item.value.id}`}>
+                        <button
+                          type="button"
+                          className={item.value.id === activeId && item.workspaceId === workspaceId ? 'active' : undefined}
+                          onClick={() => void openListed(item.workspaceId, item.value.id)}
+                        >
+                          <strong>{item.value.title || 'Untitled'}</strong>
+                          <span>{formatWhen(item.value.updatedAt)}</span>
+                          <p>{item.value.body.slice(0, 80) || 'Empty note'}</p>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              />
+            ) : null}
           </section>
 
           <section className="notes-panel notes-editor-panel">

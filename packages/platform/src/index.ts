@@ -28,3 +28,8 @@ export type {
 } from './types';
 
 export * from './i18n';
+export * from './webgpu';
+export { switchAuthorizedWorkspace } from './switch-workspace';
+export { createDurableActionQueue } from './durable-action-queue';
+export type { DurableActionOutcome, DurableActionQueue, DurableQueuedAction } from './durable-action-queue';
+export { flushPendingActions, registerPendingActionFlusher } from './pending-actions';

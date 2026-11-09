@@ -3,8 +3,10 @@ import { getEventSettings } from '@/lib/events';
 import {
   getRelayConfig,
   ingestRelayTestMessage,
+  readRelayMessages,
   setRelayConfig,
 } from '@/lib/relay';
+import { readPartitionedLoad, sessionWorkspace } from '@/lib/user-load-read';
 import type { RelayConfig } from '@sorye/types';
 import { NextResponse } from 'next/server';
 
@@ -16,11 +18,17 @@ export async function GET() {
 
   const config = await getRelayConfig(session.workspace.id);
   const settings = await getEventSettings(session.workspace.id);
+  const load = await readPartitionedLoad(session, async (scope) => {
+    const messages = await readRelayMessages(scope.id);
+    return messages.map((message) => ({ workspaceId: scope.id, value: message }));
+  }, { appId: 'relay' });
 
   return NextResponse.json({
     config,
     eventsEnabled: settings.enabled,
     deliverToMessengerEvents: settings.deliverToMessengerEvents,
+    load,
+    workspace: sessionWorkspace(session),
   });
 }
 

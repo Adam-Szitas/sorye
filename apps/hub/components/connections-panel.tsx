@@ -1,5 +1,5 @@
 'use client';
-import { TranslatedText } from '@sorye/platform/react';
+import { TranslatedText, UserLoadSections } from '@sorye/platform/react';
 
 
 import {
@@ -8,6 +8,8 @@ import {
   type EmbedWidget,
   type EmbedWidgetCreated,
   type SubscriptionPlan,
+  type UserLoadPartition,
+  type UserLoadWorkspace,
 } from '@sorye/types';
 import { canAddConnection } from '@sorye/types';
 import { useCallback, useEffect, useState } from 'react';
@@ -39,6 +41,8 @@ export function ConnectionsPanel({
   const canAdd = canAddConnection(plan, connections.length);
 
   const [widgets, setWidgets] = useState<EmbedWidget[]>([]);
+  const [widgetLoad, setWidgetLoad] = useState<UserLoadPartition<EmbedWidget> | null>(null);
+  const [widgetWorkspace, setWidgetWorkspace] = useState<UserLoadWorkspace | null>(null);
   const [widgetsLoading, setWidgetsLoading] = useState(true);
   const [widgetError, setWidgetError] = useState<string | null>(null);
   const [createdKey, setCreatedKey] = useState<EmbedWidgetCreated | null>(null);
@@ -58,8 +62,14 @@ export function ConnectionsPanel({
     try {
       const res = await fetch('/api/embed/widgets');
       if (!res.ok) throw new Error('Failed to load embed widgets');
-      const data = (await res.json()) as { widgets: EmbedWidget[] };
+      const data = (await res.json()) as {
+        widgets: EmbedWidget[];
+        load?: UserLoadPartition<EmbedWidget>;
+        workspace?: UserLoadWorkspace;
+      };
       setWidgets(data.widgets);
+      setWidgetLoad(data.load ?? null);
+      setWidgetWorkspace(data.workspace ?? null);
     } catch (err) {
       setWidgetError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -222,6 +232,31 @@ export function ConnectionsPanel({
             </div>
           ) : null}
 
+          {widgetWorkspace ? (
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              {widgetWorkspace.kind === 'team' ? `Work · ${widgetWorkspace.name}` : 'Personal'}
+            </h3>
+          ) : null}
+          {widgetLoad && widgetWorkspace ? (
+            <UserLoadSections
+              load={{
+                personal: widgetWorkspace.kind === 'personal' ? [] : widgetLoad.personal,
+                work: widgetLoad.work.filter((group) => group.workspace.id !== widgetWorkspace.id),
+              }}
+              empty="No embed widgets in this workspace."
+              heading="h3"
+              renderItems={(items) => (
+                <ul className="mb-3 space-y-2">
+                  {items.map((item) => (
+                    <li key={item.value.id} className="text-sm">
+                      {item.value.name}
+                      <span className="ml-2 text-xs text-[var(--color-text-muted)]">{item.value.keyHint}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
+          ) : null}
           <ul className="space-y-3">
             {widgetsLoading ? (
               <li className="text-sm text-[var(--color-text-muted)]"><TranslatedText message="loading" /></li>

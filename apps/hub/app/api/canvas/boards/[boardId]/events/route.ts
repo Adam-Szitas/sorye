@@ -7,7 +7,7 @@ import {
   upsertPresence,
   type CanvasRealtimeEvent,
 } from '@/lib/canvas-realtime';
-import { getCanvasBoard } from '@/lib/store/canvas';
+import { canvasAccess, readCanvasBoard } from '@/lib/canvas-rodrigo';
 
 type Params = { params: Promise<{ boardId: string }> };
 
@@ -16,13 +16,12 @@ export async function GET(req: Request, { params }: Params) {
   if (!session) {
     return new Response('Unauthorized', { status: 401 });
   }
+  if (!canvasAccess(session)) return new Response('Forbidden', { status: 403 });
 
   const { boardId } = await params;
-  const board = await getCanvasBoard(
-    session.user.id,
-    session.workspace.id,
-    boardId,
-  );
+  let board;
+  try { board = await readCanvasBoard({ userId: session.user.id, workspaceId: session.workspace.id }, boardId); }
+  catch { return new Response('Rodrigo unavailable', { status: 503 }); }
   if (!board) {
     return new Response('Not found', { status: 404 });
   }
@@ -36,7 +35,7 @@ export async function GET(req: Request, { params }: Params) {
     start(controller) {
       const send = (event: CanvasRealtimeEvent) => {
         if (event.type === 'board-changed') {
-          void getCanvasBoard(session.user.id, session.workspace.id, boardId).then((latest) => {
+          void readCanvasBoard({ userId: session.user.id, workspaceId: session.workspace.id }, boardId).then((latest) => {
             if (latest) send({ type: 'board-updated', board: latest, byUserId: event.byUserId });
             else send({ type: 'board-deleted', boardId, byUserId: event.byUserId });
           }).catch(() => undefined);
@@ -102,6 +101,7 @@ export async function POST(req: Request, { params }: Params) {
   if (!session) {
     return new Response('Unauthorized', { status: 401 });
   }
+  if (!canvasAccess(session)) return new Response('Forbidden', { status: 403 });
 
   const { boardId } = await params;
 

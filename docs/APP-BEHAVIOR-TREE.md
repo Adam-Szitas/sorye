@@ -1,22 +1,28 @@
 # Sorye app behavior tree
 
+
 This is the static map of the main user and data flows in Sorye. It is intended to be read in the repository, in code review, or in a Markdown viewer that renders Mermaid. It has no controls or interaction.
 
 For a self-contained local page with handler-by-handler node details, open [APP-BEHAVIOR-TREE.html](./APP-BEHAVIOR-TREE.html).
 
 **Update rule:** when a code change adds, removes, or changes one of the flows, state owners, trust boundaries, or app integration edges below, update this diagram in the same change. Root [`AGENTS.md`](../AGENTS.md) makes this part of the repository-wide contribution process.
 
+**Current cutover status:** Tasks, Notes, Calendar, Canvas, Site editing and published public reads, Storefront products and enquiry orders, workspace profile name/read paths, and Messenger text/channel resources use Rodrigo v2 through Hub. Browser writes persist in user/workspace-scoped IndexedDB queues and clear only after `committed` or `duplicate`. Messenger uses a channel-authorized timeline; image/blob sending and read receipts remain unavailable. Most other app and Hub-native state, binary storage, external jobs, event delivery, and Storefront status transitions remain uncovered. See [RODRIGO-DATA-CONTRACT.md](RODRIGO-DATA-CONTRACT.md) and [RODRIGO-DATABASE-SWITCHING-RUNBOOK.md](RODRIGO-DATABASE-SWITCHING-RUNBOOK.md).
+
 ## Open an app and keep its state
+
+The standalone navbar Hub link uses the configured `VITE_HUB_ORIGIN` for remote apps and otherwise the current origin's `/`. The current host and port are preserved unless an explicit Hub origin is configured.
 
 ```mermaid
 flowchart TD
     Person[Person in browser] --> SignIn[Sign in / restore session]
     SignIn --> Identity[Hub resolves user and active workspace]
-    Identity --> Shell[Hub shell]
+    Identity --> Split[List APIs partition Personal and Work from session memberships]
+    Split --> Shell[Hub shell]
     Shell --> Catalog[App launcher and catalog]
     Catalog --> Choose{App kind}
 
-    Choose -->|Hub-native| Native[Catalog, Reports, Storefront, Site, Mail, Drive]
+    Choose -->|Hub-native| Native[Catalog, Reports, Operator, Storefront, Site, Mail, Drive]
     Choose -->|Module Federation remote| Remote[Dashboard, Calendar, Notes, Tasks, Relay, Protocolio, Canvas, DevKit, Messenger, OCR, Studio]
     Choose -->|External app| Iframe[SUSM / ESPM iframe]
 
@@ -38,7 +44,15 @@ flowchart TD
     KeepMounted --> Reopen
 ```
 
-`packages/platform/src/refresh.ts` owns bounded, non-overlapping background reads and coalesces event bursts. Full-page/standalone kernels use `sync.ts`: workspace and notifications refresh independently. The shell uses `use-hub-session.ts` for session revalidation and `use-notifications.tsx` for the same visible-only notification policy. Focus/visibility/reconnect refresh current data, and unmount aborts outstanding reads and removes timers/channels. Notification events do not refetch the standalone workspace. In Postgres mode, OCR submissions enter a durable Hub job queue; the OCR worker (`pnpm --filter @sorye/hub worker:ocr`, also started by local `pnpm dev` when `STORE_DRIVER=postgres`) extracts/analyzes the PDF and the browser polls the authorized job endpoint for progress. The local JSON development path retains direct analyze/continue requests.
+Catalog, the launcher, and the App Library show each sold app's yearly running-cost minimum from `packages/types/src/running-cost.ts`. Those minima are shares of one stack. Added together they are the yearly amount that covers the shared host and the OCR GPU allowance. Catalog, Contact, Reports, and Operator stay included in that total.
+
+`packages/platform/src/refresh.ts` owns bounded, non-overlapping background reads and coalesces event bursts. Full-page/standalone kernels use `sync.ts`: workspace and notifications refresh independently. The shell uses `use-hub-session.ts` for session revalidation and `use-notifications.tsx` for the same visible-only notification policy. Focus/visibility/reconnect refresh current data, and unmount aborts outstanding reads and removes timers/channels. Notification events do not refetch the standalone workspace. In Postgres mode, OCR submissions enter a durable Hub job queue; the OCR worker (`pnpm --filter @sorye/hub worker:ocr`, also started by local `pnpm dev` when `STORE_DRIVER=postgres`) extracts/analyzes the PDF and the mounted OCR app polls the authorized job endpoint for progress. Leaving OCR does not cancel that job. When the worker marks it completed or failed, Hub writes a notification for the submitting user in that workspace, and the Hub shell shows it whichever app is open. Opening the notification uses the same open-app path as the launcher and passes the analysis id. Opening OCR again asks Hub for the latest job and shows the finished reading or the existing error. The local JSON development path retains direct analyze/continue requests. The shell top bar Hub button returns to the app launcher; an open app stays mounted, the same path as dock Home and the workspace App grid control.
+
+In Messenger, typing a person's name in a channel composer suggests people in that channel's workspace. Choosing one inserts a ping, and sending creates a notice for that person in the same Personal or Work scope. Opening the notice returns to that channel. A personal-channel ping is not offered or delivered when Messenger is outside that person's personal subscription. Team-channel pings follow team membership.
+
+The product navbar is that shell top bar (`apps/hub/components/top-bar.tsx` and `language-selector.tsx`). It stays visible while an app is open. The language switcher and the Hub button live there; Hub calls `navigatePanel('launcher')`. Apps do not keep a second navbar. App-specific tools stay in the app. Edit this bar in those Hub files. Do not copy a private navbar into each remote.
+
+Documents opened outside the shell use `StandaloneAppBar` from `@sorye/platform/react` (`packages/platform/src/chrome.tsx`): each remote Vite `main.tsx` via `StandaloneFrame`, `apps/hub/app/apps/[slug]/page.tsx`, and the OCR reading page `apps/hub/app/apps/ocr/reading/[id]/page.tsx`. That bar uses the same locales and links back to the Hub menu (`/` on Hub, or the Hub origin from a remote port). Edit standalone chrome only in `chrome.tsx`.
 
 ## Shared app requests and cross-app work
 
@@ -56,7 +70,7 @@ flowchart TD
     API --> Auth[Authenticate with ensureHubUser]
     Auth --> Scope[Derive workspace from server session]
     Scope --> Validate[Validate route input and app permissions]
-    Validate --> Store[Configured owner: Hub or migrated Tasks/Calendar via Rodrigo]
+    Validate --> Store[Configured owner: Hub or migrated typed v2 resource via Rodrigo]
     Store --> Durable[(Postgres or Hub .data metadata)]
     Store --> BlobStore[(Workspace-scoped Drive blob store)]
     Durable --> Result[Scoped response to caller]
@@ -73,9 +87,9 @@ flowchart TD
 
 Apps do not call each other directly. Shared APIs, events, and handoffs pass through Hub, which owns authentication and workspace scoping. Events use Relay; structured app-to-app payloads use the handoff store.
 
-Canvas board edits remain durable in the configured Canvas store. After a save or deletion, Hub publishes a small PostgreSQL `LISTEN/NOTIFY` invalidation so SSE subscribers connected to any Hub instance reload the authorized board from its authoritative store. Presence remains process-local and will be shown only to users connected to the same Hub instance until shared presence storage is added.
+Canvas board data now reads and writes through Rodrigo v2. The existing Canvas `LISTEN/NOTIFY` SSE path is still Hub-owned and v2 actions do not yet publish invalidations, so other open tabs may need to reload. Presence remains ephemeral and process-local; it is not durable board data.
 
-Tasks, Notes and Calendar save whole workspace documents with an expected revision. Hub atomically rejects stale revisions with HTTP 409. The edited draft stays in the app and is also kept in app-specific browser `localStorage`; users can download that draft or explicitly discard it and reload the latest server version before continuing.
+Tasks saves its typed `taskBoard` aggregate as a v2 action. A task photo is uploaded to Hub Drive with `sourceAppId` `tasks` (the Tasks section in Drive) and the board stores only `driveFileId`; Rodrigo does not own those bytes. Moving a task keeps its label, description, and photo reference. Notes and Calendar save typed resources the same way; Canvas boards, Site pages, Storefront products and enquiry orders, and workspace profile name writes use the same Hub gateway. IndexedDB stores each stable action ID and payload before Hub checks the active user/workspace queue scope and signs the request. Rodrigo commits each resource and receipt atomically in PostgreSQL. A published Site page also reserves its slug in that transaction. Visitors read `/s/{slug}` through a reserved Hub service assertion; the browser does not choose the workspace. Order lines are checked against the current product price before the receipt commits. Updates carry resource revisions; conflicts stay queued for explicit reconciliation. Outages leave actions in IndexedDB with pending/failure state and Resend. Legacy resource writers are disabled for migrated slices, while unrelated legacy paths remain active and are listed in the contract inventory. Relay publish and order-placed events are not part of these commits.
 
 ## OCR to Protocolio
 
@@ -114,7 +128,25 @@ flowchart LR
     Protocolio --> Draft[Protocolio saves editor draft in localStorage]
 ```
 
-The browser matrix path supports table review, multi-PDF alignment, CSV, and the Protocolio handoff. The separate Node path preserves every raw PDF row and asks the model for meaningful data in three columns: position/variable, description/calculation, period/result. A transcript that fits the model context is one request, with generated tokens capped to that pattern. Longer documents stay in bounded chunks, checkpoint, and continue. The model stays loaded across the slices of a job and is unloaded when the job finishes. In Postgres mode, OCR work is durably queued and handled outside the interactive Hub request; progress is available through the workspace/user-authorized job status endpoint. The OCR screen shows elapsed model time as `GPU m:ss` from the first model-request timestamp (`vector.gpuStartedAt`) until model work finishes (`vector.gpuFinishedAt`). Queue wait and PDF row extraction are not included. The normalized table scrolls inside a 22rem region with its header kept visible. A database-backed heartbeat must be fresh before uploads are accepted. Local `pnpm dev` starts that worker when the store driver is postgres; a stopped worker rejects the upload instead of asking for a short retry. The worker lease is renewed while processing, and cancellation/lost ownership aborts ongoing work between PDF pages and model batches. The local JSON development path remains direct and process-local. `packages/types/src/ocr-table.ts` removes recognizable letterhead, repeated column headings, signatures and page numbers from the presentation; it preserves body notes, calculations and totals. It validates each AI cell against its source and restores missing or changed values into the same three columns. The reading page and JSON use this same projection, including for older saved readings, with filename, stored document ID and PDF type ID above a continuous table across all pages. Source page/row references remain in JSON. Unclear findings follow the table. Comparison matrices retain calculations and totals under their preceding position across page breaks. Hub GET responses apply the same normalization; raw stored pages remain unchanged. Inference resumes from the beginning if its stored prompt version is obsolete. Protocolio owns its editor draft; Hub pane state and OCR comparison/reading state have their own persistence lifetimes.
+The browser matrix path supports table review, multi-PDF alignment, CSV, and the Protocolio handoff. The separate Node path preserves every raw PDF row and asks the model for meaningful data in three columns: position/variable, description/calculation, period/result. A transcript that fits the model context is one request, with generated tokens capped to that pattern. Longer documents stay in bounded chunks, checkpoint, and continue. The model stays loaded across the slices of a job and is unloaded when the job finishes. In Postgres mode, OCR work is durably queued and handled outside the interactive Hub request; progress is available through the workspace/user-authorized job status endpoint. The OCR screen shows elapsed model time as `GPU m:ss` from the first model-request timestamp (`vector.gpuStartedAt`) until model work finishes (`vector.gpuFinishedAt`). Queue wait and PDF row extraction are not included. The normalized table scrolls inside a 22rem region with its header kept visible. A database-backed heartbeat must be fresh before uploads are accepted. Local `pnpm dev` starts that worker when the store driver is postgres; a stopped worker rejects the upload instead of asking for a short retry. The worker lease is renewed while processing, and cancellation/lost ownership aborts ongoing work between PDF pages and model batches. Leaving the OCR app does not cancel the queued job. Completion and failure are recorded by the worker through the shared background-job hook, which writes one Hub notification for the submitting user in that workspace only. The notification title distinguishes success from failure and, on success, carries the analysis id. Clicking it uses the Hub open-app event (`sorye:hub:open-app`) with that analysis id. Returning to OCR without the notification calls `GET /api/ocr/active` (session user and workspace; no client workspace id) and shows the finished reading, the existing error, or resumes `GET /api/jobs/:id` while the job is still running. A client WebGPU pass still finishes in the open tab and the stored analysis remains what OCR shows if the user moves to another Hub app and comes back. The local JSON development path remains direct and process-local. `packages/types/src/ocr-table.ts` removes recognizable letterhead, repeated column headings, signatures and page numbers from the presentation; it preserves body notes, calculations and totals. It validates each AI cell against its source and restores missing or changed values into the same three columns. The reading page and JSON use this same projection, including for older saved readings, with filename, stored document ID and PDF type ID above a continuous table across all pages. Source page/row references remain in JSON. Unclear findings follow the table. Comparison matrices retain calculations and totals under their preceding position across page breaks. Hub GET responses apply the same normalization; raw stored pages remain unchanged. Inference resumes from the beginning if its stored prompt version is obsolete. Protocolio owns its editor draft; Hub pane state and OCR comparison/reading state have their own persistence lifetimes.
+
+## OCR finishes after the user leaves
+
+```mermaid
+flowchart LR
+    Start[User starts OCR analyze] --> Leave[User opens another Hub app]
+    Leave --> Worker[Hub worker keeps the job]
+    Worker --> Done{Completed or failed}
+    Done --> Notice[Notification for that user and workspace]
+    Notice --> Click[User clicks the notification]
+    Click --> Open[Hub open-app path opens OCR]
+    Done --> Return[User opens OCR again]
+    Return --> Active[OCR asks Hub for the latest job]
+    Open --> Result[Finished reading or the existing error]
+    Active --> Result
+```
+
+The job stays on Hub. OCR does not need to stay mounted, and unmounting does not cancel it. The shell notification center and toasts are the existing Hub notification UI. A different workspace does not receive the notice.
 
 ## Dashboard package map and LLM controls
 
@@ -158,43 +190,45 @@ flowchart LR
     Rodrigo -. migration pending .-> Providers[Optional PostgreSQL/MySQL/MongoDB documents; Redis cache; S3 blobs; durable change streams]
 ```
 
-Rodrigo is a separate repository and service. The Hub capability and topology endpoints return 503 if Rodrigo is unavailable or incompatible; it does not switch data owners. Rodrigo now implements optional PostgreSQL/MySQL/MongoDB document stores, Redis caching, S3-compatible storage and durable resumable document streams. Unconfigured providers report not_configured; dataReady requires all document owners and healthy configured dependencies. Unmapped Tasks/Calendar workspaces, Notes and other domain flows use Hub stores. Explicitly migrated Tasks/Calendar documents use Rodrigo through the routing flow below. Prometheus/Grafana and a separate Alloy/Loki logging service belong to Rodrigo. See [RODRIGO.md](./RODRIGO.md).
+Rodrigo is a separate repository and service. Tasks v2 actions and snapshots use the signed Hub gateway and PostgreSQL-backed typed service; this cutover does not imply migration of other apps. The Hub does not fall back to its legacy Tasks store when Rodrigo is unavailable. Other app data and external workflows still have separate owners and require their own cutovers. See [RODRIGO.md](./RODRIGO.md).
 
-## Tasks and Calendar document ownership
+## Tasks v2 action ownership; Calendar remains legacy
 
 ```mermaid
 flowchart TD
-    UI[Tasks or Calendar] --> API[Same-origin Hub API]
-    API --> Access[Server session, workspace membership and enabled app]
-    Access --> Owner{Server-configured workspace/kind owner}
-    Owner -->|unmapped| Hub[Existing Hub or workspace database]
-    Owner -->|frozen| Freeze[Read Hub; writes return 503 and keep draft]
-    Owner -->|rodrigo| Signed[Signed snapshot or conditional write]
-    Signed --> Rust[Rodrigo sole document writer]
-    Rust --> Rev[Translate revision using verified import offset]
-    Rev --> UI
-    Rust -->|stale revision| Conflict[409; preserve draft]
-    Rust -->|unavailable| Failure[503; preserve draft; no Hub fallback]
-    Rust -->|tombstone| Empty[Empty document with retained revision]
+    UI[Tasks] --> Queue[App IndexedDB: scoped stable actionId and payload]
+    Queue --> API[Hub batch and snapshot routes]
+    API --> Access[Server session, membership and enabled app]
+    Access --> Signed[Hub signs server-derived actor/workspace and action scopes]
+    Signed --> Rust[Rodrigo validates and commits board + receipt in PostgreSQL]
+    Rust -->|committed / duplicate| Ack[Clear only acknowledged queue row]
+    Rust -->|conflict / rejected| Reconcile[Keep row; show explicit status]
+    Rust -->|unavailable / ambiguous| Pending[Keep row; offer Resend]
+    Calendar[Calendar legacy route] --> HubStore[Existing Hub persistence; not yet cut over]
 ```
 
-Server-only `RODRIGO_DOCUMENT_OWNERS` selects one owner per workspace/kind. Missing entries use Hub; malformed configuration fails closed. All document routes check membership and enabled app access. Frozen sources remain readable but reject mutations, including browser legacy imports. Operators drain every writer, export and verify the source, conditionally import into a pristine Rodrigo document, and deploy the receipt's revision offset to every replica before resuming writes. Imports never change ownership automatically. Revisions remain monotonic across migration and deletion; legacy imports cannot resurrect deleted data. Invalid stored data returns 503 instead of a writable empty document. Notes remains Hub-owned pending a compatible document-size contract. Identity, general events and handoffs remain in Hub.
+Tasks has no owner toggle or Hub fallback: v2 reads and writes go to Rodrigo, missing data yields the typed default board, and its legacy PUT is disabled. Calendar and Notes remain Hub-owned and are uncovered by this step. Identity, general events and handoffs remain in Hub.
 
 ## State ownership at a glance
 
 | State | Owner | Persistence / lifetime |
 |---|---|---|
 | User, active workspace, app access | Hub | Auth and workspace store; server derives scope per request |
+| Personal and Work lists | Hub `partitionUserLoad` | Groups from `session.workspaces`. Personal rows are returned only when that app is in the viewer's personal subscription (selected apps plus always-available apps). Team lists are not filtered by the personal package. UI renders the split; `mergeUserLoad` is not sent to clients |
 | Dashboard package map | Dashboard view | Derived from authenticated `HubSession` subscription and selected app IDs; no separate saved copy |
-| LLM runtime settings | Hub | `.data/llm-control.json`; platform-admin API only |
+| LLM runtime settings | Hub | `.data/llm-control.json`; platform-admin API only; per-user GPU preference (`client-webgpu` vs `hub-server`) stored per user and mirrored in browser `localStorage` |
+| Hub MCP assistant overlay | Hub shell + `/api/mcp/*` | Permission-scoped to `HubSession` (`selectedAppIds` + `isAdmin`); never accesses backend databases directly; emits Hub events and forwards domain reads/writes to Rodrigo via signed assertions. Workspace questions route to tools (ownership, My day, tasks, quick capture, calendar, OCR, Drive, switch workspace via `/api/workspace/team`); other questions go to the server model without tools, or a built-in responder when it is paused or offline |
 | LLM activity events | Hub process | Metadata-only in-memory ring (last 500); cleared when the Hub process restarts |
 | Open panes and split layout | Hub shell | `sessionStorage` for the current browser tab |
 | Visited app's in-memory editor state | App component tree | Kept while that app stays mounted in the current Hub session |
-| OCR selected reading | OCR remote | `sessionStorage` |
+| OCR selected reading | OCR remote | `sessionStorage`, plus the latest Hub job when OCR mounts again |
+| OCR job finish notice | Hub notification store | Written when the background job completes or fails; visible only to the submitting user in that workspace |
 | OCR multi-document selection and comparison | OCR remote | App-owned `localStorage` record |
-| Tasks/Notes/Calendar stale-save draft | Respective remote | App-specific `localStorage` until the user downloads or discards it; never automatically replaces the latest server document |
+| Tasks pending actions | Tasks remote | IndexedDB partitioned by server-derived user/workspace hash; cleared only for Rodrigo `committed` or `duplicate`; conflicts require explicit reconciliation |
+| Notes/Calendar stale-save draft | Respective remote | Existing app-specific behavior; not covered by the Tasks cutover |
 | Protocolio template and editor mode | Protocolio remote | App-owned `localStorage` draft |
-| Tasks/Calendar records | Hub gateway; configured Hub or Rodrigo owner | Per-workspace owner; verified revision offset persists in deployment configuration |
+| Tasks board | Rodrigo via Hub v2 | PostgreSQL typed `taskBoard` resource and atomic idempotency receipt; board revision controls concurrency |
+| Notes/Calendar records | Existing Hub routes and stores | Legacy owners remain active pending their own cutover |
 | Other shared records and app workflows | Hub APIs and stores | Postgres or `.data`, depending on configured store |
 | Event delivery and structured handoffs | Hub | Workspace-scoped Hub stores; target app consumes/polls |
 
@@ -204,9 +238,29 @@ When a feature changes where state lives or how long it survives, update this ta
 
 Visitor ? catalog-slug.sorye.app/ (DNS/TLS routed to Hub) ? Hub rewrites to /learn/slug ? public app description ? Open app on https://sorye.app ? existing sign-in and workspace authorization ? app. Direct /learn/slug links are public too. Unknown slugs return 404; unknown hosts do not select an app. Hub owns static landing copy; no workspace data is read and no app is mounted by the landing page.
 
+## Platform operator
+
+```mermaid
+flowchart TD
+    Member[Workspace member] --> Hidden[Launcher, dock, and picker hide Operator]
+    Member --> Banner[GET /api/notices]
+    Banner --> Text[Message text only when plan and dates match]
+    Text --> Dismiss[Dismiss stored per user]
+
+    Admin[Platform operator] --> App[Operator Hub-native app]
+    App --> Gate[ensureHubUser + isPlatformAdmin]
+    Gate --> Read[GET /api/operator reads cached health and bounded buckets]
+    Gate --> Plan[POST /api/operator/plan checks workspace id in the store]
+    Gate --> Compose[POST /api/operator/notices]
+    Events[Existing workspace events and finished OCR jobs] --> Sink[In-process sink returns immediately]
+    Sink --> Buckets[Hour and day buckets, activity ring, grouped errors]
+```
+
+Operator is not the member Dashboard and not the workspace Reports charts. Only `isPlatformAdmin` can open it or call its APIs. Metrics are queued after the user-facing work and dropped if the buffer is full. Health probes run for the operator page and are cached for a few seconds. Notices store the message, audience, dates, and active flag on the server. Members receive the message text only. A future plan date is stored as a schedule; the plan catalog still owns `maxApps`. No card payment is collected here.
+
 ## Language preference
 
-Hub language selector ? browser-owned sorye:locale localStorage ? same-document locale event / cross-tab storage event ? subscribed app controls. Supported locales: en, de, sk, hu, es. Server rendering defaults to English. This changes presentation only, not workspace records. Current translated coverage is shared controls; app-specific copy remains English.
+Hub language selector ? browser-owned sorye:locale localStorage ? same-document locale event / cross-tab storage event ? subscribed app controls. Supported locales: en, de, sk, hu, es. Server rendering defaults to English. This changes presentation only, not workspace records. Current translated coverage is shared controls; app-specific copy remains English. Inside an open app the switcher is the shell top bar. Standalone pages outside the shell use the same locales through `StandaloneAppBar`.
 
 Public landing pages use /learn/<slug>/<locale> for en, de, sk, hu and es. Each URL renders translated text and metadata on the server, has a self-canonical URL and hreflang alternatives, and is listed in the sitemap. Language links preserve the app. Unqualified landing URLs and catalog subdomain roots select the best supported Accept-Language preference (English fallback) with a private, non-cacheable temporary redirect; esp redirects to es. The URL owns landing language, independently of the workspace browser preference. Unsupported languages return 404. New apps must add all five translations; preserve limitations in every translation.
 
@@ -227,4 +281,4 @@ flowchart LR
     Rodrigo <--> Dependencies[Databases, storage and external services]
 ```
 
-Hub communicates with both apps and Rodrigo. Apps never bypass Hub to call Rodrigo or one another. The browser platform kernel remains UI integration. Rodrigo provides durable document change streams; general job/event processing still requires separate contracts. Discovery and explicit Tasks/Calendar forwarding are integrated. Unmigrated stores, general events and jobs still run in Hub. Rodrigo readiness depends on its configured providers and does not prove migration. Hub's persistent volume preserves current records until a verified one-writer migration. This target diagram does not change the current state owners listed above. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).
+Hub remains the browser-facing authentication and API gateway. Apps never bypass Hub to call Rodrigo or databases. Rodrigo v2 action/read routes are live only for the slices listed at the top of this document; other stores, general events, and jobs still run in Hub. Rodrigo readiness depends on configured providers and does not prove migration. The no-migration cutover may make Hub-owned records unavailable. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).

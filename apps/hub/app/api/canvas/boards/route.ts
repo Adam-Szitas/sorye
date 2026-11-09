@@ -1,8 +1,6 @@
 import { ensureHubUser } from '@/lib/ensure-user';
-import {
-  createCanvasBoard,
-  listCanvasBoards,
-} from '@/lib/store/canvas';
+import { canvasAccess, listCanvasBoards, toCanvasSummary } from '@/lib/canvas-rodrigo';
+import { sessionWorkspace } from '@/lib/user-load-read';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
@@ -10,46 +8,28 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
-  const boards = await listCanvasBoards(
-    session.user.id,
-    session.workspace.id,
-  );
-  if (!boards) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
+  if (!canvasAccess(session)) return NextResponse.json({ error: { code: 'app_access_denied' } }, { status: 403 });
+  let boards;
+  try { boards = await listCanvasBoards({ userId: session.user.id, workspaceId: session.workspace.id }); }
+  catch { return NextResponse.json({ error: { code: 'rodrigo_unavailable' } }, { status: 503 }); }
 
   return NextResponse.json({
-    workspace: {
-      id: session.workspace.id,
-      kind: session.workspace.kind,
-      name: session.workspace.name,
-    },
+    workspace: sessionWorkspace(session),
     user: {
       id: session.user.id,
       displayName: session.user.displayName,
       image: session.user.image,
     },
-    boards,
+    boards: boards.map(toCanvasSummary),
   });
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   const session = await ensureHubUser();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => ({}))) as { title?: string };
-  const board = await createCanvasBoard(
-    session.user.id,
-    session.workspace.id,
-    body.title ?? 'Untitled board',
-  );
-
-  if (!board) {
-    return NextResponse.json({ error: 'Create failed' }, { status: 403 });
-  }
-
-  return NextResponse.json(board, { status: 201 });
+  if (!canvasAccess(session)) return NextResponse.json({ error: { code: 'app_access_denied' } }, { status: 403 });
+  return NextResponse.json({ error: { code: 'use_rodrigo_action_batch' } }, { status: 405 });
 }

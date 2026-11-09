@@ -43,6 +43,7 @@ export const REPORT_EVENT_LABELS: Record<WorkspaceEventName, string> = {
   'sorye.site.published': 'Site published',
   'sorye.mail.sent': 'Mail sent',
   'sorye.files.uploaded': 'Drive uploaded',
+  'sorye.mcp.action_executed': 'MCP action executed',
   'sorye.test.ping': 'Test ping',
 };
 

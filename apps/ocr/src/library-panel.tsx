@@ -1,3 +1,5 @@
+import { switchAuthorizedWorkspace } from '@sorye/platform';
+import { UserLoadSections } from '@sorye/platform/react';
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   ocrReadingText,
@@ -6,6 +8,7 @@ import {
   type OcrAmountOp,
   type OcrLibraryHit,
   type OcrLibraryQuery,
+  type UserLoadPartition,
 } from '@sorye/types';
 import { hubApiPath } from './hub-origin';
 
@@ -17,20 +20,28 @@ const OPS: Array<{ id: OcrAmountOp; label: string }> = [
   { id: 'eq', label: 'equal to' },
 ];
 
-async function searchLibrary(query: OcrLibraryQuery): Promise<OcrLibraryHit[]> {
+async function searchLibrary(query: OcrLibraryQuery): Promise<{
+  hits: OcrLibraryHit[];
+  load: UserLoadPartition<OcrLibraryHit> | null;
+}> {
   const res = await fetch(hubApiPath('/api/ocr/analyses/query'), {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(query),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; hits?: OcrLibraryHit[] };
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    hits?: OcrLibraryHit[];
+    load?: UserLoadPartition<OcrLibraryHit>;
+  };
   if (!res.ok) throw new Error(data.error || `Search failed (${res.status})`);
-  return data.hits ?? [];
+  return { hits: data.hits ?? [], load: data.load ?? null };
 }
 
 export function LibraryPanel() {
   const [hits, setHits] = useState<OcrLibraryHit[]>([]);
+  const [libraryLoad, setLibraryLoad] = useState<UserLoadPartition<OcrLibraryHit> | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedOnly, setSelectedOnly] = useState(false);
   const [from, setFrom] = useState('');
@@ -51,8 +62,9 @@ export function LibraryPanel() {
     setError(null);
     try {
       const next = await searchLibrary(query);
-      setHits(next);
-      setNames(Object.fromEntries(next.map((hit) => [hit.id, hit.fileName])));
+      setHits(next.hits);
+      setLibraryLoad(next.load);
+      setNames(Object.fromEntries(next.hits.map((hit) => [hit.id, hit.fileName])));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -190,7 +202,38 @@ export function LibraryPanel() {
       </details>
       {error ? <p className="ocr-error">{error}</p> : null}
       {busy ? <p className="ocr-library-empty" role="status">Loading your documents…</p> : null}
-      {hits.length === 0 && !busy ? <div className="ocr-library-empty"><strong>No documents to show</strong><p>Analyze a PDF to save a reading here, or adjust your filters.</p></div> : null}
+      {libraryLoad ? (
+        <UserLoadSections
+          load={libraryLoad}
+          empty="No documents in this workspace."
+          heading="h3"
+          renderItems={(items) => (
+            <ul>
+              {items.map((item) => (
+                <li key={`${item.workspaceId}:${item.value.id}`}>
+                  <button
+                    type="button"
+                    className="ocr-library-open"
+                    onClick={() => {
+                      void (async () => {
+                        const switched = await switchAuthorizedWorkspace(item.workspaceId);
+                        if (!switched) {
+                          setError('Could not open that workspace.');
+                          return;
+                        }
+                        window.location.assign(hubApiPath(`/apps/ocr/reading/${item.value.id}`));
+                      })();
+                    }}
+                  >
+                    {item.value.fileName}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        />
+      ) : null}
+      {hits.length === 0 && !libraryLoad && !busy ? <div className="ocr-library-empty"><strong>No documents to show</strong><p>Analyze a PDF to save a reading here, or adjust your filters.</p></div> : null}
       <div className="ocr-library-results">
         {hits.map((hit) => {
           const columns = recordTableColumns(hit.records);

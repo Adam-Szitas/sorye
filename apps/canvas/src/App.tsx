@@ -1,4 +1,5 @@
-import { TranslatedText } from '@sorye/platform/react';
+import { TranslatedText, UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
+import { registerPendingActionFlusher } from '@sorye/platform';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CanvasBoard,
@@ -17,6 +18,10 @@ import {
   saveBoard,
   subscribeBoardEvents,
   ApiError,
+  readCanvasQueue,
+  readCanvasConflicts,
+  discardCanvasConflict,
+  resendPendingCanvasActions,
   type CanvasBootstrap,
 } from './canvas-api';
 import './styles.css';
@@ -39,6 +44,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [busyLabel, setBusyLabel] = useState('Loading Canvas…');
   const [saving, setSaving] = useState(false);
+  const [queueState, setQueueState] = useState({ pending: 0, failed: 0, conflicts: 0, rejected: 0 });
+  const [queuedConflicts, setQueuedConflicts] = useState<Awaited<ReturnType<typeof readCanvasConflicts>>>([]);
   const [titleDraft, setTitleDraft] = useState('');
   const saveTimer = useRef<number | null>(null);
   const skipRemote = useRef(false);
@@ -60,7 +67,18 @@ export default function App() {
         if (cancelled) return;
         setBootstrap(data);
         setBoards(data.boards);
+        setQueueState(data.queue);
+        setQueuedConflicts(await readCanvasConflicts());
+        const recovered = await resendPendingCanvasActions();
+        if (!cancelled) setQueueState(recovered);
+        if (!cancelled) setQueuedConflicts(await readCanvasConflicts());
+        if (recovered.pending + recovered.failed === 0) {
+          const refreshed = await loadBootstrap();
+          if (!cancelled) { setBootstrap(refreshed); setBoards(refreshed.boards); }
+        }
       } catch (err) {
+        void readCanvasQueue().then(setQueueState).catch(() => undefined);
+        void readCanvasConflicts().then(setQueuedConflicts).catch(() => undefined);
         if (!cancelled) {
           setError(
             err instanceof Error
@@ -77,7 +95,26 @@ export default function App() {
     };
   }, []);
 
-  const openBoard = async (boardId: string) => {
+  useEffect(() => {
+    const flushBestEffort = async () => {
+      const state = await resendPendingCanvasActions();
+      setQueueState(state);
+      return state.pending + state.failed + state.conflicts + state.rejected;
+    };
+    const unregister = registerPendingActionFlusher('canvas', flushBestEffort);
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flushBestEffort(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', flushBestEffort);
+    window.addEventListener('sorye:logout-flush', flushBestEffort);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', flushBestEffort);
+      window.removeEventListener('sorye:logout-flush', flushBestEffort);
+      unregister();
+    };
+  }, []);
+
+  const openBoard = async (boardId: string, _workspaceId?: string) => {
     setError(null);
     setBusyLabel('Opening board…');
     setLoading(true);
@@ -85,6 +122,8 @@ export default function App() {
       const board = await loadBoard(boardId);
       setActiveBoard(board);
       setTitleDraft(board.title);
+      setQueueState(await readCanvasQueue());
+      setQueuedConflicts(await readCanvasConflicts());
       setPresence([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to open board');
@@ -115,23 +154,40 @@ export default function App() {
       ]);
       setActiveBoard(board);
       setTitleDraft(board.title);
+      setQueueState(await readCanvasQueue());
+      setQueuedConflicts(await readCanvasConflicts());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create failed');
+      void readCanvasQueue().then(setQueueState).catch(() => undefined);
+      void readCanvasConflicts().then(setQueuedConflicts).catch(() => undefined);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (boardId: string) => {
-    if (!window.confirm('Delete this board for everyone in the workspace?')) {
-      return;
-    }
+  const handleResend = async () => {
+    const next = await resendPendingCanvasActions();
+    setQueueState(next);
+    setQueuedConflicts(await readCanvasConflicts());
     try {
-      await deleteBoard(boardId);
-      setBoards((prev) => prev.filter((b) => b.id !== boardId));
-      if (activeBoard?.id === boardId) setActiveBoard(null);
+      const fresh = await loadBootstrap();
+      setBootstrap(fresh); setBoards(fresh.boards);
+    } catch { /* the queue state still reflects this retry */ }
+  };
+
+  const handleDelete = async (board: CanvasBoardSummary) => {
+    if (!window.confirm('Delete this board for everyone in the workspace?')) return;
+    setError(null);
+    try {
+      await deleteBoard(board.id, board.revision);
+      setBoards((prev) => prev.filter((item) => item.id !== board.id));
+      if (activeBoard?.id === board.id) setActiveBoard(null);
+      setQueueState(await readCanvasQueue());
+      setQueuedConflicts(await readCanvasConflicts());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
+      void readCanvasQueue().then(setQueueState).catch(() => undefined);
+      void readCanvasConflicts().then(setQueuedConflicts).catch(() => undefined);
     }
   };
 
@@ -198,21 +254,15 @@ export default function App() {
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        // Conflict: only reload if the user isn't mid-edit; otherwise keep local
-        // and retry after they stop so we don't wipe in-progress typing.
-        if (interactingRef.current || changeGenRef.current !== genAtStart) {
-          saveAgainRef.current = true;
-        } else {
-          const fresh = await loadBoard(board.id);
-          setActiveBoard(fresh);
-          setTitleDraft(fresh.title);
-        }
+        setError('Canvas changed elsewhere. Your attempted update remains in the local conflict queue for explicit reconciliation.');
       } else {
         setError(err instanceof Error ? err.message : 'Save failed');
       }
     } finally {
       saveInFlightRef.current = false;
       setSaving(false);
+      void readCanvasQueue().then(setQueueState).catch(() => undefined);
+      void readCanvasConflicts().then(setQueuedConflicts).catch(() => undefined);
       if (saveAgainRef.current) {
         saveAgainRef.current = false;
         if (!interactingRef.current) {
@@ -359,6 +409,22 @@ export default function App() {
     return (
       <div className="canvas-app">
         <div className="canvas-state error">{error}</div>
+        {queueState.pending + queueState.failed + queueState.conflicts + queueState.rejected > 0 ? (
+          <div className="canvas-banner" role="status">
+            {queueState.pending + queueState.failed} action(s) waiting for Rodrigo; {queueState.conflicts} conflict(s); {queueState.rejected} rejected.
+            {queueState.pending + queueState.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void handleResend().catch((e) => setError(String(e)))}>Resend</button> : null}
+          </div>
+        ) : null}
+        {queuedConflicts.map((item) => (
+          <details key={item.actionId} className="canvas-banner">
+            <summary>{item.status} board update {item.resourceId} — copy this draft to reconcile</summary>
+            <p>{item.error?.message ?? item.error?.code ?? 'Rodrigo did not accept this action.'}</p>
+            <pre>{JSON.stringify(item.payload, null, 2)}</pre>
+            <button type="button" className="btn-ghost" onClick={() => void discardCanvasConflict(item.actionId).then(async () => {
+              setQueuedConflicts(await readCanvasConflicts()); setQueueState(await readCanvasQueue());
+            })}>Discard this queued draft after reconciliation</button>
+          </details>
+        ))}
       </div>
     );
   }
@@ -373,16 +439,6 @@ export default function App() {
           </div>
         ) : null}
         <header className="canvas-header">
-          <div>
-            <h1>Canvas</h1>
-            <p>
-              Boards for{' '}
-              <strong>{bootstrap?.workspace.name ?? 'workspace'}</strong>
-              {bootstrap?.workspace.kind === 'team'
-                ? ' · shared with your team'
-                : ' · personal workspace'}
-            </p>
-          </div>
           <button
             type="button"
             className="btn-primary"
@@ -395,7 +451,51 @@ export default function App() {
 
         {error ? <div className="canvas-banner">{error}</div> : null}
 
-        {boards.length === 0 ? (
+        {queueState.pending + queueState.failed + queueState.conflicts + queueState.rejected > 0 ? (
+          <div className="canvas-banner" role="status">
+            {queueState.pending + queueState.failed} action(s) waiting for Rodrigo; {queueState.conflicts} conflict(s); {queueState.rejected} rejected.
+            {queueState.pending + queueState.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void handleResend().catch((e) => setError(String(e)))}>Resend</button> : null}
+          </div>
+        ) : null}
+        {queuedConflicts.map((item) => (
+          <details key={item.actionId} className="canvas-banner">
+            <summary>{item.status} board update {item.resourceId} — copy this draft to reconcile</summary>
+            <p>{item.error?.message ?? item.error?.code ?? 'Rodrigo did not accept this action.'}</p>
+            <pre>{JSON.stringify(item.payload, null, 2)}</pre>
+            <button type="button" className="btn-ghost" onClick={() => void discardCanvasConflict(item.actionId).then(async () => {
+              setQueuedConflicts(await readCanvasConflicts()); setQueueState(await readCanvasQueue());
+            })}>Discard this queued draft after reconciliation</button>
+          </details>
+        ))}
+
+        {bootstrap?.load ? (
+          <UserLoadSections
+            load={withActiveWorkspaceItems(bootstrap.load, bootstrap.workspace.id, boards)}
+            empty="No boards in this workspace."
+            heading="h3"
+            renderItems={(items) => (
+              <div className="board-grid">
+                {items.map((item) => (
+                  <article key={`${item.workspaceId}:${item.value.id}`} className="board-card">
+                    <button
+                      type="button"
+                      className="board-card-open"
+                      onClick={() => void openBoard(item.value.id, item.workspaceId)}
+                      disabled={loading}
+                    >
+                      <div className="board-thumb" aria-hidden />
+                      <strong>{item.value.title}</strong>
+                      <span>
+                        {item.value.itemCount} items · updated {formatWhen(item.value.updatedAt)}
+                      </span>
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+          />
+        ) : null}
+        {!bootstrap?.load && boards.length === 0 ? (
           <div className="canvas-empty">
             <h2>No boards yet</h2>
             <p>Create a board and invite teammates by switching to a team workspace.</p>
@@ -408,7 +508,7 @@ export default function App() {
               Create your first board
             </button>
           </div>
-        ) : (
+        ) : !bootstrap?.load ? (
           <div className="board-grid">
             {boards.map((board) => (
               <article key={board.id} className="board-card">
@@ -427,7 +527,7 @@ export default function App() {
                 <button
                   type="button"
                   className="board-card-delete"
-                  onClick={() => void handleDelete(board.id)}
+                  onClick={() => void handleDelete(board)}
                   disabled={loading}
                 >
                   <TranslatedText message="delete" />
@@ -435,7 +535,7 @@ export default function App() {
               </article>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     );
   }

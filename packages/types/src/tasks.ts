@@ -7,6 +7,14 @@ export interface TaskStatus {
   order: number;
 }
 
+/** Hub Drive object id. Not a path, workspace, or Rodrigo blob. */
+const TASK_DRIVE_FILE_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+export function isTaskDriveFileId(value: unknown): value is string {
+  return typeof value === 'string' && TASK_DRIVE_FILE_ID_RE.test(value);
+}
+
 export interface TaskItem {
   id: string;
   title: string;
@@ -14,6 +22,11 @@ export interface TaskItem {
   statusId: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Photo in the Drive Tasks section (`sourceAppId: "tasks"`).
+   * The bytes stay in Hub Drive. Absent when the task has no photo.
+   */
+  driveFileId?: string;
 }
 
 export interface TasksBoard {
