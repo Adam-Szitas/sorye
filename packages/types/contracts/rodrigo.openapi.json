@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rodrigo service contract",
-    "version": "2.0.0",
-    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts."
+    "version": "2.1.0",
+    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract."
   },
   "paths": {
     "/v2/resources/{app}/{resourceType}/{resourceId}": {
@@ -2271,6 +2271,1115 @@
           }
         }
       }
+    },
+    "/v2/platform/config/{namespace}": {
+      "get": {
+        "operationId": "readPlatformConfig",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:config:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch"
+          ],
+          "404": [
+            "unknown_namespace"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Current configuration snapshot. Any actor. Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shared-ai"
+              ]
+            },
+            "description": "Allowlisted namespace; anything else returns 404 unknown_namespace."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformConfigSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: unknown_namespace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "writePlatformConfig",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:config:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported",
+            "invalid_config"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "unknown_namespace"
+          ],
+          "409": [
+            "revision_conflict",
+            "idempotency_key_reused"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Compare-and-swap configuration write. sub must be a platform administrator verified by Hub, not service:* (403 platform_actor_forbidden). The config row, revision row and config.update audit row commit in one PostgreSQL transaction. A stale expectedRevision rolls back, appends a best-effort conflict audit row and returns 409 revision_conflict. Validation order: actor, namespace, body, provider. Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shared-ai"
+              ]
+            },
+            "description": "Allowlisted namespace; anything else returns 404 unknown_namespace."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformConfigCommit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported, invalid_config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: unknown_namespace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: revision_conflict, idempotency_key_reused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformConfigWrite"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/config/{namespace}/rollback": {
+      "post": {
+        "operationId": "rollbackPlatformConfig",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:config:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported",
+            "invalid_rollback"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "unknown_namespace",
+            "revision_not_found"
+          ],
+          "409": [
+            "revision_conflict",
+            "idempotency_key_reused",
+            "rollback_value_invalid"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Rollback by writing a stored earlier value as a new revision with a config.rollback audit row, atomically, under the same actor, idempotency and compare-and-swap rules as the write. The target value is revalidated against the current schema (409 rollback_value_invalid). Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shared-ai"
+              ]
+            },
+            "description": "Allowlisted namespace; anything else returns 404 unknown_namespace."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformConfigCommit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported, invalid_rollback",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: unknown_namespace, revision_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: revision_conflict, idempotency_key_reused, rollback_value_invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformConfigRollback"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/config/{namespace}/applied": {
+      "get": {
+        "operationId": "readPlatformApplied",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:config:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch"
+          ],
+          "404": [
+            "unknown_namespace"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Applied-version reports from consumers. Any actor. Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shared-ai"
+              ]
+            },
+            "description": "Allowlisted namespace; anything else returns 404 unknown_namespace."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAppliedList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: unknown_namespace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "reportPlatformApplied",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:config:report",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported",
+            "invalid_report",
+            "unknown_revision"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "unknown_namespace"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Upserts the report for (namespace, consumer, instanceId). Only service:hub and service:ocr-worker may report, each only for itself. Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shared-ai"
+              ]
+            },
+            "description": "Allowlisted namespace; anything else returns 404 unknown_namespace."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contractVersion",
+                    "recorded"
+                  ],
+                  "properties": {
+                    "contractVersion": {
+                      "const": "2"
+                    },
+                    "recorded": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported, invalid_report, unknown_revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: unknown_namespace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformAppliedReport"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/audit": {
+      "post": {
+        "operationId": "appendPlatformAudit",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:audit:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported",
+            "invalid_audit_event",
+            "reserved_action"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch",
+            "platform_actor_forbidden"
+          ],
+          "409": [
+            "idempotency_key_reused"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Appends a Hub-owned administrative audit event. sub must be a platform administrator, not service:*. Not atomic with Hub-owned state. The audit trail is append-only (no update or delete operation) and retained indefinitely; it never contains secrets. Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAuditAppendResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported, invalid_audit_event, reserved_action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: idempotency_key_reused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformAuditAppend"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/audit/{limit}/{cursor}": {
+      "get": {
+        "operationId": "listPlatformAudit",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:audit:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "body_not_supported",
+            "invalid_limit",
+            "invalid_cursor"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_grant_route_mismatch",
+            "public_grant_route_mismatch"
+          ],
+          "413": [
+            "body_limit_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "platform_provider_unavailable",
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Newest-first audit page, keyset ordered by (occurredAt DESC, auditId DESC). Any actor. Requires an assertion with workspaceId \"rodrigo-platform\" (PLATFORM_WORKSPACE_ID); that reserved workspace is rejected on every non-platform route and every other workspace (including the reserved public-site grant) is rejected here, both with 403 platform_grant_route_mismatch.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "first, or a nextCursor value."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformAuditPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, body_not_supported, invalid_limit, invalid_cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_grant_route_mismatch, public_grant_route_mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: body_limit_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: platform_provider_unavailable, dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2297,6 +3406,37 @@
         "properties": {
           "contractVersion": {
             "const": "1"
+          },
+          "platform": {
+            "type": "object",
+            "required": [
+              "version",
+              "provider",
+              "namespaces",
+              "maxAuditPageSize"
+            ],
+            "properties": {
+              "version": {
+                "const": "1"
+              },
+              "provider": {
+                "enum": [
+                  "not_configured",
+                  "ready"
+                ]
+              },
+              "namespaces": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "shared-ai"
+                  ]
+                }
+              },
+              "maxAuditPageSize": {
+                "const": 100
+              }
+            }
           },
           "contractVersions": {
             "type": "array",
@@ -5354,6 +6494,571 @@
             ],
             "maxLength": 320,
             "description": "Hex-encoded final resourceId when another page exists."
+          }
+        }
+      },
+      "SharedAiConfigV1": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "baseUrl",
+          "model",
+          "contextLength",
+          "maxOutputTokens",
+          "minFreeVramMiB",
+          "gpuIndex",
+          "paused"
+        ],
+        "description": "shared-ai schemaVersion 1. Namespace values are non-secret by contract: no password, token, key or connection string may ever be added. Rodrigo never fetches baseUrl; consumers apply their own host allowlist.",
+        "properties": {
+          "provider": {
+            "enum": [
+              "ollama",
+              "vllm"
+            ]
+          },
+          "baseUrl": {
+            "type": "string",
+            "maxLength": 240,
+            "description": "Empty means unconfigured. Otherwise an absolute http or https URL with a host and no username, password, query, fragment, whitespace or control characters."
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^(?!.*\\.\\.)[A-Za-z0-9_./:-]*$",
+            "description": "Empty means unconfigured. Must not contain \"..\"."
+          },
+          "contextLength": {
+            "type": "integer",
+            "minimum": 2048,
+            "maximum": 8192
+          },
+          "maxOutputTokens": {
+            "type": "integer",
+            "minimum": 128,
+            "maximum": 1800
+          },
+          "minFreeVramMiB": {
+            "type": "integer",
+            "minimum": 512,
+            "maximum": 8192
+          },
+          "gpuIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 15
+          },
+          "paused": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlatformConfigSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "namespace",
+          "schemaVersion",
+          "revision",
+          "value",
+          "updatedAt",
+          "updatedBy"
+        ],
+        "description": "Never-written namespaces return revision 0 and null value/updatedAt/updatedBy.",
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "namespace": {
+            "enum": [
+              "shared-ai"
+            ]
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740990
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SharedAiConfigV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC with microseconds, e.g. 2026-11-10T18:30:00.123456Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          }
+        }
+      },
+      "PlatformConfigWrite": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "changeId",
+          "expectedRevision",
+          "schemaVersion",
+          "value",
+          "correlationId"
+        ],
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Idempotency key. Same changeId and identical request returns status duplicate with the original revision and auditId; a different request returns 409 idempotency_key_reused."
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740990,
+            "description": "0 creates only; otherwise must equal the current revision (compare-and-swap). Never last-writer-wins."
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "value": {
+            "$ref": "#/components/schemas/SharedAiConfigV1"
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 240,
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+            "description": "Optional administrator note; at most 240 characters, no control characters. Never put secrets here."
+          }
+        }
+      },
+      "PlatformConfigRollback": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "changeId",
+          "expectedRevision",
+          "targetRevision",
+          "correlationId"
+        ],
+        "description": "Writes the stored value of targetRevision as a NEW revision. History is never deleted or rewritten. targetRevision must be lower than expectedRevision (else 400 invalid_rollback).",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740990
+          },
+          "targetRevision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740990
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 240,
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$",
+            "description": "Optional administrator note; at most 240 characters, no control characters. Never put secrets here."
+          }
+        }
+      },
+      "PlatformConfigCommit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "status",
+          "namespace",
+          "revision",
+          "auditId",
+          "changeId"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "status": {
+            "enum": [
+              "committed",
+              "duplicate"
+            ]
+          },
+          "namespace": {
+            "enum": [
+              "shared-ai"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740990
+          },
+          "auditId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "changeId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PlatformAppliedReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "consumer",
+          "instanceId",
+          "appliedRevision",
+          "status"
+        ],
+        "description": "Assertion sub must be exactly service:hub or service:ocr-worker and consumer must equal sub without the service: prefix (else 403 platform_actor_forbidden).",
+        "properties": {
+          "consumer": {
+            "enum": [
+              "hub",
+              "ocr-worker"
+            ]
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,80}$"
+          },
+          "appliedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740990,
+            "description": "Greater than the current revision returns 400 unknown_revision."
+          },
+          "status": {
+            "enum": [
+              "applied",
+              "failed"
+            ]
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z0-9_]{1,64}$"
+          }
+        }
+      },
+      "PlatformAppliedList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "namespace",
+          "currentRevision",
+          "consumers"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "namespace": {
+            "enum": [
+              "shared-ai"
+            ]
+          },
+          "currentRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740990
+          },
+          "consumers": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Reports from the last 24 hours, newest first. Rows older than seven days are pruned when any consumer reports.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "consumer",
+                "instanceId",
+                "appliedRevision",
+                "status",
+                "code",
+                "reportedAt"
+              ],
+              "properties": {
+                "consumer": {
+                  "enum": [
+                    "hub",
+                    "ocr-worker"
+                  ]
+                },
+                "instanceId": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "appliedRevision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740990
+                },
+                "status": {
+                  "enum": [
+                    "applied",
+                    "failed"
+                  ]
+                },
+                "code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 64
+                },
+                "reportedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "UTC with microseconds, e.g. 2026-11-10T18:30:00.123456Z"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PlatformAuditAppend": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "action",
+          "targetType",
+          "targetId",
+          "outcome",
+          "correlationId",
+          "details"
+        ],
+        "description": "Hub-owned administrative actions whose state is not in Rodrigo (for example plan assignment and notices kept in Hub). NOT atomic with that Hub state: Hub must append pending/succeeded/failed rows around its own commit and reconcile on unknown outcomes.",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Becomes auditId. Replays with an identical request return duplicate; a different request returns 409 idempotency_key_reused."
+          },
+          "action": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.]{2,63}$",
+            "description": "Actions starting with config. are reserved for Rodrigo (400 reserved_action)."
+          },
+          "targetType": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_.]{1,39}$"
+          },
+          "targetId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          },
+          "outcome": {
+            "enum": [
+              "pending",
+              "succeeded",
+              "failed",
+              "denied"
+            ]
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "details": {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,39}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 240,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "Flat, non-secret values only: strings (at most 240 characters, no control characters), numbers, booleans or null. No nested objects or arrays."
+          }
+        }
+      },
+      "PlatformAuditAppendResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "auditId",
+          "status"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "auditId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "enum": [
+              "committed",
+              "duplicate"
+            ]
+          }
+        }
+      },
+      "PlatformAuditEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "auditId",
+          "occurredAt",
+          "actorId",
+          "action",
+          "targetType",
+          "targetId",
+          "namespace",
+          "revision",
+          "outcome",
+          "correlationId",
+          "changeId",
+          "details"
+        ],
+        "properties": {
+          "auditId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC with microseconds, e.g. 2026-11-10T18:30:00.123456Z"
+          },
+          "actorId": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Verified assertion sub."
+          },
+          "action": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "outcome": {
+            "enum": [
+              "committed",
+              "conflict",
+              "pending",
+              "succeeded",
+              "failed",
+              "denied"
+            ]
+          },
+          "correlationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "changeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "details": {
+            "type": "object",
+            "description": "config.update/config.rollback: {before, after, reason[, rolledBackTo]}; conflicts: {expectedRevision, reason}; otherwise the Hub-supplied details."
+          }
+        }
+      },
+      "PlatformAuditPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "events",
+          "nextCursor"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "events": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/PlatformAuditEvent"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256,
+            "description": "Hex-encoded UTF-8 \"<occurredAt>|<auditId>\" of the last event when another page exists."
           }
         }
       }

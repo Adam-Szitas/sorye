@@ -3,6 +3,10 @@ name: Publish Sorye frontend image
 on:
   workflow_dispatch:
 
+concurrency:
+  group: sorye-publish-${{ forgejo.sha }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: docker
@@ -37,6 +41,7 @@ jobs:
           NEXT_PUBLIC_STUDIO_REMOTE: ${{ vars.NEXT_PUBLIC_STUDIO_REMOTE }}
         run: |
           set -eu
+          sh deploy/test-publish-image.sh
           missing=0
           require_setting() {
             if [ -z "$2" ]; then
@@ -92,11 +97,9 @@ jobs:
             echo "Registry login failed. Check REGISTRY_USER, REGISTRY_TOKEN, package write access, and registry connectivity." >&2
             exit 1
           fi
-          if docker manifest inspect "$image:$tag" >/dev/null 2>&1; then
-            echo "Image tag already exists: $image:$tag" >&2
-            exit 1
-          fi
-          docker build --file apps/hub/Dockerfile --tag "$image:$tag" \
+          trap 'docker logout "$registry" >/dev/null 2>&1 || true' EXIT
+          . ./deploy/publish-image.sh
+          publish_image "$image:$tag" --file apps/hub/Dockerfile \
             --build-arg "NEXT_PUBLIC_DASHBOARD_REMOTE=$NEXT_PUBLIC_DASHBOARD_REMOTE" \
             --build-arg "NEXT_PUBLIC_CALENDAR_REMOTE=$NEXT_PUBLIC_CALENDAR_REMOTE" \
             --build-arg "NEXT_PUBLIC_NOTES_REMOTE=$NEXT_PUBLIC_NOTES_REMOTE" \
@@ -107,21 +110,13 @@ jobs:
             --build-arg "NEXT_PUBLIC_DEVKIT_REMOTE=$NEXT_PUBLIC_DEVKIT_REMOTE" \
             --build-arg "NEXT_PUBLIC_MESSENGER_REMOTE=$NEXT_PUBLIC_MESSENGER_REMOTE" \
             --build-arg "NEXT_PUBLIC_OCR_REMOTE=$NEXT_PUBLIC_OCR_REMOTE" \
-            --build-arg "NEXT_PUBLIC_STUDIO_REMOTE=$NEXT_PUBLIC_STUDIO_REMOTE" \
-            .
-          docker push "$image:$tag"
-          docker image inspect "$image:$tag" --format '{{json .RepoDigests}}'
-          for app in dashboard calendar notes tasks relay protocolio canvas devkit messenger ocr studio catalog contact storefront site mail files susm espm reports operator; do
+            --build-arg "NEXT_PUBLIC_STUDIO_REMOTE=$NEXT_PUBLIC_STUDIO_REMOTE"
+          for app in dashboard calendar notes tasks relay protocolio canvas devkit messenger ocr studio catalog contact storefront site mail files susm espm reports; do
             target=gateway
             case "$app" in dashboard|calendar|notes|tasks|relay|protocolio|canvas|devkit|messenger|ocr|studio) target=remote ;; esac
             app_image="$image-$app:$tag"
-            if docker manifest inspect "$app_image" >/dev/null 2>&1; then
-              echo "Refusing to overwrite $app_image" >&2
-              exit 1
-            fi
-            docker build --file deploy/app.Dockerfile --target "$target" --build-arg "APP=$app" --tag "$app_image" .
-            docker push "$app_image"
-            docker image inspect "$app_image" --format '{{json .RepoDigests}}'
+            publish_image "$app_image" --file deploy/app.Dockerfile --target "$target" --build-arg "APP=$app"
           done
-          docker logout "$registry"
+          publish_image "$image-admin:$tag" --file deploy/app.Dockerfile --target admin-gateway
+          publish_image "$image-worker:$tag" --file deploy/worker.Dockerfile
           echo "Published $image:$tag"

@@ -1,4 +1,4 @@
-﻿import { APP_LANDINGS } from './app-landings';
+import { APP_LANDINGS } from './app-landings';
 export const landingLocales = ['en', 'de', 'sk', 'hu', 'es'] as const;
 export type LandingLocale = typeof landingLocales[number];
 export const landingLabels = {
@@ -30,7 +30,6 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Holen Sie Tabellen und Informationen aus PDF-Dokumenten.|PDF hochladen.|Tabellen prüfen und unklare Ergebnisse kontrollieren.|Tabelle herunterladen oder an Protocolio senden. Optionale KI-Analyse benötigt einen eingerichteten Dienst.',
  'Betrachten Sie ein 3D-Modell aus verschiedenen Blickwinkeln.|Unterstütztes Modell hochladen.|Drehen und heranzoomen.|Bei überschrittenen Grenzen ein kleineres Modell verwenden. Ein kompatibler Browser ist nötig.',
  'Helfen Sie Administratoren, Aktivitäten zu verstehen.|Als Administrator anmelden.|Zeitraum auswählen.|Aktivitätszahlen und Zustellprobleme prüfen. Nachrichten- und Dateiinhalte werden nicht angezeigt.',
- 'Lassen Sie den Plattformbetreiber Zustand, Tarife und kurze Hinweise prüfen.|Als Plattformbetreiber anmelden. Andere Personen sehen diese App nicht.|Zustand, Aktivität und Nutzungszahlen prüfen. Dokumenttext wird nicht angezeigt.|Einen Tarif setzen oder einen Hinweis veröffentlichen. Personen sehen nur den Text. Zahlung wird hier nicht eingezogen.'
  ],
  sk: [
  'Nájdite správny nástroj na svoju prácu.|Prezrite si aplikácie.|Prečítajte si, čo každá robí.|Otvorte aktivovanú aplikáciu.',
@@ -53,7 +52,6 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Získajte tabuľky a užitočné údaje z PDF.|Nahrajte PDF.|Skontrolujte tabuľky a nejasné výsledky.|Stiahnite tabuľku alebo ju pošlite do Protocolio. Voliteľná analýza AI vyžaduje nastavenú službu.',
  'Prezrite si 3D model z rôznych uhlov.|Nahrajte podporovaný model.|Otáčajte a približujte ho.|Pri prekročení limitov použite menší model. Vyžaduje sa kompatibilný prehliadač.',
  'Pomôžte správcom porozumieť aktivite pracovného priestoru.|Prihláste sa ako správca.|Vyberte obdobie.|Skontrolujte počty aktivít a problémy s doručením. Obsah správ a súborov sa nezobrazuje.',
- 'Nechajte prevádzkovateľa platformy skontrolovať stav, plány a krátke oznamy.|Prihláste sa ako prevádzkovateľ platformy. Ostatní túto aplikáciu nevidia.|Skontrolujte stav, aktivitu a počty použitia. Text dokumentov sa nezobrazuje.|Nastavte plán alebo zverejnite oznam. Ľudia vidia len text. Platba sa tu neprijíma.'
  ],
  hu: [
  'Találja meg a munkájához megfelelő eszközt.|Böngésszen az alkalmazások között.|Olvassa el, mire valók.|Nyisson meg egy engedélyezett alkalmazást.',
@@ -76,7 +74,6 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Nyerjen ki táblázatokat és hasznos adatokat PDF-ekből.|Töltsön fel PDF-et.|Ellenőrizze a táblázatokat és a bizonytalan eredményeket.|Töltse le a táblázatot, vagy küldje a Protocolióba. Az opcionális AI-elemzéshez beállított szolgáltatás szükséges.',
  'Nézzen meg egy 3D-modellt különböző szögekből.|Töltsön fel támogatott modellt.|Forgassa és nagyítsa.|A korlátok túllépésekor használjon kisebb modellt. Kompatibilis böngésző szükséges.',
  'Segítse a rendszergazdákat a tevékenységek megértésében.|Jelentkezzen be rendszergazdaként.|Válasszon időszakot.|Tekintse át az aktivitási számokat és kézbesítési hibákat. Üzenet- és fájltartalom nem jelenik meg.',
- 'A platform üzemeltetője ellenőrizheti az állapotot, a csomagokat és a rövid közleményeket.|Jelentkezzen be platformüzemeltetőként. Mások nem látják ezt az alkalmazást.|Nézze meg az állapotot, a tevékenységet és a használati számokat. A dokumentum szövege nem jelenik meg.|Állítson be csomagot, vagy tegyen közzé közleményt. Az emberek csak a szöveget látják. Itt nem történik fizetés.'
  ],
  es: [
  'Encuentra la herramienta adecuada para tu trabajo.|Explora las aplicaciones.|Lee para qué sirve cada una.|Abre una aplicación activada.',
@@ -99,9 +96,8 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Extrae tablas e información útil de documentos PDF.|Sube un PDF.|Revisa las tablas y comprueba los resultados dudosos.|Descarga la tabla o envíala a Protocolio. El análisis opcional con IA requiere un servicio configurado.',
  'Abre un modelo 3D y míralo desde distintos ángulos.|Sube un modelo compatible.|Gíralo y amplíalo para examinarlo.|Usa un modelo más pequeño si supera los límites. Se necesita un navegador compatible.',
  'Ayuda a los administradores a entender la actividad.|Inicia sesión como administrador.|Elige un intervalo de fechas.|Revisa los recuentos y problemas de entrega. No se muestran contenidos de mensajes ni archivos.',
- 'Permite al operador de la plataforma revisar el estado, los planes y los avisos breves.|Inicia sesión como operador de la plataforma. Las demás personas no ven esta aplicación.|Revisa el estado, la actividad y los recuentos de uso. No se muestra el texto de los documentos.|Asigna un plan o publica un aviso. Las personas solo ven el mensaje. Aquí no se cobra.'
  ]
 };
-const ids = ['catalog','contact','dashboard','notes','calendar','relay','storefront','site','devtools','protocolio','canvas','tasks','messenger','mail','files','susm','espm','ocr','studio','reports','operator'];
+const ids = ['catalog','contact','dashboard','notes','calendar','relay','storefront','site','devtools','protocolio','canvas','tasks','messenger','mail','files','susm','espm','ocr','studio','reports'];
 export const localizedLandings = Object.fromEntries(landingLocales.map(locale => [locale, locale === 'en' ? APP_LANDINGS : Object.fromEntries(ids.map((id,index) => { const [summary,...steps] = rows[locale][index].split('|'); return [id,{summary,steps}]; }))])) as Record<LandingLocale, typeof APP_LANDINGS>;
 export function landingUrl(slug: string, locale: LandingLocale) { return `https://sorye.app/learn/${slug}/${locale}`; }

@@ -63,7 +63,7 @@ Every installable app is an `AppCatalogEntry`:
 - **`adminOnly`** — launcher/dock/picker/Catalog hide these from non-admins (`ADMIN_EMAILS` / `HubUser.isAdmin`). Reports is `alwaysAvailable` + `adminOnly`.
 - **`presentationOnly`** — public marketing page (Contact); hidden from customer OS chrome and not a plan slot
 
-Subscription plans cap how many apps and connections a workspace may use (`packages/types/src/subscription.ts`). Each sold app carries a yearly running-cost minimum (`packages/types/src/running-cost.ts`). Those minima sum to the yearly amount that covers electricity for one stack. Catalog, Contact, Reports, and Operator are included in that total and are not priced on their own.
+Subscription plans cap how many apps and connections a workspace may use (`packages/types/src/subscription.ts`). Each sold app carries a yearly running-cost minimum (`packages/types/src/running-cost.ts`). Those minima sum to the yearly amount that covers electricity for one stack. Catalog, Contact, and Reports are included in that total and are not priced on their own. Retired ids (`RETIRED_APP_IDS`, currently `operator`) are ignored in stored selections and never count toward the plan.
 
 ## Hub shell
 
@@ -121,8 +121,9 @@ Production remote URLs come from `NEXT_PUBLIC_*_REMOTE` env vars (`apps/hub/lib/
 | Hub session | `ensureHubUser()` → user + active workspace + selected apps |
 | Embed | HMAC-signed cookie from `/api/embed/bootstrap` + `/api/embed/enter` |
 | Admin | `ADMIN_EMAILS` on user record; `x-admin-secret` for subscription API |
+| Administration console | Admin host only (`admin.sorye.app`); `adminAccess()` = admin host + Auth.js session + `isPlatformAdmin`. Host-only cookies keep admin and customer sessions apart. |
 
-**Middleware** protects all routes except `/login`, `/api/auth/*`, `/embed/*`, `/api/embed/*`, `/api/admin/*`.
+**Middleware** first classifies the effective host (`lib/admin/hosts.ts`): unknown hosts get 421 in production; the admin host serves only the console allowlist (`/admin`, `/api/admin`, `/api/operator`, Auth.js, `/login`, `/_next`, backend discovery) and redirects `/` to `/admin`; customer and app hosts redirect `/admin*` and `/apps/operator` to the admin origin and answer 404 for admin APIs. API writes need a same-origin `Origin`/`Sec-Fetch-Site`. Then, on customer hosts, it protects all routes except `/login`, `/api/auth/*`, `/embed/*`, `/api/embed/*`, `/api/admin/subscription`.
 
 Workspace scoping: every authenticated API uses `session.workspace.id` from the server — never trust client-supplied workspace IDs.
 
@@ -238,7 +239,8 @@ Chrome-less MF mount; embed session cookie scoped to widget workspace.
 | `/api/workspace` | Hub session; PATCH selected apps |
 | `/api/events` | Publish + toggle App events |
 | `/api/reports` | Admin-only aggregate event charts (counts, no payloads) |
-| `/api/operator` | Platform-operator dashboard (health, counts, plans, notices). Not for members. |
+| `/api/operator` | Console data: health, counts, plans, notices. Admin host and platform admin only. |
+| `/api/admin/console/*` | Console: shared configuration (revisioned in Rodrigo), audit history, platform status, workspace access review |
 | `/api/notices` | Signed-in notice text for the current plan and date window |
 | `/api/relay` | Relay config + test delivery |
 | `/api/notifications` | Feed, settings, mark read |
@@ -377,7 +379,8 @@ Private app state should be signals (`createAppStore` / `signal` / `computed`), 
 | Layer | Live data |
 |-------|-----------|
 | Postgres (`STORE_DRIVER=postgres`) | Users, workspaces, Messenger, Canvas, Tasks / Notes / Calendar (`workspace_app_docs`), OCR Qwen readings (`ocr_analyses`) |
-| Hub `.data` on disk | Relay, events, notifications, handoffs, Mail, Storefront, Site, reports, operator aggregates/notices/schedules, Drive metadata and bytes (`.data/files/{workspaceId}/{uuid}`) |
+| Hub `.data` on disk | Relay, events, notifications, handoffs, Mail, Storefront, Site, reports, console aggregates/notices/schedules, Drive metadata and bytes (`.data/files/{workspaceId}/{uuid}`), last applied platform configuration cache (`.data/platform-config/`) |
+| Rodrigo PostgreSQL | Platform configuration revisions, applied-revision reports and the append-only administration audit trail |
 | Browser | Temporary UI only |
 
 Production refuses `STORE_DRIVER=json` and `AUTH_DEV_BYPASS`. Local JSON mode is for dev only.
@@ -444,6 +447,14 @@ The deployment files in `deploy/` provide one image and Dockyard registration pe
 
 Hub owns sessions, workspace authorization and records. Gateways have no persistent application data. Hub `.data` is mounted on a named volume; back it up before replacement. App landing descriptions were reviewed: capabilities and limitations remain accurate; deployment changes do not add product features.
 
+## Administration console and platform configuration
+
+The console is Hub routes under `/admin`, served only on the admin host behind the `sorye-admin` gateway. It reuses the former Operator panels and APIs and adds the settings inventory, shared AI configuration, integration and delivery status, and history. Shared configuration has one writer (Rodrigo, compare-and-swap per namespace). Hub and the OCR worker pull it every 15 s, apply it, keep the last good revision on disk for restarts during a Rodrigo outage, and report the revision they applied; the console shows each consumer as applied, pending, failed or unknown. See the [runbook](admin/ADMIN-CONSOLE-RUNBOOK.md) and [settings matrix](admin/SETTINGS-MATRIX.md).
+
 ## Explicit document cutover
 
 Tasks and Calendar use the workspace/kind owner in server-only `RODRIGO_DOCUMENT_OWNERS`. Unmapped entries retain Hub or the workspace database. Frozen entries allow source reads and reject writes. Rodrigo entries forward signed snapshots and conditional writes with a verified revision offset; failures never fall back or dual-write. Notes stays in Hub pending a compatible size contract. Browser routes and private UI state are unchanged; all three document routes enforce membership and enabled app access. See [the migration runbook](RODRIGO-MIGRATION.md). Storage tables above describe unmigrated workspaces.
+
+### Deployed OCR worker
+
+The separately registered OCR worker image consumes Hub's PostgreSQL job queue and shares Hub's file storage on the same Docker host. It owns no browser session or public API. Its health requires a fresh successful database heartbeat from that worker process; Hub rejects new OCR submissions when no worker heartbeat is live. Gateways allow 65 MiB requests while Hub bounds PDFs to 64 MiB plus multipart overhead. See [worker deployment](../deploy/README.md#ocr-worker-deployment) for volumes, credentials and recovery.

@@ -25,7 +25,8 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 | Drive | — | Hub-native | [Drive](#drive) |
 | Site | — | Hub-native, public section builder | [Site](#site) |
 | Reports | — | Hub-native, admins only | [Reports](#reports) |
-| Operator | — | Hub-native, platform operator only | [Operator](#operator) |
+
+Not an app: the [administration console](#administration-console) at `admin.sorye.app` (Hub `/admin` routes). It replaced the retired Operator app.
 
 ## Durable data cutover status
 
@@ -56,7 +57,7 @@ Each row keeps its workspace id, name, and kind. The UI labels are **Personal** 
 | Notes | Notes. The editor still saves the active workspace document. |
 | Tasks | Tasks from other workspaces are listed; the board remains the active workspace. |
 | Drive | Files. The active workspace stays in the file table. |
-| Notifications | Personal notices and team notices. Operator broadcasts stay on their own banner. |
+| Notifications | Personal notices and team notices. Platform notices from the administration console stay on their own banner. |
 | Relay | Messages. Config writes stay on the active workspace. |
 | Canvas | Boards. Opening a board switches first; create and delete stay on the active workspace. |
 | OCR | Library and search hits. No extra OCR job is started to build the list. |
@@ -68,8 +69,7 @@ Each row keeps its workspace id, name, and kind. The UI labels are **Personal** 
 | Studio | Drive files whose `sourceAppId` is `studio`. |
 | Protocolio | Browser drafts keyed by workspace id (`sorye:protocolio:draft:v1:<workspaceId>`). The old unscoped key is copied into the active workspace once. |
 | Contact, Catalog, SUSM, ESPM | No member data. They do not render the two sections. |
-| Operator | Platform-admin dashboard. It is not a member data app. |
-| Reports | Active-workspace event charts. It has no member-activity list, so it is not split, and operator series are not added to it. |
+| Reports | Active-workspace event charts. It has no member-activity list, so it is not split, and platform series are not added to it. |
 
 ## Communication principles
 
@@ -116,7 +116,7 @@ Hub        →  record notification  →  Badges + toasts + bell
 | `components/hub-shell.tsx` | Main UI orchestration |
 | `components/app-catalog.tsx` | Hub-native Catalog |
 | `components/app-reports.tsx` | Hub-native Reports (admins) |
-| `components/app-operator.tsx` | Hub-native Operator (platform operator) |
+| `app/admin/**`, `components/admin/**`, `lib/admin/**` | Administration console (admin host only) |
 | `components/app-contact.tsx` | Public Contact page (try Protocolio / Canvas) |
 | `components/app-storefront.tsx` | Hub-native Storefront (enquiry cart) |
 | `components/app-mail.tsx` | Hub-native Mail mailbox + compose host |
@@ -132,7 +132,7 @@ Hub        →  record notification  →  Badges + toasts + bell
 | `lib/notifications.ts` | Notification store + unread counts |
 | `lib/handoffs.ts` | Cross-app payload queue |
 | `lib/security.ts` | SSRF, validation helpers |
-| `middleware.ts` | Auth gate |
+| `middleware.ts` | Host classification (customer, admin, app, unknown), admin allowlist and redirects, write-origin check, auth gate |
 
 ## APIs owned
 
@@ -152,7 +152,7 @@ Hub is the **hub** (literal): it receives events, stores handoffs, posts to Mess
 
 ## Purpose
 
-Browse every entry in `APP_CATALOG` by category. Each sold app shows its yearly share of one stack's electricity. The shares sum to the yearly subscription that covers the shared host and the OCR GPU allowance. Catalog, Reports, and Operator show as included. Open installed apps or jump to the App Library to enable more.
+Browse every entry in `APP_CATALOG` by category. Each sold app shows its yearly share of one stack's electricity. The shares sum to the yearly subscription that covers the shared host and the OCR GPU allowance. Catalog and Reports show as included. Open installed apps or jump to the App Library to enable more.
 
 ## Key files
 
@@ -863,36 +863,38 @@ Workspace-scoped operational graphs for platform admins (`ADMIN_EMAILS` / `HubUs
 
 ---
 
-# Operator
+# Administration console
 
-**Path:** Hub-native (`apps/hub/components/app-operator.tsx`) — not a Vite remote  
-**Catalog id:** `operator`  
-**Always on for the platform operator:** `alwaysAvailable: true` + `adminOnly: true` — no plan slot; hidden from member launcher, dock, picker, and Catalog tiles.
+**Path:** Hub routes `apps/hub/app/admin/**` on the admin host only (`admin.sorye.app`; locally `admin.localhost:3000`) — not a catalog app, not a Vite remote  
+**Replaces:** the Operator app (catalog id `operator`, retired; listed in `RETIRED_APP_IDS` so stored selections are ignored)  
+**Who:** platform administrators (`ADMIN_EMAILS`; empty in production means nobody)
 
 ## Purpose
 
-Platform-operator dashboard for `isPlatformAdmin` (`ADMIN_EMAILS` / `HubUser.isAdmin` when that list is empty). It is separate from Reports, which stays a workspace event chart, and from Dashboard, which workspace members can open. Operator shows health, activity, usage counts, app load, grouped errors, workspace plans, and notices. It does not show document bodies, prompts, OCR rows, or message contents, and it does not charge a card.
+One place for platform administration, separate from the customer Hub. Sections: Overview, Workspaces and access, Applications (settings inventory for every catalog app), AI and workers, Integrations and storage, Releases and infrastructure, Configuration history. It shows counts, names and configured flags. It does not show document bodies, prompts, OCR rows, message contents or secret values, and it does not charge a card. The full inventory is [docs/admin/SETTINGS-MATRIX.md](../admin/SETTINGS-MATRIX.md); operations are in the [runbook](../admin/ADMIN-CONSOLE-RUNBOOK.md).
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
-| `packages/types/src/apps.ts` | Catalog entry (`adminOnly`, `alwaysAvailable`) |
-| `packages/types/src/operator.ts` | Snapshot contract |
-| `apps/hub/components/app-operator.tsx` | Operator UI inside the Hub shell |
-| `apps/hub/components/operator-notice-banner.tsx` | Message text only, for signed-in users |
-| `apps/hub/app/api/operator/route.ts` | `GET /api/operator` |
-| `apps/hub/app/api/operator/plan/route.ts` | `POST /api/operator/plan` |
-| `apps/hub/app/api/operator/notices/route.ts` | Operator notice composer |
-| `apps/hub/app/api/notices/route.ts` | Member message text and dismiss |
-| `apps/hub/lib/operator/` | Access, bounded metrics, plans, notices, cached health |
-| `apps/hub/lib/platform-admin.ts` | Admin gate |
+| `apps/hub/lib/admin/hosts.ts` | Host classification, admin allowlist, write-origin rule (Edge-safe) |
+| `apps/hub/lib/admin/access.ts` | `adminAccess()`: admin host, real session, platform admin; write rate limit, bounded JSON |
+| `apps/hub/lib/admin/audit.ts` | Intent-then-outcome audit for Hub-owned actions |
+| `apps/hub/lib/admin/shared-ai.ts` | Shared AI configuration read, write, rollback and propagation view |
+| `apps/hub/lib/admin/settings-inventory.ts` | Typed settings inventory (source of the matrix) |
+| `apps/hub/lib/platform-config/watcher.ts` | Poll, apply, cache and report in Hub and the OCR worker |
+| `apps/hub/lib/rodrigo/platform-client.ts` | Signed Rodrigo `/v2/platform/**` client |
+| `apps/hub/components/admin/operator-panels.tsx` | Health, activity, usage, load, errors, plans, notices (former Operator UI) |
+| `apps/hub/components/operator-notice-banner.tsx` | Notice text only, for signed-in users |
+| `apps/hub/lib/operator/` | Bounded metrics, plans, notices, cached health |
+| `packages/types/src/platform-config.ts` | Configuration and audit contract types |
 
 ## Communications
 
-- `GET /api/operator` — platform admin only; pre-aggregated counts, health, plans, and notice records
-- `POST /api/operator/plan` — platform admin only; workspace id is checked in the workspace store after `isPlatformAdmin`
-- `GET/POST /api/operator/notices` — platform admin composer
+- `GET /api/operator`, `POST /api/operator/plan`, `GET/POST /api/operator/notices` — admin host and platform admin only. Plan and notice changes are audited in Rodrigo first; without the audit log they are refused (503)
+- `GET/PUT /api/admin/console/config/shared-ai`, `POST …/rollback` — revisioned shared AI configuration in Rodrigo (expected revision, change ID, conflict 409)
+- `GET /api/admin/console/audit`, `/platform`, `/workspaces/{id}` — history, integration and delivery status, one workspace's access review
+- `GET /api/admin/llm`, `POST /api/admin/llm/action` (`stop` only, while paused) — this Hub process's engine telemetry and stop
 - `GET/POST /api/notices` — signed-in user; `{ id, message }` when the audience and date window match; dismiss is per user
 - Metrics are queued and dropped on overflow. User routes do not wait for them and do not run health probes
 

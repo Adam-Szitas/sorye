@@ -22,7 +22,7 @@ flowchart TD
     Shell --> Catalog[App launcher and catalog]
     Catalog --> Choose{App kind}
 
-    Choose -->|Hub-native| Native[Catalog, Reports, Operator, Storefront, Site, Mail, Drive]
+    Choose -->|Hub-native| Native[Catalog, Reports, Storefront, Site, Mail, Drive]
     Choose -->|Module Federation remote| Remote[Dashboard, Calendar, Notes, Tasks, Relay, Protocolio, Canvas, DevKit, Messenger, OCR, Studio]
     Choose -->|External app| Iframe[SUSM / ESPM iframe]
 
@@ -44,7 +44,7 @@ flowchart TD
     KeepMounted --> Reopen
 ```
 
-Catalog, the launcher, and the App Library show each sold app's yearly running-cost minimum from `packages/types/src/running-cost.ts`. Those minima are shares of one stack. Added together they are the yearly amount that covers the shared host and the OCR GPU allowance. Catalog, Contact, Reports, and Operator stay included in that total.
+Catalog, the launcher, and the App Library show each sold app's yearly running-cost minimum from `packages/types/src/running-cost.ts`. Those minima are shares of one stack. Added together they are the yearly amount that covers the shared host and the OCR GPU allowance. Catalog, Contact, and Reports stay included in that total.
 
 `packages/platform/src/refresh.ts` owns bounded, non-overlapping background reads and coalesces event bursts. Full-page/standalone kernels use `sync.ts`: workspace and notifications refresh independently. The shell uses `use-hub-session.ts` for session revalidation and `use-notifications.tsx` for the same visible-only notification policy. Focus/visibility/reconnect refresh current data, and unmount aborts outstanding reads and removes timers/channels. Notification events do not refetch the standalone workspace. In Postgres mode, OCR submissions enter a durable Hub job queue; the OCR worker (`pnpm --filter @sorye/hub worker:ocr`, also started by local `pnpm dev` when `STORE_DRIVER=postgres`) extracts/analyzes the PDF and the mounted OCR app polls the authorized job endpoint for progress. Leaving OCR does not cancel that job. When the worker marks it completed or failed, Hub writes a notification for the submitting user in that workspace, and the Hub shell shows it whichever app is open. Opening the notification uses the same open-app path as the launcher and passes the analysis id. Opening OCR again asks Hub for the latest job and shows the finished reading or the existing error. The local JSON development path retains direct analyze/continue requests. The shell top bar Hub button returns to the app launcher; an open app stays mounted, the same path as dock Home and the workspace App grid control.
 
@@ -150,7 +150,7 @@ flowchart LR
 
 The job stays on Hub. OCR does not need to stay mounted, and unmounting does not cancel it. The shell notification center and toasts are the existing Hub notification UI. A different workspace does not receive the notice.
 
-## Dashboard package map and LLM controls
+## Dashboard package map and GPU preference
 
 ```mermaid
 flowchart TD
@@ -161,18 +161,43 @@ flowchart TD
     Nodes --> HubRoutes[Hub events, files, and handoffs]
 
     Admin[Platform administrator] --> LlmTab[LLM & GPU Dashboard tab]
-    LlmTab --> AdminApi[GET/PATCH /api/admin/llm]
-    LlmTab --> Actions[POST /api/admin/llm/action]
-    AdminApi --> AdminAuth[ensureHubUser + isPlatformAdmin]
-    Actions --> AdminAuth
-    AdminAuth --> Settings[Persisted provider, model, context, output, VRAM reserve]
-    AdminAuth --> Telemetry[nvidia-smi + provider status + recent metadata events]
-    Actions --> Pause[Pause/resume requests; optional Ollama model unload]
-    Settings --> Inference[OCR inference admission and request bounds]
-    Inference --> EventLog[In-memory metadata-only audit ring]
+    LlmTab --> Prefs[GET/PATCH /api/llm/preferences: personal GPU target]
+    LlmTab --> Link[Link to admin.sorye.app/admin/ai]
 ```
 
-The package map derives its visible app nodes from the authenticated workspace session; it does not accept plan or workspace identifiers from the browser. GPU controls are platform-admin-only. Prompt and PDF content are excluded from the audit log. The free-VRAM setting is an admission reserve, not a hard allocator limit. Ollama model unload does not stop its daemon; vLLM requires the service operator to stop its service.
+The package map derives its visible app nodes from the authenticated workspace session; it does not accept plan or workspace identifiers from the browser. The Dashboard tab keeps only the signed-in user's GPU preference; the shared engine moved to the administration console (next section).
+
+## Administration console and shared AI configuration
+
+```mermaid
+flowchart TD
+    Browser[Browser] -->|sorye.app/admin or /apps/operator| Redirect[307 to admin.sorye.app]
+    Browser -->|admin.sorye.app| Gateway[Admin gateway allowlist]
+    Redirect --> Gateway
+    Gateway --> Host[Hub middleware: admin host, allowlist, origin check, no-store headers]
+    Host --> Access[adminAccess: admin host + Auth.js session + isPlatformAdmin]
+    Access -->|404 / 401 / 403| Deny[Not found, login, or not-an-administrator page]
+    Access --> Console[Console sections]
+    Console --> OperatorApis[/api/operator: health, usage, load, errors, plans, notices/]
+    OperatorApis --> Intent[Audit intent in Rodrigo]
+    Intent -->|unavailable| Refuse[503 audit_unavailable; nothing changes]
+    Intent --> HubStores[Hub stores: plans, schedules, notices]
+    HubStores --> Outcome[Audit outcome in Rodrigo]
+    Console --> ConfigApi[/api/admin/console/config/shared-ai/]
+    ConfigApi --> Validate[Strict schema + provider host allowlist]
+    Validate --> CAS[Rodrigo: expectedRevision CAS + changeId; value, revision and audit in one transaction]
+    CAS -->|stale| Conflict[409 revision_conflict; conflict audit row; console shows both values]
+    CAS --> Revision[(Revision N in PostgreSQL)]
+    Revision --> HubWatcher[Hub watcher: poll 15 s, apply, cache, report]
+    Revision --> WorkerWatcher[OCR worker watcher: poll 15 s, apply, cache, report]
+    HubWatcher --> Applied[(Applied reports per consumer instance)]
+    WorkerWatcher --> Applied
+    Applied --> Propagation[Console: applied / pending / failed / unknown]
+    Console --> Stop[/api/admin/llm/action stop: only while paused; Hub process only/]
+    Console --> History[/api/admin/console/audit: append-only trail/]
+```
+
+The redirect is not the protection; every console page and API repeats the host, session and administrator checks. Cookies are host-only, so admin and customer sessions never cross. Pause is configuration: each consumer refuses new AI requests after applying the paused revision, and requests already running finish. Stop aborts this Hub's requests and unloads the Ollama model; it does not cancel OCR worker jobs in progress. When Rodrigo is unreachable, each consumer keeps its last applied revision (from disk after a restart) and the console shows the store as unavailable and propagation as unknown. Settings precedence is Rodrigo revision, then the legacy `llm-control.json` settings, then `OCR_LLM_*` environment. Prompt and PDF content are excluded from logs and audit. The free-VRAM setting is an admission reserve, not a hard allocator limit. See the [runbook](admin/ADMIN-CONSOLE-RUNBOOK.md).
 
 ## Rodrigo discovery boundary
 
@@ -218,7 +243,9 @@ Tasks has no owner toggle or Hub fallback: v2 reads and writes go to Rodrigo, mi
 | User, active workspace, app access | Hub | Auth and workspace store; server derives scope per request |
 | Personal and Work lists | Hub `partitionUserLoad` | Groups from `session.workspaces`. Personal rows are returned only when that app is in the viewer's personal subscription (selected apps plus always-available apps). Team lists are not filtered by the personal package. UI renders the split; `mergeUserLoad` is not sent to clients |
 | Dashboard package map | Dashboard view | Derived from authenticated `HubSession` subscription and selected app IDs; no separate saved copy |
-| LLM runtime settings | Hub | `.data/llm-control.json`; platform-admin API only; per-user GPU preference (`client-webgpu` vs `hub-server`) stored per user and mirrored in browser `localStorage` |
+| Shared AI engine settings | Rodrigo platform config (`shared-ai`) | Revisioned in PostgreSQL; written only from the administration console; each Hub and OCR worker process keeps its applied revision in memory and in `.data/platform-config/<consumer>-shared-ai.json` |
+| Personal GPU preference | Hub | `.data/llm-control.json` `userGpuPreferences` (`client-webgpu` vs `hub-server`), per user, mirrored in browser `localStorage` |
+| Administration audit trail | Rodrigo | Append-only PostgreSQL table; configuration rows atomic with revisions, Hub action rows as intent then outcome |
 | Hub MCP assistant overlay | Hub shell + `/api/mcp/*` | Permission-scoped to `HubSession` (`selectedAppIds` + `isAdmin`); never accesses backend databases directly; emits Hub events and forwards domain reads/writes to Rodrigo via signed assertions. Workspace questions route to tools (ownership, My day, tasks, quick capture, calendar, OCR, Drive, switch workspace via `/api/workspace/team`); other questions go to the server model without tools, or a built-in responder when it is paused or offline. The tool list and the server GPU preference load when the overlay opens, not on every shell load |
 | LLM activity events | Hub process | Metadata-only in-memory ring (last 500); cleared when the Hub process restarts |
 | Open panes and split layout | Hub shell | `sessionStorage` for the current browser tab |
@@ -240,17 +267,16 @@ When a feature changes where state lives or how long it survives, update this ta
 
 Visitor ? catalog-slug.sorye.app/ (DNS/TLS routed to Hub) ? Hub rewrites to /learn/slug ? public app description ? Open app on https://sorye.app ? existing sign-in and workspace authorization ? app. Direct /learn/slug links are public too. Unknown slugs return 404; unknown hosts do not select an app. Hub owns static landing copy; no workspace data is read and no app is mounted by the landing page.
 
-## Platform operator
+## Platform notices and metrics
 
 ```mermaid
 flowchart TD
-    Member[Workspace member] --> Hidden[Launcher, dock, and picker hide Operator]
-    Member --> Banner[GET /api/notices]
+    Member[Workspace member] --> Banner[GET /api/notices]
     Banner --> Text[Message text only when plan and dates match]
     Text --> Dismiss[Dismiss stored per user]
 
-    Admin[Platform operator] --> App[Operator Hub-native app]
-    App --> Gate[ensureHubUser + isPlatformAdmin]
+    Admin[Platform administrator] --> Console[Administration console at admin.sorye.app]
+    Console --> Gate[adminAccess]
     Gate --> Read[GET /api/operator reads cached health and bounded buckets]
     Gate --> Plan[POST /api/operator/plan checks workspace id in the store]
     Gate --> Compose[POST /api/operator/notices]
@@ -258,7 +284,7 @@ flowchart TD
     Sink --> Buckets[Hour and day buckets, activity ring, grouped errors]
 ```
 
-Operator is not the member Dashboard and not the workspace Reports charts. Only `isPlatformAdmin` can open it or call its APIs. Metrics are queued after the user-facing work and dropped if the buffer is full. Health probes run for the operator page and are cached for a few seconds. Notices store the message, audience, dates, and active flag on the server. Members receive the message text only. A future plan date is stored as a schedule; the plan catalog still owns `maxApps`. No card payment is collected here.
+The former Operator app is retired; its views are console sections and its catalog id is ignored in stored selections. Metrics are queued after the user-facing work and dropped if the buffer is full. Health probes run for the console and are cached for a few seconds. Notices store the message, audience, dates, and active flag on the server. Members receive the message text only. A future plan date is stored as a schedule; the plan catalog still owns `maxApps`. No card payment is collected here.
 
 ## Language preference
 
@@ -284,3 +310,7 @@ flowchart LR
 ```
 
 Hub remains the browser-facing authentication and API gateway. Apps never bypass Hub to call Rodrigo or databases. Rodrigo v2 action/read routes are live only for the slices listed at the top of this document; other stores, general events, and jobs still run in Hub. Rodrigo readiness depends on configured providers and does not prove migration. The no-migration cutover may make Hub-owned records unavailable. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).
+
+### Deployed OCR worker
+
+The separately registered OCR worker image consumes Hub's PostgreSQL job queue and shares Hub's file storage on the same Docker host. It owns no browser session or public API. Its health requires a fresh successful database heartbeat from that worker process; Hub rejects new OCR submissions when no worker heartbeat is live. Gateways allow 65 MiB requests while Hub bounds PDFs to 64 MiB plus multipart overhead. See [worker deployment](../deploy/README.md#ocr-worker-deployment) for volumes, credentials and recovery.

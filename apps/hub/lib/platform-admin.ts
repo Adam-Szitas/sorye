@@ -9,7 +9,8 @@ import { emailInAdminList } from '@/lib/security';
  * at login (and from local `AUTH_DEV_BYPASS` when that list is empty).
  *
  * When `ADMIN_EMAILS` is non-empty, email must match (timing-safe). When it
- * is empty, honor `user.isAdmin` so local bypass still works.
+ * is empty, production has no platform admins; outside production the stored
+ * `user.isAdmin` flag is honored so local bypass still works.
  */
 export function isPlatformAdmin(user: {
   email: string;
@@ -19,5 +20,6 @@ export function isPlatformAdmin(user: {
   if (admins.size > 0) {
     return emailInAdminList(user.email, admins);
   }
+  if (process.env.NODE_ENV === 'production') return false;
   return user.isAdmin === true;
 }

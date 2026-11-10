@@ -2,6 +2,8 @@ import { auth, signIn } from '@/auth';
 import { isAuthDevBypass } from '@/lib/auth-dev-bypass';
 import { ensureHubUser } from '@/lib/ensure-user';
 import { safeRedirectPath } from '@/lib/security';
+import { classifyHost, effectiveHost } from '@/lib/admin/hosts';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -33,7 +35,10 @@ export default async function LoginPage({
   searchParams: Promise<{ callbackUrl?: string; error?: string }>;
 }) {
   const params = await searchParams;
-  const redirectTo = safeRedirectPath(params.callbackUrl, '/');
+  const hdrs = await headers();
+  const requestHost = effectiveHost(hdrs);
+  const adminSurface = classifyHost(requestHost.host, { forwarded: requestHost.forwarded }) === 'admin';
+  const redirectTo = safeRedirectPath(params.callbackUrl, adminSurface ? '/admin' : '/');
   const oauthError = authErrorMessage(params.error);
   const localBypass = isAuthDevBypass();
 
@@ -70,12 +75,14 @@ export default async function LoginPage({
           S
         </div>
         <h1 className="text-2xl font-semibold">
-          {localBypass ? 'Local Hub' : 'Sign in to Sorye'}
+          {adminSurface ? 'Sorye administration' : localBypass ? 'Local Hub' : 'Sign in to Sorye'}
         </h1>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          {localBypass
-            ? 'Development bypass is on. Continue without Google — a personal workspace is created for you.'
-            : 'Your workspace OS — pick apps, connect APIs, collaborate with your team.'}
+          {adminSurface
+            ? 'Sign in with a platform administrator account.'
+            : localBypass
+              ? 'Development bypass is on. Continue without Google — a personal workspace is created for you.'
+              : 'Your workspace OS — pick apps, connect APIs, collaborate with your team.'}
         </p>
         {banner ? (
           <p
@@ -147,7 +154,7 @@ export default async function LoginPage({
             </button>
           </form>
         )}
-        <p className="mt-6 text-xs text-[var(--color-text-muted)]">
+        {adminSurface ? null : <p className="mt-6 text-xs text-[var(--color-text-muted)]">
           Looking for the product page?{' '}
           <a
             href="/contact"
@@ -162,7 +169,7 @@ export default async function LoginPage({
           >
             Architecture
           </a>
-        </p>
+        </p>}
       </div>
     </div>
   );

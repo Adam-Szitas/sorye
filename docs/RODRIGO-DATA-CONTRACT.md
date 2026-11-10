@@ -110,7 +110,7 @@ Reads go to Rodrigo as the source of truth. Hub may serve a bounded cache only w
 
 Separate process liveness from data readiness. `/health/live` means Rodrigo is running. `/health/ready` means it can accept writes for configured authoritative providers. `/v2/capabilities` reports supported contract versions, action families, provider configuration/readiness, limits, and idempotency retention; it contains no secrets. A write acknowledgement is the per-action proof of durable commit. A green health check alone never proves a particular action was saved.
 
-Expose metrics for accepted/committed/duplicate/rejected actions by bounded app/action/status labels, batch size, durable commit latency, idempotency hits/conflicts, retry/unknown outcome rates, pending queue age (server-side only), provider errors, and outbox lag if an outbox is used. No user, workspace, resource, action UUID, email, or payload values become metric labels. Prometheus/Grafana access remains private or authenticated; Operator obtains a safe aggregate view through an admin-only Hub endpoint rather than exposing the metrics listener to browsers.
+Expose metrics for accepted/committed/duplicate/rejected actions by bounded app/action/status labels, batch size, durable commit latency, idempotency hits/conflicts, retry/unknown outcome rates, pending queue age (server-side only), provider errors, and outbox lag if an outbox is used. No user, workspace, resource, action UUID, email, or payload values become metric labels. Prometheus/Grafana access remains private or authenticated; the administration console obtains a safe aggregate view through an admin-only Hub endpoint rather than exposing the metrics listener to browsers.
 
 ## App coverage and current gaps
 
@@ -130,11 +130,25 @@ Every catalog app that persists user or workspace state must use this contract. 
 | Canvas | boards, objects and event mutations | Hub stores today; define revision/concurrency semantics before migration |
 | OCR | analysis metadata, job state, patterns and result references | Hub stores some metadata; PDFs/transcripts require explicit sensitive-data retention and blob policy |
 | Studio | app-specific persisted project state | Inventory actual API/storage before assigning schemas |
-| Dashboard / Reports / Operator / Catalog | workspace preferences, notices/plans/admin actions where persisted | Separate user, workspace, and platform-admin scopes; do not treat telemetry as domain data |
+| Dashboard / Reports / Catalog / administration console | workspace preferences, notices/plans/admin actions where persisted | Platform configuration and the administration audit trail are live in Rodrigo (see below). Notices, plans and schedules remain Hub stores; their actions are audited in Rodrigo. Do not treat telemetry as domain data |
 | Protocolio | generated documents/configuration | Currently an independent service/DB boundary; coordinate its owner contract separately |
 | SUSM / ESPM / Contact / Devtools | external iframe or presentation/tool state | Inventory ownership and persistence; do not proxy third-party credentials or claim coverage without an explicit contract |
 
 The app inventory must be reconciled against every Hub API route and store call before declaring coverage. Browser-only preferences (language/theme/WebGPU settings) may remain on-device only when product policy explicitly classifies them as device preferences rather than account data.
+
+## Platform configuration and administration audit (platform contract v1, OpenAPI 2.1.0)
+
+| Route | Signed actor | Scope | Semantics |
+|---|---|---|---|
+| `GET /v2/platform/config/{namespace}` | `user:<id>`, `service:hub`, `service:ocr-worker` | `platform:config:read` | Snapshot `{revision, value, updatedAt, updatedBy}`; revision 0 means never written |
+| `PUT /v2/platform/config/{namespace}` | `user:<id>` only | `platform:config:write` | Compare-and-swap on `expectedRevision`; `changeId` idempotency (same body → `duplicate`, different body or actor → 409 `idempotency_key_reused`); value, revision row and audit row commit in one transaction; stale writes return 409 `revision_conflict` and append a `conflict` audit row |
+| `POST /v2/platform/config/{namespace}/rollback` | `user:<id>` only | `platform:config:write` | Writes an earlier revision's value as a new revision; history is never rewritten |
+| `GET /v2/platform/config/{namespace}/applied` | any | `platform:config:read` | Latest report per consumer instance |
+| `POST /v2/platform/config/{namespace}/applied` | `service:hub`, `service:ocr-worker` only | `platform:config:report` | Upsert of the revision that instance applied (`applied`, or `failed` with a code) |
+| `POST /v2/platform/audit` | `user:<id>` only | `platform:audit:write` | Append-only event for a Hub-owned admin action (`config.*` actions are reserved for Rodrigo); `eventId` idempotency |
+| `GET /v2/platform/audit/{limit}/{cursor}` | any (Hub signs as the administrator) | `platform:audit:read` | Keyset pages newest first, ≤100 |
+
+All platform calls use the reserved assertion workspace `rodrigo-platform`. Namespaces are allowlisted (`shared-ai`) and non-secret by contract. Storage: Rodrigo migration `005_platform_config.sql` (additive). Hub client: `apps/hub/lib/rodrigo/platform-client.ts`; types: `packages/types/src/platform-config.ts`; compatibility tests: `apps/hub/test/rodrigo-platform-config.test.ts` (real binary + PostgreSQL when `RODRIGO_TEST_POSTGRES_URL` is set).
 
 ## Existing contract and compatibility
 
@@ -146,7 +160,7 @@ Current v1 Rodrigo provides revisioned documents (`tasks|notes|calendar`), snaps
 2. Contract tests cover valid/invalid auth, cross-workspace denial, disabled-app denial, oversized batches, same-key same-payload replay, same-key changed-payload rejection, partial batch outcomes, concurrent conflicts, provider outage, timeout after commit, restart recovery, and receipt retention.
 3. Browser tests prove queued actions survive refresh/browser restart, only acknowledged rows clear, retry uses the same key, close/logout reports pending work, and a failed send exposes Resend.
 4. Each app's routes are inventoried and migrated in bounded domain batches; no app writes authoritative product data to Hub stores after its cutover.
-5. The Operator reports Hub gateway, Rodrigo API, provider readiness, last successful commit, pending/rejected aggregate counts, and timestamp separately. It never labels Hub's JSON/Next.js DB as Rodrigo's provider.
+5. The administration console reports Hub gateway, Rodrigo API, provider readiness, last successful commit, pending/rejected aggregate counts, and timestamp separately. It never labels Hub's JSON/Next.js DB as Rodrigo's provider.
 6. Verify restart, backup/restore, concurrency, outage recovery, and measured latency/load for each provider before production use.
 
 ## Observed live mutation surface (not yet Rodrigo-routed)

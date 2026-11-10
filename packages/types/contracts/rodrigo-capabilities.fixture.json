@@ -24,6 +24,12 @@
       "embed.widget.create", "embed.widget.update", "protocolio.artifact.create", "protocolio.artifact.update"
     ]
   },
+  "platform": {
+    "version": "1",
+    "provider": "not_configured",
+    "namespaces": ["shared-ai"],
+    "maxAuditPageSize": 100
+  },
   "adapters": {
     "postgresql": "not_configured",
     "mongodb": "not_configured",

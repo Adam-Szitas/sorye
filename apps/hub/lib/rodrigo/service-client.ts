@@ -21,6 +21,7 @@ const capabilitiesSchema = z.object({
   actions: z.object({ version: z.literal('2'), provider: z.enum(['not_configured', 'ready']), maxBatchActions: z.literal(100), maxBodyBytes: z.literal(262144), maxCollectionPageSize: z.literal(100), families: z.array(z.string()) }),
   operations: z.array(z.string().max(64)).max(100),
   adapters: z.object({ postgresql: status, mongodb: status, redis: status, s3: status }),
+  platform: z.object({ version: z.literal('1'), provider: z.enum(['not_configured', 'ready']), namespaces: z.array(z.string().max(64)).max(16), maxAuditPageSize: z.literal(100) }).optional(),
 });
 export class RodrigoUnavailableError extends Error {
   constructor() { super('Rodrigo is unavailable or its contract is incompatible.'); }
@@ -84,6 +85,9 @@ async function request<T>(context: RodrigoContext, path: string, scope: string,
     throw new RodrigoUnavailableError();
   }
 }
+
+/** Signed request primitive for sibling Rodrigo client modules (platform config). */
+export { request as rodrigoServiceRequest };
 
 const actionResultSchema = z.object({
   actionId: z.string().uuid(), status: z.enum(['committed', 'duplicate', 'conflict', 'rejected']),

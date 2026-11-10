@@ -16,3 +16,11 @@ EXPOSE 8080
 
 FROM gateway AS remote
 COPY --from=build /output/ /usr/share/nginx/html/remote/
+
+# admin.sorye.app: proxies only the administration route surface to Hub.
+FROM nginx:1.28-alpine AS admin-gateway
+ENV HUB_UPSTREAM=http://hub:3000 NGINX_WORKER_PROCESSES=2
+COPY deploy/admin.nginx.conf /etc/nginx/templates/default.conf.template
+COPY deploy/admin-proxy.inc /etc/nginx/templates/hub-proxy.inc.template
+RUN sed -i 's/worker_processes  auto/worker_processes  2/' /etc/nginx/nginx.conf
+EXPOSE 8080

@@ -22,10 +22,9 @@ export const APP_LANDINGS: Record<string, { summary: string; steps: string[] }> 
   ocr: { summary: 'Take tables and useful information out of PDF documents.', steps: ['Upload a PDF.', 'Review the extracted tables and check unclear results.', 'Download a table or send its layout to Protocolio. Optional AI analysis requires a configured service.'] },
   studio: { summary: 'Open a 3D model and look at it from different angles.', steps: ['Upload a supported 3D model.', 'Rotate it and zoom in to inspect it.', 'Use a smaller model if the file exceeds the viewer’s limits. A compatible browser is required.'] },
   reports: { summary: 'Help administrators understand workspace activity.', steps: ['Sign in as an administrator.', 'Choose a date range.', 'Review activity counts and delivery issues. Reports do not show message or file contents.'] },
-  operator: { summary: 'Let the platform operator check health, plans, and short notices.', steps: ['Sign in as the platform operator. Other people do not see this app.', 'Review health, activity, and usage counts. Document text is not shown.', 'Set a workspace plan or publish a notice. People only see the message, and payment is not collected here.'] },
 };
 
-export function landingSlugForHost(hostname: string): string | undefined {
+export function landingSlugForHost(hostname: string, publicHost = 'sorye.app'): string | undefined {
   const host = hostname.toLowerCase();
-  return APP_CATALOG.find(app => host === `${app.slug}.sorye.app`)?.slug;
+  return APP_CATALOG.find(app => host === `${app.slug}.${publicHost}`)?.slug;
 }

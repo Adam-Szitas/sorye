@@ -4,6 +4,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     const { initializeLlmControl } = await import('./lib/llm-control');
     await initializeLlmControl();
+    const { startPlatformConfigWatcher } = await import('./lib/platform-config/watcher');
+    void startPlatformConfigWatcher('hub').catch(() => undefined);
     const { installOperatorPersistence } = await import('./lib/operator/persist');
     await installOperatorPersistence();
   }

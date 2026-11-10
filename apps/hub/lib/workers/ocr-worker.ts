@@ -1,5 +1,6 @@
 import type { OcrAnalysis } from '@sorye/types';
 import { randomUUID } from 'node:crypto';
+import { writeFile, rm } from 'node:fs/promises';
 import { getWorkspaceFile, readWorkspaceFileBytes } from '@/lib/files';
 import { finishJob, getJob, heartbeatJob, retryJob, claimJob, setWorkerHeartbeat, updateJobProgress, type Job } from '@/lib/jobs';
 import { llmModelName, releaseLoadedModel } from '@/lib/ocr/llm';
@@ -10,6 +11,8 @@ import { buildVector, completenessWarning, withGpuFinish } from '@/lib/ocr/vecto
 import { storeOcrBatch } from '@/lib/ocr/store-batch';
 import { MAX_OCR_ANALYSIS_BYTES, MAX_OCR_PAGES, MAX_OCR_PDF_BYTES, assertJsonPayloadSize } from '@/lib/security-limits';
 import { createOcrAnalysis, getOcrAnalysis, updateOcrAnalysis } from '@/lib/store/ocr-analyses';
+import { initializeLlmControl } from '@/lib/llm-control';
+import { startPlatformConfigWatcher, stopPlatformConfigWatcher } from '@/lib/platform-config/watcher';
 
 const POLL_MS = 750;
 const HEARTBEAT_MS = 20_000;
@@ -152,10 +155,26 @@ async function sleep(ms: number): Promise<void> {
 
 async function main(): Promise<void> {
   console.info('[ocr-worker] started');
-  await setWorkerHeartbeat(WORKER_ID, true);
+  await initializeLlmControl();
+  const config = await startPlatformConfigWatcher('ocr-worker');
+  console.info('[ocr-worker] shared AI configuration', JSON.stringify({
+    source: config.source, revision: config.appliedRevision, error: config.lastError,
+  }));
+  const healthFile = process.env.OCR_WORKER_HEALTH_FILE;
+  const heartbeat = async () => {
+    await setWorkerHeartbeat(WORKER_ID, true);
+    // Refresh only after this process has renewed its database heartbeat.
+    if (healthFile) await writeFile(healthFile, WORKER_ID);
+  };
+  if (healthFile) await rm(healthFile, { force: true });
+  await heartbeat();
+  let heartbeatInFlight: Promise<void> | undefined;
   const workerHeartbeat = setInterval(() => {
-    void setWorkerHeartbeat(WORKER_ID, true).catch((err) => {
+    if (heartbeatInFlight) return;
+    heartbeatInFlight = heartbeat().catch((err) => {
       console.error('[ocr-worker] heartbeat failed', err instanceof Error ? err.message : 'unknown error');
+    }).finally(() => {
+      heartbeatInFlight = undefined;
     });
   }, 10_000);
   try {
@@ -171,7 +190,10 @@ async function main(): Promise<void> {
     }
   } finally {
     clearInterval(workerHeartbeat);
+    stopPlatformConfigWatcher();
+    await heartbeatInFlight;
     await setWorkerHeartbeat(WORKER_ID, false).catch(() => undefined);
+    if (healthFile) await rm(healthFile, { force: true });
   }
   console.info('[ocr-worker] stopped');
 }

@@ -1,30 +1,16 @@
-import { ensureHubUser } from '@/lib/ensure-user';
-import { isPlatformAdmin } from '@/lib/platform-admin';
-import { getLlmActivity, getLlmControlSettings, initializeLlmControl, logLlmActivity, saveLlmControlSettings } from '@/lib/llm-control';
+import { adminAccess, adminDenied, adminNoStore } from '@/lib/admin/access';
+import { getLlmActivity, getLlmControlSettings, getLlmControlSource, initializeLlmControl } from '@/lib/llm-control';
 import { listHostGpus, readGpuSnapshot } from '@/lib/ocr/gpu-guard';
 import { assertSafeLlmBaseUrl } from '@/lib/security';
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const settingsSchema = z.object({
-  provider: z.enum(['ollama', 'vllm']),
-  baseUrl: z.string().max(240),
-  model: z.string().max(80),
-  contextLength: z.number().int().min(2048).max(8192),
-  maxOutputTokens: z.number().int().min(128).max(1800),
-  minFreeVramMiB: z.number().int().min(512).max(8192),
-  gpuIndex: z.number().int().min(0).max(15).optional(),
-});
-
-async function authorizedAdmin() {
-  const session = await ensureHubUser();
-  if (!session) return { response: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  if (!isPlatformAdmin(session.user)) return { response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) };
-  return { session };
-}
+const PROBE_TTL_MS = 5_000;
+type Probe = { at: number; value: Promise<Record<string, unknown>> };
+const PROBE_KEY = Symbol.for('sorye.admin.llm.probe');
+const probeHolder = globalThis as typeof globalThis & { [PROBE_KEY]?: Probe };
 
 async function engineStatus(settings: ReturnType<typeof getLlmControlSettings>) {
   if (!settings.baseUrl || !settings.model) return { available: false, detail: 'Configure a provider URL and model.' };
@@ -59,47 +45,34 @@ async function gpuProcesses() {
   }
 }
 
-export async function GET() {
-  const auth = await authorizedAdmin();
-  if ('response' in auth) return auth.response;
-  await initializeLlmControl();
-  const settings = getLlmControlSettings();
-  const [gpu, gpus, processes, engine] = await Promise.all([
+/** Coalesced: concurrent admin views share one GPU/provider probe per 5 s. */
+function probe(settings: ReturnType<typeof getLlmControlSettings>): Promise<Record<string, unknown>> {
+  const cached = probeHolder[PROBE_KEY];
+  if (cached && Date.now() - cached.at < PROBE_TTL_MS) return cached.value;
+  const value = Promise.all([
     readGpuSnapshot(settings.gpuIndex ?? 0).catch(() => null),
     listHostGpus(),
     gpuProcesses(),
     engineStatus(settings),
-  ]);
-  return NextResponse.json({
-    settings,
-    gpu,
-    gpus,
-    processes,
-    engine,
-    events: getLlmActivity(100),
-    capturedContent: false,
-  }, { headers: { 'Cache-Control': 'private, no-store' } });
+  ]).then(([gpu, gpus, processes, engine]) => ({ gpu, gpus, processes, engine }));
+  probeHolder[PROBE_KEY] = { at: Date.now(), value };
+  return value;
 }
 
-export async function PATCH(req: Request) {
-  const auth = await authorizedAdmin();
-  if ('response' in auth) return auth.response;
-  const contentLength = Number(req.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > 8192) {
-    return NextResponse.json({ error: 'Settings request is too large.' }, { status: 413 });
-  }
-  let body: unknown;
-  try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON settings.' }, { status: 400 }); }
+/**
+ * Read-only runtime telemetry for this Hub process. Configuration writes go
+ * through /api/admin/console/config/shared-ai so they are revisioned and audited.
+ */
+export async function GET() {
+  const access = await adminAccess();
+  if (!access.ok) return adminDenied(access);
   await initializeLlmControl();
-  const parsed = settingsSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid settings.' }, { status: 400 });
-  try {
-    if (parsed.data.baseUrl) assertSafeLlmBaseUrl(parsed.data.baseUrl);
-    const current = getLlmControlSettings();
-    const settings = await saveLlmControlSettings({ ...parsed.data, paused: current.paused });
-    logLlmActivity({ type: 'settings_updated', provider: settings.provider, model: settings.model, status: 'ok', detail: 'LLM runtime settings updated by a platform administrator.' });
-    return NextResponse.json({ settings }, { headers: { 'Cache-Control': 'private, no-store' } });
-  } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Could not save settings.' }, { status: 400 });
-  }
+  const settings = getLlmControlSettings();
+  return NextResponse.json({
+    settings,
+    source: getLlmControlSource(),
+    ...(await probe(settings)),
+    events: getLlmActivity(100),
+    capturedContent: false,
+  }, { headers: adminNoStore });
 }

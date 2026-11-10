@@ -28,6 +28,10 @@ const envSchema = z
 
     ADMIN_SECRET: z.string().min(8),
     ADMIN_EMAILS: z.string().default(''),
+    /** Customer Hub hostname; catalog landing hosts are `<slug>.<host>`. */
+    SORYE_PUBLIC_HOST: z.string().regex(/^[a-z0-9.-]{1,253}$/).optional(),
+    /** Administration console hostname (default admin.<public host>, or admin.localhost in development). */
+    SORYE_ADMIN_HOST: z.string().regex(/^[a-z0-9.-]{1,253}$/).optional(),
     /** Dedicated key for encrypted cloud-storage credentials (32+ chars). */
     STORAGE_SECRET_KEY: z.string().min(32).optional(),
 
@@ -97,6 +101,27 @@ const envSchema = z
         message:
           'AUTH_DEV_BYPASS is local-only and is not allowed when NODE_ENV=production.',
         path: ['AUTH_DEV_BYPASS'],
+      });
+    }
+
+    if (productionRuntime && env.AUTH_URL) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'AUTH_URL pins Auth.js to one origin, which breaks sign-in on the admin hostname. Leave it unset; the ingress sets the forwarded host.',
+        path: ['AUTH_URL'],
+      });
+    }
+
+    if (
+      env.SORYE_ADMIN_HOST &&
+      env.SORYE_PUBLIC_HOST &&
+      env.SORYE_ADMIN_HOST === env.SORYE_PUBLIC_HOST
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'SORYE_ADMIN_HOST must differ from SORYE_PUBLIC_HOST.',
+        path: ['SORYE_ADMIN_HOST'],
       });
     }
 

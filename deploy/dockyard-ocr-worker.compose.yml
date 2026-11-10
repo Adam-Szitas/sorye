@@ -1,0 +1,32 @@
+name: sorye-ocr-worker
+services:
+  worker:
+    image: ${SORYE_WORKER_IMAGE:?Set immutable worker image}
+    restart: unless-stopped
+    init: true
+    env_file: ${SORYE_HUB_ENV_FILE:?Set the target-owned Hub environment file}
+    environment:
+      STORE_DRIVER: postgres
+      OCR_WORKER_HEALTH_FILE: /tmp/ocr-worker-heartbeat
+      RODRIGO_PRIVATE_KEY_FILE: /run/secrets/rodrigo_hub_signing_key
+    secrets: [rodrigo_hub_signing_key]
+    volumes:
+      - hub_data:/app/apps/hub/.data
+    mem_limit: 2g
+    pids_limit: 128
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs');try{if(Date.now()-fs.statSync(process.env.OCR_WORKER_HEALTH_FILE).mtimeMs>30000)process.exit(1)}catch{process.exit(1)}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  hub_data:
+    external: true
+    name: ${SORYE_HUB_DATA_VOLUME:-sorye-hub_hub_data}
+
+secrets:
+  rodrigo_hub_signing_key:
+    file: ${RODRIGO_HUB_PRIVATE_KEY_PATH:?Set the target-owned Hub-to-Rodrigo signing key path}

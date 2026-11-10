@@ -1,6 +1,7 @@
 export * from './subscription';
 export * from './running-cost';
 export * from './rodrigo';
+export * from './platform-config';
 export * from './workspace';
 export * from './apps';
 export * from './canvas';

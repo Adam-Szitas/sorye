@@ -63,7 +63,7 @@ export interface AppCatalogEntry {
   adminOnly?: boolean;
   /**
    * Share of the always-on host's electricity.
-   * 0 = not sold on its own (Catalog, Contact, Reports, Operator).
+   * 0 = not sold on its own (Catalog, Contact, Reports).
    * 1 = light gateway. 2 = mailbox, chat, or webhook worker.
    * 3 = board or file bytes. 4 = PDF service on the same host.
    */
@@ -564,31 +564,14 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     adminOnly: true,
     costWeight: 0,
   },
-  {
-    id: 'operator',
-    name: 'Operator',
-    description:
-      'Platform health, plans, and notices for the platform operator. Counts and names only.',
-    usageIntro: {
-      summary:
-        'Check whether the platform is up, set a workspace plan, and publish a short notice. Hidden from everyone else.',
-      steps: [
-        'Open Operator from the launcher (platform operator only).',
-        'Read health, activity, and usage counts. Document text is not shown.',
-        'Set a plan or publish a notice. People only see the message text.',
-      ],
-    },
-    slug: 'operator',
-    category: 'analytics',
-    status: 'available',
-    icon: 'operator',
-    color: '#34d399',
-    mountPath: '/apps/operator',
-    alwaysAvailable: true,
-    adminOnly: true,
-    costWeight: 0,
-  },
 ];
+
+/**
+ * Former catalog IDs. Stored workspace selections may still contain them; they
+ * are ignored for launchers and plan usage. Operator moved to the administration
+ * console on the admin hostname.
+ */
+export const RETIRED_APP_IDS: readonly string[] = ['operator'];
 
 /** Yearly electricity floor for one stack, split across sold apps. */
 export const APP_RUNNING_COST: RunningCostQuote = quoteRunningCost(APP_CATALOG);
@@ -661,14 +644,16 @@ export function withAlwaysAvailableAppIds(
   return ids;
 }
 
-/** How many selected apps count toward the plan cap (excludes pinned). */
+/** How many selected apps count toward the plan cap (excludes pinned and retired IDs). */
 export function selectableAppCount(
   catalog: AppCatalogEntry[],
   selectedIds: string[],
 ): number {
   return selectedIds.filter(
     (id) =>
-      !isAlwaysAvailableApp(catalog, id) && !isPresentationApp(catalog, id),
+      catalog.some((app) => app.id === id) &&
+      !isAlwaysAvailableApp(catalog, id) &&
+      !isPresentationApp(catalog, id),
   ).length;
 }
 

@@ -8,6 +8,8 @@ export interface RodrigoCapabilities {
   contractVersion: '1'; contractVersions: Array<'1' | '2'>; service: 'rodrigo'; dataReady: boolean; operations: string[];
   actions: { version: '2'; provider: 'not_configured' | 'ready'; maxBatchActions: 100; maxBodyBytes: 262144; maxCollectionPageSize: 100; families: string[] };
   adapters: Record<RodrigoAdapter, 'not_implemented' | 'not_configured' | 'ready'>;
+  /** Rodrigo 2.1+: platform configuration and audit (see platform-config.ts). */
+  platform?: { version: '1'; provider: 'not_configured' | 'ready'; namespaces: string[]; maxAuditPageSize: 100 };
 }
 export interface RodrigoErrorEnvelope { error: { code: string; requestId: string }; }
 export type RodrigoActionAppId = 'tasks' | 'notes' | 'calendar' | 'workspace' | 'messenger' | 'files' | 'canvas' | 'mail' | 'relay' | 'site' | 'storefront' | 'ocr' | 'studio' | 'notifications' | 'events' | 'embed' | 'protocolio';

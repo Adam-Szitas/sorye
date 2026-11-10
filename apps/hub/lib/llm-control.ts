@@ -53,11 +53,19 @@ interface PersistedSettings {
   settings: LlmControlSettings | null;
   userGpuPreferences?: Record<string, UserGpuPreference>;
 }
+/**
+ * Where the effective settings came from. Rodrigo `shared-ai` revisions win; the
+ * legacy file and environment only bootstrap a process that has not applied one.
+ */
+export type LlmSettingsSource = 'environment' | 'legacy-file' | 'platform' | 'platform-cache';
+
 interface RuntimeState {
   settings: LlmControlSettings;
   userGpuPreferences: Record<string, UserGpuPreference>;
   initialized: boolean;
   events: LlmActivity[];
+  source?: LlmSettingsSource;
+  platformRevision?: number;
 }
 
 const SETTINGS_FILE = jsonDataFile<PersistedSettings>('llm-control.json', () => ({
@@ -90,7 +98,7 @@ function state(): RuntimeState {
   };
 }
 
-function validateSettings(value: LlmControlSettings): LlmControlSettings {
+export function validateSettings(value: LlmControlSettings): LlmControlSettings {
   if (!['ollama', 'vllm'].includes(value.provider)) throw new Error('Choose Ollama or vLLM.');
   if (value.baseUrl) assertSafeLlmBaseUrl(value.baseUrl);
   if (value.model && (value.model.length > 80 || value.model.includes('..') || !/^[\w./:-]+$/.test(value.model))) {
@@ -143,8 +151,16 @@ export async function initializeLlmControl(): Promise<void> {
   const current = state();
   if (current.initialized) return;
   const stored = await SETTINGS_FILE.read();
-  if (stored.settings) {
-    try { current.settings = validateSettings(stored.settings); } catch { current.settings = environmentSettings(); }
+  if (!isPlatformSource(current.source)) {
+    current.source = 'environment';
+    if (stored.settings) {
+      try {
+        current.settings = validateSettings(stored.settings);
+        current.source = 'legacy-file';
+      } catch {
+        current.settings = environmentSettings();
+      }
+    }
   }
   if (stored.userGpuPreferences && typeof stored.userGpuPreferences === 'object') {
     current.userGpuPreferences = { ...stored.userGpuPreferences };
@@ -152,16 +168,46 @@ export async function initializeLlmControl(): Promise<void> {
   current.initialized = true;
 }
 
+function isPlatformSource(source: LlmSettingsSource | undefined): boolean {
+  return source === 'platform' || source === 'platform-cache';
+}
+
 export function getLlmControlSettings(): LlmControlSettings {
   const current = state();
-  if (!current.initialized) current.settings = environmentSettings();
+  if (!current.initialized && !isPlatformSource(current.source)) {
+    current.settings = environmentSettings();
+    current.source = 'environment';
+  }
   return { ...current.settings };
 }
 
-export async function saveLlmControlSettings(settings: LlmControlSettings): Promise<LlmControlSettings> {
-  const next = validateSettings(settings);
-  await SETTINGS_FILE.update((stored) => { stored.settings = next; });
-  state().settings = next;
+export function getLlmControlSource(): { source: LlmSettingsSource; platformRevision: number } {
+  const current = state();
+  return { source: current.source ?? 'environment', platformRevision: current.platformRevision ?? 0 };
+}
+
+/**
+ * Applies a Rodrigo `shared-ai` revision to this process. Throws when the value
+ * is outside this process's stricter limits (for example the LLM host allowlist).
+ */
+export function applyPlatformLlmSettings(
+  value: LlmControlSettings,
+  revision: number,
+  fromCache = false,
+): LlmControlSettings {
+  const next = validateSettings(value);
+  const current = state();
+  const previous = current.settings;
+  current.settings = next;
+  current.source = fromCache ? 'platform-cache' : 'platform';
+  current.platformRevision = revision;
+  if (previous.paused !== next.paused) {
+    logLlmActivity({
+      type: next.paused ? 'inference_paused' : 'inference_resumed',
+      status: 'ok',
+      detail: next.paused ? 'New model requests are paused.' : 'New model requests are allowed.',
+    });
+  }
   return { ...next };
 }
 
@@ -183,15 +229,6 @@ export async function saveUserGpuPreference(
   });
   state().userGpuPreferences[userId] = next;
   return { ...next };
-}
-
-export async function setLlmInferencePaused(paused: boolean): Promise<void> {
-  await saveLlmControlSettings({ ...getLlmControlSettings(), paused });
-  logLlmActivity({
-    type: paused ? 'inference_paused' : 'inference_resumed',
-    status: 'ok',
-    detail: paused ? 'New model requests are paused.' : 'New model requests are allowed.',
-  });
 }
 
 export function logLlmActivity(event: Omit<LlmActivity, 'id' | 'at'>): void {

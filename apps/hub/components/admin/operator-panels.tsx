@@ -128,7 +128,47 @@ function healthWord(value: string): string {
   return 'Down';
 }
 
-export function AppOperator() {
+export type OperatorSection = 'health' | 'activity' | 'usage' | 'load' | 'errors' | 'plans' | 'notices';
+
+const SECTION_LABELS: Record<OperatorSection, string> = {
+  health: 'Health',
+  activity: 'Activity',
+  usage: 'Usage',
+  load: 'App load',
+  errors: 'Errors',
+  plans: 'Plans',
+  notices: 'Notices',
+};
+
+const REFRESH_MS = 30_000;
+
+function actionMessage(res: Response, payload: { error?: string; correlationId?: string; auditOutcomeRecorded?: boolean } | null, success: string, failure: string): string {
+  if (!res.ok) {
+    if (payload?.error === 'audit_unavailable') return `${failure} The audit log is unavailable, so nothing was changed.`;
+    if (payload?.error === 'rate_limited') return `${failure} Too many changes in a minute; wait and try again.`;
+    return payload?.error ? `${failure} (${payload.error})` : failure;
+  }
+  const reference = payload?.correlationId ? ` Audit reference ${payload.correlationId.slice(0, 8)}.` : '';
+  const warning = payload?.auditOutcomeRecorded === false ? ' The change was made, but its outcome could not be added to the audit log.' : '';
+  return `${success}${reference}${warning}`;
+}
+
+/**
+ * Platform operations panels for the administration console. One snapshot
+ * (`/api/operator`) feeds every section; pages choose which sections to show.
+ */
+export function OperatorPanels({
+  sections,
+  title,
+  intro,
+  onWorkspaceSelect,
+}: {
+  sections: OperatorSection[];
+  title: string;
+  intro: string;
+  onWorkspaceSelect?: (workspaceId: string) => void;
+}) {
+  const show = (section: OperatorSection) => sections.includes(section);
   const [data, setData] = useState<OperatorDashboardSnapshot | null>(null);
   const [error, setError] = useState<'forbidden' | 'load' | null>(null);
   const [loading, setLoading] = useState(true);
@@ -141,11 +181,11 @@ export function AppOperator() {
   const planHintId = `${planFormId}-hint`;
   const noticeHintId = `${noticeFormId}-hint`;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/operator', { credentials: 'include', cache: 'no-store' });
+      const res = await fetch('/api/operator', { credentials: 'include', cache: 'no-store', priority: background ? 'low' : 'auto' });
       if (res.status === 401 || res.status === 403) {
         setData(null);
         setError('forbidden');
@@ -167,7 +207,29 @@ export function AppOperator() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(); }, 0);
-    return () => window.clearTimeout(timer);
+    let interval: number | undefined;
+    const schedule = () => {
+      window.clearInterval(interval);
+      interval = undefined;
+      if (document.visibilityState === 'visible' && navigator.onLine) {
+        interval = window.setInterval(() => { void load(true); }, REFRESH_MS);
+      }
+    };
+    const onResume = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void load(true);
+      schedule();
+    };
+    schedule();
+    document.addEventListener('visibilitychange', onResume);
+    window.addEventListener('online', onResume);
+    window.addEventListener('offline', schedule);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('online', onResume);
+      window.removeEventListener('offline', schedule);
+    };
   }, [load]);
 
   async function savePlan(event: FormEvent<HTMLFormElement>) {
@@ -190,12 +252,9 @@ export function AppOperator() {
           note: body.get('note') || null,
         }),
       });
-      const payload = (await res.json().catch(() => null)) as { error?: string; applied?: boolean } | null;
-      if (!res.ok) {
-        setPlanStatus(payload?.error ?? 'Could not save the plan.');
-        return;
-      }
-      setPlanStatus(payload?.applied ? 'Plan saved.' : 'Plan scheduled.');
+      const payload = (await res.json().catch(() => null)) as { error?: string; applied?: boolean; correlationId?: string; auditOutcomeRecorded?: boolean } | null;
+      setPlanStatus(actionMessage(res, payload, payload?.applied ? 'Plan saved.' : 'Plan scheduled.', 'Could not save the plan.'));
+      if (!res.ok) return;
       form.reset();
       await load();
     } catch {
@@ -227,12 +286,9 @@ export function AppOperator() {
           active: body.get('active') === 'on',
         }),
       });
-      const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) {
-        setNoticeStatus(payload?.error ?? 'Could not publish the notice.');
-        return;
-      }
-      setNoticeStatus('Notice saved.');
+      const payload = (await res.json().catch(() => null)) as { error?: string; correlationId?: string; auditOutcomeRecorded?: boolean } | null;
+      setNoticeStatus(actionMessage(res, payload, 'Notice saved.', 'Could not publish the notice.'));
+      if (!res.ok) return;
       form.reset();
       await load();
     } catch {
@@ -249,13 +305,14 @@ export function AppOperator() {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, active }),
-    });
-    if (!res.ok) {
+    }).catch(() => null);
+    if (!res) {
       setNoticeStatus('Could not update the notice.');
       return;
     }
-    setNoticeStatus(active ? 'Notice activated.' : 'Notice turned off.');
-    await load();
+    const payload = (await res.json().catch(() => null)) as { error?: string; correlationId?: string; auditOutcomeRecorded?: boolean } | null;
+    setNoticeStatus(actionMessage(res, payload, active ? 'Notice activated.' : 'Notice turned off.', 'Could not update the notice.'));
+    if (res.ok) await load();
   }
 
   return (
@@ -300,28 +357,24 @@ export function AppOperator() {
         }
       `}</style>
       <header>
-        <h1 className="text-2xl font-semibold">Operator</h1>
-        <p className="mt-1 max-w-2xl text-sm text-[var(--color-text-muted)]">
-          Platform health, plans, and notices. Counts and names only — document text, prompts, and message bodies stay out of this view.
-        </p>
-        <nav className="mt-3 flex flex-wrap gap-3 text-sm" aria-label="Operator sections">
-          <a href="#operator-health">Health</a>
-          <a href="#operator-activity">Activity</a>
-          <a href="#operator-usage">Usage</a>
-          <a href="#operator-load">App load</a>
-          <a href="#operator-errors">Errors</a>
-          <a href="#operator-plans">Plans</a>
-          <a href="#operator-notices">Notices</a>
-        </nav>
+        <h1 className="text-2xl font-semibold">{title}</h1>
+        <p className="mt-1 max-w-2xl text-sm text-[var(--color-text-muted)]">{intro}</p>
+        {sections.length > 2 ? (
+          <nav className="mt-3 flex flex-wrap gap-3 text-sm" aria-label={`${title} sections`}>
+            {sections.map((section) => (
+              <a key={section} href={`#operator-${section}`}>{SECTION_LABELS[section]}</a>
+            ))}
+          </nav>
+        ) : null}
       </header>
 
-      {loading ? <p role="status">Loading operator data.</p> : null}
-      {error === 'forbidden' ? <p role="alert">Operator is limited to the platform operator.</p> : null}
-      {error === 'load' ? <p role="alert">Could not load the operator dashboard.</p> : null}
+      {loading ? <p role="status">Loading platform operations data.</p> : null}
+      {error === 'forbidden' ? <p role="alert">Your session is no longer a platform administrator session. Sign in again.</p> : null}
+      {error === 'load' ? <p role="alert">Platform operations data is unavailable right now. Other sections keep working; retry shortly.</p> : null}
 
       {data ? (
         <>
-          <section id="operator-health" aria-labelledby="operator-health-title" className="flex flex-col gap-3">
+          {show('health') ? <section id="operator-health" aria-labelledby="operator-health-title" className="flex flex-col gap-3">
             <h2 id="operator-health-title" className="text-lg font-semibold">System health</h2>
             <p className="text-sm text-[var(--color-text-muted)]">
               Checked {formatWhen(data.health.checkedAt)}.{data.health.stale ? ' This snapshot is stale.' : ' This snapshot is current.'}
@@ -344,9 +397,9 @@ export function AppOperator() {
             {data.droppedSamples > 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">{data.droppedSamples} metric samples were dropped because the buffer was full.</p>
             ) : null}
-          </section>
+          </section> : null}
 
-          <section id="operator-activity" aria-labelledby="operator-activity-title" className="op-defer flex flex-col gap-3">
+          {show('activity') ? <section id="operator-activity" aria-labelledby="operator-activity-title" className="op-defer flex flex-col gap-3">
             <h2 id="operator-activity-title" className="text-lg font-semibold">Activity</h2>
             <DataTable
               caption="Recent app activity"
@@ -359,15 +412,15 @@ export function AppOperator() {
                 item.ok ? 'Success' : 'Failure',
               ])}
             />
-          </section>
+          </section> : null}
 
-          <section id="operator-usage" aria-labelledby="operator-usage-title" className="op-defer flex flex-col gap-6">
+          {show('usage') ? <section id="operator-usage" aria-labelledby="operator-usage-title" className="op-defer flex flex-col gap-6">
             <h2 id="operator-usage-title" className="text-lg font-semibold">Usage over time</h2>
             <UsageChart title="Last 24 hours" points={data.usage.hours} />
             <UsageChart title="Last 14 days" points={data.usage.days} />
-          </section>
+          </section> : null}
 
-          <section id="operator-load" aria-labelledby="operator-load-title" className="op-defer flex flex-col gap-3">
+          {show('load') ? <section id="operator-load" aria-labelledby="operator-load-title" className="op-defer flex flex-col gap-3">
             <h2 id="operator-load-title" className="text-lg font-semibold">App load</h2>
             <p className="text-sm text-[var(--color-text-muted)]">Totals from the last 14 day buckets. Durations come from finished jobs, not from rereading documents.</p>
             <DataTable
@@ -382,9 +435,9 @@ export function AppOperator() {
                 app.durationMaxMs == null ? '—' : String(app.durationMaxMs),
               ])}
             />
-          </section>
+          </section> : null}
 
-          <section id="operator-errors" aria-labelledby="operator-errors-title" className="op-defer flex flex-col gap-3">
+          {show('errors') ? <section id="operator-errors" aria-labelledby="operator-errors-title" className="op-defer flex flex-col gap-3">
             <h2 id="operator-errors-title" className="text-lg font-semibold">Errors</h2>
             <DataTable
               caption="Grouped errors"
@@ -398,9 +451,9 @@ export function AppOperator() {
                 group.location ?? '—',
               ])}
             />
-          </section>
+          </section> : null}
 
-          <section id="operator-plans" aria-labelledby="operator-plans-title" className="op-defer flex flex-col gap-4">
+          {show('plans') ? <section id="operator-plans" aria-labelledby="operator-plans-title" className="op-defer flex flex-col gap-4">
             <h2 id="operator-plans-title" className="text-lg font-semibold">Subscriptions</h2>
             <p className="text-sm text-[var(--color-text-muted)]">
               Plans are Free, Starter, Pro, and Enterprise. Max apps comes from the plan. A future effective date is stored as a schedule and does not charge a card.
@@ -419,6 +472,27 @@ export function AppOperator() {
                   : 'None',
               ])}
             />
+            {onWorkspaceSelect ? (
+              <form
+                className="flex flex-wrap items-end gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const value = new FormData(event.currentTarget).get('reviewWorkspaceId');
+                  if (typeof value === 'string' && value) onWorkspaceSelect(value);
+                }}
+              >
+                <div className="op-field !mb-0">
+                  <label htmlFor={`${planFormId}-review`}>Review members and apps</label>
+                  <select id={`${planFormId}-review`} name="reviewWorkspaceId" required autoComplete="off">
+                    <option value="">Choose a workspace</option>
+                    {data.workspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>{workspace.name} ({workspace.kind})</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="submit">Review workspace</button>
+              </form>
+            ) : null}
             <form action="/api/operator/plan" method="post" onSubmit={savePlan} aria-describedby={planHintId}>
               <fieldset className="max-w-xl">
                 <legend className="mb-3 text-base font-medium">Set a plan</legend>
@@ -453,9 +527,9 @@ export function AppOperator() {
                 <p role="status" className="mt-2 text-sm">{planStatus}</p>
               </fieldset>
             </form>
-          </section>
+          </section> : null}
 
-          <section id="operator-notices" aria-labelledby="operator-notices-title" className="op-defer flex flex-col gap-4">
+          {show('notices') ? <section id="operator-notices" aria-labelledby="operator-notices-title" className="op-defer flex flex-col gap-4">
             <h2 id="operator-notices-title" className="text-lg font-semibold">Notices</h2>
             <p className="text-sm text-[var(--color-text-muted)]">People only see the message text, and only when the audience and dates match. Dismiss is stored per person.</p>
             <DataTable
@@ -511,7 +585,7 @@ export function AppOperator() {
                 <p role="status" className="mt-2 text-sm">{noticeStatus}</p>
               </fieldset>
             </form>
-          </section>
+          </section> : null}
         </>
       ) : null}
     </div>

@@ -163,9 +163,12 @@ export function hubMenuHref(): string {
 export function StandaloneAppBar({
   appName,
   children,
+  hubHref,
 }: {
   appName?: string;
   children?: ReactNode;
+  /** Absolute customer Hub URL when this document is on another hostname (admin console). */
+  hubHref?: string;
 }) {
   const locale = useSyncExternalStore(subscribeLocale, getLocale, () => 'en' as const);
   const selectId = useId();
@@ -181,7 +184,7 @@ export function StandaloneAppBar({
       </div>
       <div className="sorye-app-bar-actions">
         {children}
-        <a className="sorye-app-bar-hub" href={hubMenuHref()}>Hub</a>
+        <a className="sorye-app-bar-hub" href={hubHref ?? hubMenuHref()}>Hub</a>
         <div className="sorye-app-bar-lang">
           <label htmlFor={selectId}>{translate(locale, 'language')}</label>
           <select
