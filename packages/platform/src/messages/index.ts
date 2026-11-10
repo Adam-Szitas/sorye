@@ -8,7 +8,9 @@ import { notes } from './notes';
 // Add a namespace here after creating its file in this folder.
 const bundles = [common, tasks, messenger, calendar, notes] as const;
 
-export type MessageKey = { [I in keyof typeof bundles]: keyof (typeof bundles)[I]['en'] }[number] & string;
+// Distributes over the bundle union, so the result is the union of every namespace's keys.
+type KeysOf<Bundle> = Bundle extends { en: infer English } ? keyof English : never;
+export type MessageKey = KeysOf<(typeof bundles)[number]> & string;
 
 export const messages = Object.fromEntries(
   (['en', 'de', 'sk', 'hu', 'es'] as const).map((locale) => [

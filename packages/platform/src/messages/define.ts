@@ -10,7 +10,7 @@ export type TranslatedLocale = Exclude<Locale, 'en'>;
  */
 export function defineMessages<const En extends Record<string, string>>(
   en: En,
-  others: Record<TranslatedLocale, { [Key in keyof En]: string }>,
+  others: Record<TranslatedLocale, { [Key in keyof NoInfer<En>]: string }>,
 ): Record<Locale, { [Key in keyof En]: string }> {
   return { en, ...others };
 }
