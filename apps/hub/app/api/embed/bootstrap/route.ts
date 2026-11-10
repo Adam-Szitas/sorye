@@ -7,6 +7,7 @@ import { getHubSessionForWorkspace } from '@/lib/store';
 import {
   APP_CATALOG,
   getAppBySlug,
+  normalizeOrigin,
   originAllowed,
   type EmbedBootstrapResponse,
 } from '@sorye/types';
@@ -24,7 +25,13 @@ export async function POST(req: Request) {
   };
 
   const key = body.key?.trim();
-  const origin = body.origin?.trim();
+  // Browsers always send Origin on this cross-origin POST; it, not the body, is
+  // the page that asked. A body value that disagrees is rejected.
+  const headerOrigin = req.headers.get('origin')?.trim();
+  const origin = headerOrigin || body.origin?.trim();
+  if (headerOrigin && body.origin && normalizeOrigin(body.origin) !== normalizeOrigin(headerOrigin)) {
+    return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });
+  }
   const appSlug = body.app?.trim();
 
   if (!key || !origin || !appSlug) {

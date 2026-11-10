@@ -31,7 +31,8 @@
               "notifications",
               "events",
               "embed",
-              "protocolio"
+              "protocolio",
+              "forms"
             ]
           }
         },
@@ -63,7 +64,9 @@
               "project",
               "notification",
               "widget",
-              "artifact"
+              "artifact",
+              "form",
+              "submission"
             ]
           }
         },
@@ -2156,6 +2159,48 @@
         }
       }
     },
+    "/v2/public/forms/{slug}": {
+      "parameters": [
+        { "name": "slug", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" } }
+      ],
+      "get": {
+        "operationId": "readPublishedFormV2",
+        "security": [{ "hubAssertion": [] }],
+        "x-required-scope": "actions:read",
+        "description": "Returns one published form definition. The assertion must be the reserved public grant with app:forms and read:forms.form. The slug selects the form; it does not select a workspace. Unpublished, deleted and unknown slugs are not_found. The response omits workspace id and actor id.",
+        "responses": {
+          "200": { "description": "Published form projection", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublishedForm" } } } },
+          "400": { "description": "Slug is not a public path segment" },
+          "401": { "description": "Invalid signed assertion" },
+          "403": { "description": "Assertion is not the reserved public grant or is missing form scopes" },
+          "404": { "description": "Slug is unknown or the form is not published" },
+          "503": { "description": "Action provider unavailable" }
+        }
+      }
+    },
+    "/v2/public/forms/{slug}/submissions": {
+      "parameters": [
+        { "name": "slug", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" } }
+      ],
+      "post": {
+        "operationId": "submitPublicFormV2",
+        "security": [{ "hubAssertion": [] }],
+        "x-required-scope": "actions:write",
+        "description": "Stores one anonymous submission for a published form that is accepting responses. Requires the reserved public grant with app:forms and action:forms.submission.create. Rodrigo resolves the workspace and form from the slug, validates answers against the stored definition in the same transaction, and records the server time. submissionId is the idempotency key: the same id with the same answers returns duplicate; with different answers it is refused.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicFormSubmission" } } } },
+        "responses": {
+          "201": { "description": "Submission stored" },
+          "200": { "description": "Duplicate of a stored submission" },
+          "400": { "description": "Slug or body is malformed" },
+          "401": { "description": "Invalid signed assertion" },
+          "403": { "description": "Assertion is not the reserved public grant or is missing form scopes" },
+          "404": { "description": "Slug is unknown or the form is not published" },
+          "409": { "description": "form_closed, or submission_id_reused with different answers" },
+          "422": { "description": "required_missing, invalid_answer or unknown_field" },
+          "503": { "description": "Action provider unavailable" }
+        }
+      }
+    },
     "/v2/collections/{app}/{resourceType}/{limit}/{cursor}": {
       "parameters": [
         {
@@ -2181,7 +2226,8 @@
               "notifications",
               "events",
               "embed",
-              "protocolio"
+              "protocolio",
+              "forms"
             ]
           }
         },
@@ -2213,7 +2259,9 @@
               "project",
               "notification",
               "widget",
-              "artifact"
+              "artifact",
+              "form",
+              "submission"
             ]
           }
         },
@@ -3697,7 +3745,8 @@
               "notifications",
               "events",
               "embed",
-              "protocolio"
+              "protocolio",
+              "forms"
             ]
           },
           "resourceType": {
@@ -3724,7 +3773,9 @@
               "project",
               "notification",
               "widget",
-              "artifact"
+              "artifact",
+              "form",
+              "submission"
             ]
           },
           "operation": {
@@ -4738,6 +4789,28 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": { "const": "forms" },
+                "resourceType": { "const": "form" },
+                "operation": { "enum": ["create", "update"] }
+              },
+              "required": ["appId", "resourceType", "operation"]
+            },
+            "then": { "properties": { "payload": { "$ref": "#/components/schemas/FormPayload" } } }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": { "const": "forms" },
+                "resourceType": { "const": "submission" },
+                "operation": { "enum": ["update"] }
+              },
+              "required": ["appId", "resourceType", "operation"]
+            },
+            "then": { "properties": { "payload": { "$ref": "#/components/schemas/FormSubmissionPayload" } } }
           },
           {
             "if": {
@@ -5882,6 +5955,75 @@
             "format": "date-time",
             "maxLength": 64
           }
+        }
+      },
+      "FormField": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "label", "required"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$" },
+            "kind": { "type": "string", "enum": ["text", "textarea", "email", "phone", "number", "date", "select", "multiselect", "checkbox", "consent"] },
+            "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "help": { "type": "string", "maxLength": 500 },
+            "required": { "type": "boolean" },
+            "options": { "type": "array", "minItems": 1, "maxItems": 50, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 200 }, "description": "Required for select and multiselect; not allowed on other kinds." }
+          }
+        },
+      "FormPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "slug", "title", "description", "published", "accepting", "version", "fields", "successMessage", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 160, "description": "Must equal the action resourceId." },
+          "slug": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "published": { "type": "boolean" },
+          "accepting": { "type": "boolean" },
+          "version": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+          "fields": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/components/schemas/FormField" } },
+          "successMessage": { "type": "string", "maxLength": 500 },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "FormSubmissionPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Created only by the public submission route. A member update may change status only.",
+        "required": ["id", "formId", "formVersion", "answers", "submittedAt", "status", "source"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "formId": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "formVersion": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+          "answers": { "type": "object", "maxProperties": 50, "additionalProperties": { "oneOf": [ { "type": "null" }, { "type": "boolean" }, { "type": "number" }, { "type": "string", "maxLength": 5000 }, { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 200 } } ] } },
+          "submittedAt": { "type": "string", "format": "date-time" },
+          "status": { "type": "string", "enum": ["new", "handled", "spam"] },
+          "source": { "type": "string", "const": "public" }
+        }
+      },
+      "PublishedForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "formId", "version", "title", "description", "fields", "successMessage", "accepting"],
+        "properties": {
+          "slug": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "formId": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "version": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "description": { "type": "string", "maxLength": 2000 },
+          "fields": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/components/schemas/FormField" } },
+          "successMessage": { "type": "string", "maxLength": 500 },
+          "accepting": { "type": "boolean" }
+        }
+      },
+      "PublicFormSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["submissionId", "answers"],
+        "properties": {
+          "submissionId": { "type": "string", "format": "uuid" },
+          "answers": { "type": "object", "maxProperties": 50, "additionalProperties": { "oneOf": [ { "type": "null" }, { "type": "boolean" }, { "type": "number" }, { "type": "string", "maxLength": 5000 }, { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 200 } } ] } }
         }
       },
       "PublishedSite": {

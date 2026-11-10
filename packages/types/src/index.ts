@@ -23,6 +23,7 @@ export * from './operator';
 export * from './analytics';
 export * from './storefront';
 export * from './site';
+export * from './forms';
 export * from './mail';
 export * from './files';
 export * from './cloud-storage';

@@ -1,4 +1,4 @@
-import { isTaskAttachmentList, isTaskDriveFileId } from '@sorye/types';
+import { isFormDefinition, isFormSubmission, isTaskAttachmentList, isTaskDriveFileId } from '@sorye/types';
 import { z } from 'zod';
 import { parseTasksBoard } from '@/lib/workspace-docs-validate';
 
@@ -35,7 +35,7 @@ function taskImagesOk(p: Obj) {
   return true;
 }
 function validPayload(app: string, resource: string, op: string, p: Obj, resourceId: string): boolean {
-  if (op === 'delete') return ['tasks:task', 'notes:note', 'calendar:event', 'canvas:board'].includes(`${app}:${resource}`) && Object.keys(p).length === 0;
+  if (op === 'delete') return ['tasks:task', 'notes:note', 'calendar:event', 'canvas:board', 'forms:form', 'forms:submission'].includes(`${app}:${resource}`) && Object.keys(p).length === 0;
   const upd = () => timestamp(p.updatedAt);
   switch (`${app}:${resource}:${op}`) {
     case 'tasks:task:create': case 'tasks:task:update': return exact(p, ['id','title','body','statusId','createdAt','updatedAt'], ['driveFileId','attachmentIds']) && taskImagesOk(p) && p.id === resourceId && str(p,'title',1,500) && str(p,'body',0,20000) && str(p,'statusId',1,128) && timestamp(p.createdAt) && upd();
@@ -78,6 +78,9 @@ function validPayload(app: string, resource: string, op: string, p: Obj, resourc
     case 'events:event:create': return exact(p,['id','name','appId','entityId','payload','createdAt']) && str(p,'id',1,160) && str(p,'name',1,128) && str(p,'appId',1,64) && str(p,'entityId',0,160) && object(p.payload) && timestamp(p.createdAt);
     case 'embed:widget:create': case 'embed:widget:update': return exact(p,['id','name','enabled','config','updatedAt']) && str(p,'id',1,160) && str(p,'name',1,120) && bool(p,'enabled') && object(p.config) && upd();
     case 'protocolio:artifact:create': case 'protocolio:artifact:update': return exact(p,['id','kind','content','updatedAt']) && str(p,'id',1,160) && ['template','generatedPdfRef'].includes(String(p.kind)) && object(p.content) && upd();
+    case 'forms:form:create': case 'forms:form:update': return isFormDefinition(p, resourceId) && upd();
+    // Submissions are created only by the anonymous public route; members change the status.
+    case 'forms:submission:update': return isFormSubmission(p, resourceId) && timestamp(p.submittedAt);
     default: return false;
   }
 }
@@ -89,10 +92,11 @@ const supported: Record<string, string[]> = {
   'relay:config':['create','update'], 'site:page':['create','update'], 'storefront:product':['create','update'], 'storefront:order':['create','update'],
   'ocr:analysis':['create','update'], 'ocr:pattern':['create','update'], 'studio:project':['create','update'], 'notifications:notification':['create','update'],
   'events:event':['create'], 'embed:widget':['create','update'], 'protocolio:artifact':['create','update'],
+  'forms:form':['create','update','delete'], 'forms:submission':['update','delete'],
 };
 const actionSchema = z.object({
-  actionId: z.string().uuid(), appId: z.enum(['tasks','notes','calendar','workspace','messenger','files','canvas','mail','relay','site','storefront','ocr','studio','notifications','events','embed','protocolio']),
-  resourceType: z.enum(['task','taskBoard','note','event','settings','channel','message','reaction','fileMetadata','board','account','draft','config','page','product','order','analysis','pattern','project','notification','widget','artifact']), operation: z.enum(['create','update','delete']),
+  actionId: z.string().uuid(), appId: z.enum(['tasks','notes','calendar','workspace','messenger','files','canvas','mail','relay','site','storefront','ocr','studio','notifications','events','embed','protocolio','forms']),
+  resourceType: z.enum(['task','taskBoard','note','event','settings','channel','message','reaction','fileMetadata','board','account','draft','config','page','product','order','analysis','pattern','project','notification','widget','artifact','form','submission']), operation: z.enum(['create','update','delete']),
   resourceId: z.string().min(1).max(160), expectedRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER - 1).optional(), payloadVersion: z.literal(1), payload: z.record(z.unknown()), occurredAt: z.string().max(64).refine(timestamp),
 }).strict().superRefine((value, ctx) => {
   const key = `${value.appId}:${value.resourceType}`;

@@ -26,6 +26,8 @@ const publicPaths = [
   '/apps/contact',
   '/architecture',
   '/s',
+  // Anonymous Forms read and submit. Bounded and rate-limited in the route handlers.
+  '/api/forms/public',
 ];
 
 /** Dev-only: Vite remotes on another localhost port call Hub `/api` with cookies. */
@@ -57,6 +59,21 @@ function plain(status: number, body: string): NextResponse {
     status,
     headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
   });
+}
+
+/** `'self'` plus the origins named in an embed token, or `'none'` without a usable token. */
+function embedFrameAncestors(token: string | null): string {
+  const body = token?.split('.')[0];
+  if (!body || body.length > 8192) return "'none'";
+  try {
+    const json = atob(body.replace(/-/g, '+').replace(/_/g, '/'));
+    const origins = (JSON.parse(json) as { origins?: unknown }).origins;
+    if (!Array.isArray(origins)) return "'none'";
+    const safe = origins.filter((o): o is string => typeof o === 'string' && /^https?:\/\/[a-z0-9.-]+(:\d{1,5})?$/i.test(o)).slice(0, 32);
+    return ["'self'", ...safe].join(' ');
+  } catch {
+    return "'none'";
+  }
 }
 
 function jsonError(status: number, code: string): NextResponse {
@@ -159,11 +176,11 @@ export default auth((req) => {
 
   const res = NextResponse.next();
 
-  // Framing is further restricted by origin checks in bootstrap + embed page.
-  // Allowed origins are enforced before a token is issued.
-  if (pathname.startsWith('/embed')) {
-    // Bootstrap + referer checks enforce the origin allowlist; CSP allows framing.
-    res.headers.set('Content-Security-Policy', 'frame-ancestors *');
+  // Only the widget's allowlisted origins may frame an embed page. The origins
+  // come from the token in the URL; the page itself verifies the signature, so a
+  // forged token only ever reaches the error screen.
+  if (pathname.startsWith('/embed/')) {
+    res.headers.set('Content-Security-Policy', `frame-ancestors ${embedFrameAncestors(req.nextUrl.searchParams.get('t'))}`);
   }
 
   return standaloneOrigin ? withDevCors(res, standaloneOrigin) : res;

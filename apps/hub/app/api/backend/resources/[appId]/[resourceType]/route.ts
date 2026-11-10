@@ -7,7 +7,7 @@ const types: Record<string, readonly string[]> = {
   messenger: ['channel', 'message', 'reaction'], files: ['fileMetadata'], canvas: ['board'],
   mail: ['account', 'draft'], relay: ['config'], site: ['page'], storefront: ['product', 'order'],
   ocr: ['analysis', 'pattern'], studio: ['project'], notifications: ['notification'],
-  events: ['event'], embed: ['widget'], protocolio: ['artifact'],
+  events: ['event'], embed: ['widget'], protocolio: ['artifact'], forms: ['form', 'submission'],
 };
 
 export async function GET(request: Request, { params }: { params: Promise<{ appId: string; resourceType: string }> }) {

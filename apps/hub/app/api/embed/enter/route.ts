@@ -40,6 +40,9 @@ export async function GET(req: Request) {
     secure: isProd,
     path: '/',
     maxAge: EMBED_TOKEN_TTL_SEC,
+    // Partitioned (CHIPS) keeps the cookie working inside third-party iframes in
+    // browsers that block unpartitioned third-party cookies.
+    partitioned: isProd,
   });
 
   // Restrict who may frame this response / the follow-up page.

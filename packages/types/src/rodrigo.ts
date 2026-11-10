@@ -12,8 +12,8 @@ export interface RodrigoCapabilities {
   platform?: { version: '1'; provider: 'not_configured' | 'ready'; namespaces: string[]; maxAuditPageSize: 100 };
 }
 export interface RodrigoErrorEnvelope { error: { code: string; requestId: string }; }
-export type RodrigoActionAppId = 'tasks' | 'notes' | 'calendar' | 'workspace' | 'messenger' | 'files' | 'canvas' | 'mail' | 'relay' | 'site' | 'storefront' | 'ocr' | 'studio' | 'notifications' | 'events' | 'embed' | 'protocolio';
-export type RodrigoActionResourceType = 'task' | 'taskBoard' | 'note' | 'event' | 'settings' | 'channel' | 'message' | 'reaction' | 'fileMetadata' | 'board' | 'account' | 'draft' | 'config' | 'page' | 'product' | 'order' | 'analysis' | 'pattern' | 'project' | 'notification' | 'widget' | 'artifact';
+export type RodrigoActionAppId = 'tasks' | 'notes' | 'calendar' | 'workspace' | 'messenger' | 'files' | 'canvas' | 'mail' | 'relay' | 'site' | 'storefront' | 'ocr' | 'studio' | 'notifications' | 'events' | 'embed' | 'protocolio' | 'forms';
+export type RodrigoActionResourceType = 'task' | 'taskBoard' | 'note' | 'event' | 'settings' | 'channel' | 'message' | 'reaction' | 'fileMetadata' | 'board' | 'account' | 'draft' | 'config' | 'page' | 'product' | 'order' | 'analysis' | 'pattern' | 'project' | 'notification' | 'widget' | 'artifact' | 'form' | 'submission';
 export type RodrigoActionOperation = 'create' | 'update' | 'delete';
 export interface RodrigoAction {
   actionId: string; appId: RodrigoActionAppId; resourceType: RodrigoActionResourceType;

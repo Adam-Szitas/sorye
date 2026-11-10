@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import type { RodrigoCapabilities, RodrigoDocumentKind, RodrigoDocumentWrite, RodrigoDocumentDelete, RodrigoSnapshot, RodrigoTopology, RodrigoActionBatch, RodrigoActionBatchResult, RodrigoActionAppId, RodrigoActionResourceType, RodrigoResourceSnapshot, RodrigoCollectionPage, RodrigoMessengerMessagePage } from '@sorye/types';
+import { FORM_FIELD_KINDS, type FormAnswers, type PublishedForm } from '@sorye/types';
 import { signRodrigoRequest } from './sign-request';
 import { actionBatchSchema as validatedActionBatchSchema } from './action-validation';
 
@@ -11,7 +12,7 @@ const resourceTypes: Record<RodrigoActionAppId, readonly RodrigoActionResourceTy
   messenger: ['channel', 'message', 'reaction'], files: ['fileMetadata'], canvas: ['board'],
   mail: ['account', 'draft'], relay: ['config'], site: ['page'], storefront: ['product', 'order'],
   ocr: ['analysis', 'pattern'], studio: ['project'], notifications: ['notification'],
-  events: ['event'], embed: ['widget'], protocolio: ['artifact'],
+  events: ['event'], embed: ['widget'], protocolio: ['artifact'], forms: ['form', 'submission'],
 };
 function assertResourceFamily(appId: RodrigoActionAppId, resourceType: RodrigoActionResourceType) {
   if (!resourceTypes[appId]?.includes(resourceType)) throw new Error('Invalid Rodrigo app/resource family.');
@@ -164,6 +165,38 @@ export async function readPublishedSite(slug: string): Promise<PublishedSiteReso
     if (error instanceof RodrigoResponseError && error.status === 404) return null;
     throw error;
   }
+}
+const formFieldSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), kind: z.enum(FORM_FIELD_KINDS), label: z.string().min(1).max(200),
+  help: z.string().max(500).optional(), required: z.boolean(), options: z.array(z.string().min(1).max(200)).min(1).max(50).optional(),
+}).strict();
+const publishedFormSchema = z.object({
+  slug: z.string().min(1).max(64), formId: z.string().min(1).max(160), version: z.number().int().min(1).max(1_000_000),
+  title: z.string().min(1).max(200), description: z.string().max(2000), fields: z.array(formFieldSchema).min(1).max(50),
+  successMessage: z.string().max(500), accepting: z.boolean(),
+}).strict();
+const publicSubmissionResultSchema = z.object({ status: z.enum(['accepted', 'duplicate']), submissionId: z.string().uuid() }).strict();
+const FORMS_PUBLIC_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Anonymous read of a published form. `null` when the slug is unknown or unpublished. */
+export async function readPublishedForm(slug: string): Promise<PublishedForm | null> {
+  if (!FORMS_PUBLIC_SLUG.test(slug) || slug.length > 64) throw new Error('Invalid public form slug.');
+  try {
+    return await request(PUBLIC_SITE_CONTEXT, `/v2/public/forms/${encodeURIComponent(slug)}`, 'actions:read', publishedFormSchema, 'GET', undefined, 262144, {
+      apps: ['forms'], actions: ['read:forms.form'],
+    });
+  } catch (error) {
+    if (error instanceof RodrigoResponseError && error.status === 404) return null;
+    throw error;
+  }
+}
+/**
+ * Stores one anonymous submission. Rodrigo resolves the workspace from the slug and
+ * validates the answers; `submissionId` makes a retry safe. Never retried here.
+ */
+export function submitPublicForm(slug: string, input: { submissionId: string; answers: FormAnswers }): Promise<{ status: 'accepted' | 'duplicate'; submissionId: string }> {
+  if (!FORMS_PUBLIC_SLUG.test(slug) || slug.length > 64) throw new Error('Invalid public form slug.');
+  return request(PUBLIC_SITE_CONTEXT, `/v2/public/forms/${encodeURIComponent(slug)}/submissions`, 'actions:write', publicSubmissionResultSchema, 'POST',
+    { submissionId: input.submissionId, answers: input.answers }, 65536, { apps: ['forms'], actions: ['forms.submission.create'] });
 }
 export async function listRodrigoResourcesBounded(context: RodrigoContext, appId: RodrigoActionAppId, resourceType: RodrigoActionResourceType, pages = 5) {
   const items: RodrigoCollectionPage['items'] = [];

@@ -21,7 +21,8 @@
       "relay.config.create", "relay.config.update", "site.page.create", "site.page.update", "storefront.product.create", "storefront.product.update",
       "storefront.order.create", "storefront.order.update", "ocr.analysis.create", "ocr.analysis.update", "ocr.pattern.create", "ocr.pattern.update",
       "studio.project.create", "studio.project.update", "notifications.notification.create", "notifications.notification.update", "events.event.create",
-      "embed.widget.create", "embed.widget.update", "protocolio.artifact.create", "protocolio.artifact.update"
+      "embed.widget.create", "embed.widget.update", "protocolio.artifact.create", "protocolio.artifact.update",
+      "forms.form.create", "forms.form.update", "forms.form.delete", "forms.submission.update", "forms.submission.delete"
     ]
   },
   "platform": {
