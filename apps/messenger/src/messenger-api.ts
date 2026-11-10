@@ -1,3 +1,4 @@
+import { getLocale, translate, type MessageKey, type MessageParams } from '@sorye/platform';
 import { createDurableActionQueue, type DurableActionQueue } from '@sorye/platform';
 import type { MessengerBootstrap, MessengerChannel, MessengerMessage, MessengerMessageKind, MessengerMessagesPage, RodrigoAction, RodrigoActionBatchResult, RodrigoActionResult } from '@sorye/types';
 import { HUB_NOTIFY_EVENT, MESSENGER_PAGE_SIZE } from '@sorye/types';
@@ -12,10 +13,12 @@ function hubPath(path: string) {
   try { return window.location.origin === new URL(origin).origin ? path : new URL(path, origin).toString(); } catch { return path; }
 }
 
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(hubPath(path), { credentials: 'include', ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } }); }
-  catch { throw new Error('Hub/Rodrigo could not be reached. Your action remains in this browser queue.'); }
+  catch { throw new Error(tr('messenger.err.unreachable')); }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const code = typeof data.error?.code === 'string' ? data.error.code : 'request_failed';
@@ -26,7 +29,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function getQueue() {
   const { queueScope } = await request<{ queueScope: string }>('/api/messenger/scope');
-  if (!/^[a-f0-9]{64}$/.test(queueScope)) throw new Error('Hub returned an invalid Messenger queue scope.');
+  if (!/^[a-f0-9]{64}$/.test(queueScope)) throw new Error(tr('messenger.err.invalidScope'));
   let queue = queues.get(queueScope);
   if (!queue) { queue = createDurableActionQueue<RodrigoAction>({ appId: 'messenger', scope: queueScope, maxRows: 500 }); queues.set(queueScope, queue); }
   return { scope: queueScope, queue };
@@ -45,7 +48,7 @@ async function flush(scope: string, queue: DurableActionQueue<RodrigoAction>, on
     }
     const outcome = batch.results.find((item) => item.actionId === row.action.actionId);
     if (outcome) await queue.settle(outcome);
-    else await queue.markTransportFailure(row.action.actionId, { code: 'missing_action_result', message: 'Rodrigo returned no result for this action.' });
+    else await queue.markTransportFailure(row.action.actionId, { code: 'missing_action_result', message: tr('messenger.err.noResult') });
   }
 }
 
@@ -83,14 +86,14 @@ export async function openDm(peerUserId: string, userId: string): Promise<Messen
   return { id, workspaceId: '', kind: 'dm', name: 'direct', memberIds, createdAt: now, createdBy: userId };
 }
 export async function createChannel(name: string, userId: string): Promise<MessengerChannel> {
-  const clean = name.trim().replace(/\s+/g, '-').toLowerCase().slice(0, 32); if (!clean) throw new Error('Channel name is required.');
+  const clean = name.trim().replace(/\s+/g, '-').toLowerCase().slice(0, 32); if (!clean) throw new Error(tr('messenger.err.channelName'));
   const id = 'ch-' + crypto.randomUUID(); const now = new Date().toISOString();
   await submit(action('channel', id, { id, name: clean, kind: 'public', updatedAt: now }));
   return { id, workspaceId: '', kind: 'channel', name: clean, memberIds: [], createdAt: now, createdBy: userId };
 }
 export async function sendMessage(input: { channelId: string; kind: MessengerMessageKind; text?: string; mentions?: { userId: string }[]; imageDataUrl?: string; imageBytes?: number; imageWidth?: number; imageHeight?: number }): Promise<MessengerMessage> {
-  if (input.kind === 'image' || input.imageDataUrl) throw new Error('Image messages are unavailable until Rodrigo has a dedicated blob API.');
-  const body = input.text?.trim() ?? ''; if (!body) throw new Error('Message text is required.');
+  if (input.kind === 'image' || input.imageDataUrl) throw new Error(tr('messenger.err.imageUnavailable'));
+  const body = input.text?.trim() ?? ''; if (!body) throw new Error(tr('messenger.err.messageText'));
   const id = 'message-' + crypto.randomUUID(); const now = new Date().toISOString();
   const mentionUserIds = [...new Set((input.mentions ?? []).map((m) => m.userId))];
   await submit(action('message', id, { id, channelId: input.channelId, body, mentionUserIds, attachmentIds: [], createdAt: now, updatedAt: now }));

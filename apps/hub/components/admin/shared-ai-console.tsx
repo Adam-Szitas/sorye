@@ -18,7 +18,13 @@ type Telemetry = {
   events: { id: string; at: string; type: string; status?: string; model?: string; durationMs?: number; detail?: string }[];
 };
 
-type Notice = { tone: Tone; text: string } | null;
+type NoticePlace = 'runtime' | 'edit' | 'rollback';
+type Notice = { tone: Tone; text: string; place: NoticePlace } | null;
+
+function NoticeLine({ notice, place }: { notice: Notice; place: NoticePlace }) {
+  if (!notice || notice.place !== place) return null;
+  return <p role={notice.tone === 'ok' ? 'status' : 'alert'} className="admin-alert" data-tone={notice.tone === 'ok' ? undefined : notice.tone}>{notice.text}</p>;
+}
 type Conflict = { latestRevision: number; latest: SharedAiConfigV1 | null } | null;
 
 const PROPAGATION_TONE: Record<string, Tone> = { applied: 'ok', pending: 'warn', failed: 'bad', unknown: 'info' };
@@ -48,6 +54,8 @@ export function SharedAiConsole() {
   const config = useAdminJson<SharedAiView>(CONFIG_URL, 15_000);
   const telemetry = useAdminJson<Telemetry>('/api/admin/llm', 10_000);
   const [draft, setDraft] = useState<SharedAiConfigV1 | null>(null);
+  /** The value the draft started from; only fields that differ from it are the administrator's edits. */
+  const [editBase, setEditBase] = useState<SharedAiConfigV1 | null>(null);
   const [baseRevision, setBaseRevision] = useState<number | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,12 +70,18 @@ export function SharedAiConsole() {
   const view = config.state.kind === 'ready' ? config.state.data : null;
   const storeReady = view?.store === 'ready';
   const current = view?.value ?? view?.hubEffective ?? null;
-  const dirty = Boolean(draft && current && !sameValue(draft, current));
+  const dirty = Boolean(draft && editBase && !sameValue(draft, editBase));
+  const myEdits = draft && editBase ? FIELDS.filter((field) => draft[field] !== editBase[field]) : [];
+
+  const resetDraft = (value: SharedAiConfigV1 | null, revision: number | null) => {
+    setDraft(value);
+    setEditBase(value);
+    setBaseRevision(revision);
+  };
 
   useEffect(() => {
     if (!view || dirty || conflict) return;
-    setDraft(view.value ?? view.hubEffective);
-    setBaseRevision(view.revision);
+    resetDraft(view.value ?? view.hubEffective, view.revision);
   }, [view, dirty, conflict]);
 
   const update = <K extends keyof SharedAiConfigV1>(key: K, value: SharedAiConfigV1[K]) => {
@@ -75,7 +89,7 @@ export function SharedAiConsole() {
     setDraft((previous) => previous ? { ...previous, [key]: value } : previous);
   };
 
-  async function commit(value: SharedAiConfigV1, expectedRevision: number, label: string, idRef: { current: string | null }) {
+  async function commit(value: SharedAiConfigV1, expectedRevision: number, label: string, idRef: { current: string | null }, place: NoticePlace) {
     idRef.current ??= crypto.randomUUID();
     setBusy(true);
     setNotice(null);
@@ -87,8 +101,9 @@ export function SharedAiConsole() {
       idRef.current = null;
       setConflict(null);
       setReason('');
+      if (place === 'edit') resetDraft(value, result.body.revision);
       const applied = result.body.hubAppliedRevision === result.body.revision ? 'Hub has applied it' : 'Hub has not applied it yet';
-      setNotice({ tone: 'ok', text: `${label}: revision ${result.body.revision} ${result.body.status === 'duplicate' ? 'was already committed (retry recognised)' : 'committed'}. ${applied}; the OCR worker applies it within one poll interval.` });
+      setNotice({ tone: 'ok', text: `${label}: revision ${result.body.revision} ${result.body.status === 'duplicate' ? 'was already committed (retry recognised)' : 'committed'}. ${applied}; the OCR worker applies it within one poll interval.`, place });
       await config.reload();
       return;
     }
@@ -96,16 +111,16 @@ export function SharedAiConsole() {
       const latest = await fetch(CONFIG_URL, { credentials: 'same-origin', cache: 'no-store' }).then((res) => res.json() as Promise<SharedAiView>).catch(() => null);
       idRef.current = null;
       setConflict({ latestRevision: latest?.revision ?? -1, latest: latest?.value ?? null });
-      setNotice({ tone: 'warn', text: `${label} was not saved: another administrator changed the configuration first. Review the latest values below.` });
+      setNotice({ tone: 'warn', text: `${label} was not saved: another administrator changed the configuration first. Review the latest values below.`, place: 'edit' });
       return;
     }
     if (result.status === 409 && result.body?.error === 'idempotency_key_reused') {
       idRef.current = null;
-      setNotice({ tone: 'warn', text: 'That change ID was already used for a different change. Submit again to send it as a new change.' });
+      setNotice({ tone: 'warn', text: 'That change ID was already used for a different change. Submit again to send it as a new change.', place });
       return;
     }
     if (result.status !== 503 && result.status !== 0) idRef.current = null;
-    setNotice({ tone: result.status === 503 || result.status === 0 ? 'warn' : 'bad', text: errorText(result.status, result.body) });
+    setNotice({ tone: result.status === 503 || result.status === 0 ? 'warn' : 'bad', text: errorText(result.status, result.body), place });
   }
 
   async function rollback(event: React.FormEvent) {
@@ -123,13 +138,13 @@ export function SharedAiConsole() {
     if (result.status === 200 && result.body) {
       pendingChange.current = null;
       setRollbackTarget('');
-      setNotice({ tone: 'ok', text: `Restored the values of revision ${target} as new revision ${result.body.revision}. History is unchanged.` });
-      setDraft(null);
+      setNotice({ tone: 'ok', text: `Restored the values of revision ${target} as new revision ${result.body.revision}. History is unchanged.`, place: 'rollback' });
+      resetDraft(null, null);
       await config.reload();
       return;
     }
     if (result.status !== 503 && result.status !== 0) pendingChange.current = null;
-    setNotice({ tone: result.status === 409 ? 'warn' : 'bad', text: result.status === 409 ? 'The configuration changed while you were choosing a revision. Reload and pick again.' : errorText(result.status, result.body) });
+    setNotice({ tone: result.status === 409 ? 'warn' : 'bad', text: result.status === 409 ? 'The configuration changed while you were choosing a revision. Reload and pick again.' : errorText(result.status, result.body), place: 'rollback' });
   }
 
   async function stop() {
@@ -139,18 +154,18 @@ export function SharedAiConsole() {
     setBusy(false);
     setConfirmStop(false);
     if (result.status === 200 && result.body) {
-      setNotice({ tone: result.body.unloaded ? 'ok' : 'warn', text: `${result.body.unloaded ? 'Stopped Hub requests and unloaded the model.' : `Stop ran but the model was not unloaded${result.body.detail ? `: ${result.body.detail}` : '.'}`}${result.body.auditOutcomeRecorded ? '' : ' The outcome could not be recorded in the audit log.'}` });
+      setNotice({ tone: result.body.unloaded ? 'ok' : 'warn', text: `${result.body.unloaded ? 'Stopped Hub requests and unloaded the model.' : `Stop ran but the model was not unloaded${result.body.detail ? `: ${result.body.detail}` : '.'}`}${result.body.auditOutcomeRecorded ? '' : ' The outcome could not be recorded in the audit log.'}`, place: 'runtime' });
       void telemetry.reload();
       return;
     }
     const code = result.body?.error;
-    setNotice({ tone: 'bad', text: code === 'pause_first' ? 'Pause shared AI first and wait until Hub shows it as applied.' : code === 'audit_unavailable' ? 'The audit log is unavailable, so nothing was stopped.' : errorText(result.status, result.body) });
+    setNotice({ tone: 'bad', text: code === 'pause_first' ? 'Pause shared AI first and wait until Hub shows it as applied.' : code === 'audit_unavailable' ? 'The audit log is unavailable, so nothing was stopped.' : errorText(result.status, result.body), place: 'runtime' });
   }
 
   const pauseRef = useRef<string | null>(null);
   const togglePause = () => {
     if (!view?.value) return;
-    void commit({ ...view.value, paused: !view.value.paused }, view.revision, view.value.paused ? 'Resume' : 'Pause', pauseRef);
+    void commit({ ...view.value, paused: !view.value.paused }, view.revision, view.value.paused ? 'Resume' : 'Pause', pauseRef, 'runtime');
   };
 
   const hubPaused = view?.hubEffective.paused === true;
@@ -162,8 +177,6 @@ export function SharedAiConsole() {
         intro="One shared AI engine serves the Hub and the separate OCR worker. Changes are stored in Rodrigo as numbered revisions; each consumer reports which revision it has applied."
       />
       <LoadNotice state={config.state} what="the shared AI configuration" />
-      {notice ? <p role={notice.tone === 'ok' ? 'status' : 'alert'} className="admin-alert" data-tone={notice.tone === 'ok' ? undefined : notice.tone}>{notice.text}</p> : null}
-
       {view ? (
         <section className="admin-section" aria-labelledby="ai-state-title">
           <h2 id="ai-state-title">Current state</h2>
@@ -215,7 +228,9 @@ export function SharedAiConsole() {
               <button type="button" className="admin-button" data-variant="danger" disabled={!hubPaused || busy} onClick={() => setConfirmStop(true)}>Stop and unload</button>
             )}
           </div>
+          {!view.value ? <p className="admin-hint">Pause becomes available once a first revision is saved below.</p> : null}
           {!hubPaused ? <p className="admin-hint">Stop becomes available after this Hub has applied a paused revision.</p> : null}
+          <NoticeLine notice={notice} place="runtime" />
         </section>
       ) : null}
 
@@ -227,14 +242,30 @@ export function SharedAiConsole() {
               <p>Revision {conflict.latestRevision} was saved by someone else after you started editing revision {baseRevision}.</p>
               {conflict.latest ? (
                 <ul>
-                  {FIELDS.filter((field) => conflict.latest && conflict.latest[field] !== draft[field]).map((field) => (
+                  {myEdits.map((field) => (
                     <li key={field}>{field}: theirs <strong>{String(conflict.latest?.[field])}</strong>, yours <strong>{String(draft[field])}</strong></li>
                   ))}
                 </ul>
               ) : null}
               <div className="admin-actions">
-                <button type="button" className="admin-button" onClick={() => { setConflict(null); setDraft(conflict.latest); setBaseRevision(conflict.latestRevision); changeId.current = null; }}>Discard mine, use theirs</button>
-                <button type="button" className="admin-button" onClick={() => { setBaseRevision(conflict.latestRevision); setConflict(null); changeId.current = null; }}>Keep mine on top of theirs</button>
+                <button type="button" className="admin-button" onClick={() => { setConflict(null); resetDraft(conflict.latest, conflict.latestRevision); changeId.current = null; }}>Discard mine, use theirs</button>
+                {conflict.latest ? (
+                  <button
+                    type="button"
+                    className="admin-button"
+                    onClick={() => {
+                      const latest = conflict.latest as SharedAiConfigV1;
+                      const merged = { ...latest, ...Object.fromEntries(myEdits.map((field) => [field, draft[field]])) } as SharedAiConfigV1;
+                      setConflict(null);
+                      setDraft(merged);
+                      setEditBase(latest);
+                      setBaseRevision(conflict.latestRevision);
+                      changeId.current = null;
+                    }}
+                  >
+                    Apply only my changes on top of theirs
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -242,7 +273,7 @@ export function SharedAiConsole() {
             className="admin-form"
             onSubmit={(event) => {
               event.preventDefault();
-              if (draft && baseRevision !== null) void commit(draft, baseRevision, 'Configuration', changeId);
+              if (draft && baseRevision !== null) void commit(draft, baseRevision, 'Configuration', changeId, 'edit');
             }}
           >
             <fieldset disabled={!storeReady || busy || Boolean(conflict)}>
@@ -290,8 +321,9 @@ export function SharedAiConsole() {
               <button type="submit" className="admin-button" data-variant="primary" disabled={!storeReady || busy || !dirty || Boolean(conflict)}>
                 {busy ? 'Saving' : changeId.current ? 'Retry the same change' : 'Save as new revision'}
               </button>
-              <button type="button" className="admin-button" disabled={busy || !dirty} onClick={() => { changeId.current = null; setConflict(null); setDraft(current); setBaseRevision(view.revision); }}>Discard edits</button>
+              <button type="button" className="admin-button" disabled={busy || !dirty} onClick={() => { changeId.current = null; setConflict(null); resetDraft(current, view.revision); }}>Discard edits</button>
             </div>
+            <NoticeLine notice={notice} place="edit" />
           </form>
         </section>
       ) : null}
@@ -308,6 +340,7 @@ export function SharedAiConsole() {
               </div>
               <button type="submit" className="admin-button" disabled={busy}>Restore as revision {view.revision + 1}</button>
             </div>
+            <NoticeLine notice={notice} place="rollback" />
           </form>
         </section>
       ) : null}

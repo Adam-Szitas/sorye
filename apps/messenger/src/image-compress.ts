@@ -1,4 +1,6 @@
 /** Shrink images before storing as data URLs (Messenger only allows text + pictures). */
+import { getLocale, translate, type MessageKey, type MessageParams } from '@sorye/platform';
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
 
 export interface CompressedImage {
   dataUrl: string;
@@ -22,7 +24,7 @@ function loadImage(file: File): Promise<HTMLImageElement> {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Could not read image'));
+      reject(new Error(tr('messenger.err.readImage')));
     };
     img.src = url;
   });
@@ -36,7 +38,7 @@ function canvasToBlob(
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => {
-        if (!blob) reject(new Error('Compression failed'));
+        if (!blob) reject(new Error(tr('messenger.err.compress')));
         else resolve(blob);
       },
       type,
@@ -49,7 +51,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Could not encode image'));
+    reader.onerror = () => reject(new Error(tr('messenger.err.encode')));
     reader.readAsDataURL(blob);
   });
 }
@@ -59,7 +61,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
  */
 export async function compressImageFile(file: File): Promise<CompressedImage> {
   if (!file.type.startsWith('image/')) {
-    throw new Error('Only image files are supported');
+    throw new Error(tr('messenger.err.onlyImages'));
   }
 
   const img = await loadImage(file);
@@ -71,7 +73,7 @@ export async function compressImageFile(file: File): Promise<CompressedImage> {
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas unavailable');
+  if (!ctx) throw new Error(tr('messenger.err.canvas'));
   ctx.drawImage(img, 0, 0, width, height);
 
   let quality = 0.72;

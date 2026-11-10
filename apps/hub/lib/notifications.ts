@@ -6,8 +6,10 @@ import {
   type WorkspaceNotification,
 } from '@sorye/types';
 import {
+  accessibleMessengerChannelIds,
   listMessengerUnreadNotices,
   markMessengerRead,
+  messengerReadMap,
   markMessengerUnreadNotices,
 } from '@/lib/messenger-unread';
 import { jsonDataFile } from '@/lib/store/json-file';
@@ -111,6 +113,7 @@ function unreadCounts(
 export async function recordWorkspaceNotification(input: {
   workspaceId: string;
   userId?: string;
+  actorId?: string;
   appId: string;
   title: string;
   body?: string;
@@ -124,6 +127,7 @@ export async function recordWorkspaceNotification(input: {
     id: `ntf-${randomUUID().slice(0, 10)}`,
     workspaceId: input.workspaceId,
     userId: input.userId,
+    actorId: input.actorId,
     appId: input.appId,
     title: input.title.trim(),
     body: input.body?.trim() ?? '',
@@ -155,10 +159,30 @@ export async function getNotificationSnapshot(input: {
     getNotificationSettings(input.workspaceId, input.userId),
   ]);
   const readIds = readIdsForUser(readStore, input.workspaceId, input.userId);
-  const messengerNotices = await listMessengerUnreadNotices(input.userId, input.workspaceId);
+  const [messengerNotices, channelIds, messengerRead] = await Promise.all([
+    listMessengerUnreadNotices(input.userId, input.workspaceId),
+    accessibleMessengerChannelIds(input.userId, input.workspaceId),
+    messengerReadMap(input.userId, input.workspaceId),
+  ]);
+  const channelsWithUnread = new Set(messengerNotices.map((notice) => notice.channelId));
   const stored = (store[input.workspaceId] ?? [])
-    .filter((notice) => !notice.userId || notice.userId === input.userId);
-  const notifications = [
+    // Addressed to someone else, or caused by this member's own action.
+    .filter((notice) => (!notice.userId || notice.userId === input.userId) && notice.actorId !== input.userId)
+    // A Messenger notice is only meaningful if the member can open that channel.
+    // Without this the badge counts pings for channels that were deleted or that
+    // the member never joined, and the app opens empty.
+    .filter((notice) => {
+      if (notice.appId !== 'messenger') return true;
+      // Event notices without a channel mirror a message in #events, which the
+      // unread rows below already list; keeping both double counts.
+      if (!notice.channelId || !channelIds.has(notice.channelId)) return false;
+      // A ping is superseded by the unread message row, and stale once the
+      // member has read the channel past it.
+      if (channelsWithUnread.has(notice.channelId)) return false;
+      const readThrough = messengerRead[notice.channelId];
+      return !readThrough || notice.createdAt > readThrough;
+    });
+  const merged = [
     ...messengerNotices.map((notice) => ({
       id: notice.id,
       workspaceId: input.workspaceId,
@@ -170,8 +194,11 @@ export async function getNotificationSnapshot(input: {
       createdAt: notice.createdAt,
     })),
     ...stored,
-  ].slice(0, input.limit ?? 50);
-  const { unreadByApp, unreadTotal } = unreadCounts(notifications, readIds);
+  ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Count everything unread, not only the rows the list shows, so the badge
+  // matches what the member can reach.
+  const { unreadByApp, unreadTotal } = unreadCounts(merged, readIds);
+  const notifications = merged.slice(0, input.limit ?? 50);
 
   return {
     notifications: notifications.map((n) => ({

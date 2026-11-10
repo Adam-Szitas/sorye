@@ -9,7 +9,10 @@ import {
   type UserLoadPartition,
   type UserLoadWorkspace,
 } from '@sorye/types';
+import { getLocale, translate, type MessageKey, type MessageParams } from '@sorye/platform';
 import { hubApiPath } from './hub-origin';
+
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
 import {
   enqueueTaskAction,
   classifyTaskActionOutcome,
@@ -49,24 +52,24 @@ export function createTasksStorage() {
         headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
       });
     } catch {
-      throw new ApiError(0, 'Rodrigo could not be reached. Your task action remains safely queued in this browser.');
+      throw new ApiError(0, tr('tasks.err.unreachable'));
     }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const code = typeof data.error?.code === 'string' ? data.error.code : 'request_failed';
       if (response.status === 401 || response.status === 403 || code === 'unauthorized' || code === 'app_access_denied') {
-        throw new ApiError(response.status, 'You do not have access to Tasks in this workspace.');
+        throw new ApiError(response.status, tr('tasks.err.noAccess'));
       }
       throw new ApiError(response.status, code === 'rodrigo_unavailable' || response.status >= 500
-        ? 'Rodrigo could not confirm this change. Your task action remains safely queued in this browser.'
-        : `Task action failed (${code}).`);
+        ? tr('tasks.err.unconfirmed')
+        : tr('tasks.err.actionFailed', { code }));
     }
     return data as T;
   }
 
   async function readScope(): Promise<string> {
     const result = await request<{ queueScope: string; workspace: UserLoadWorkspace }>('/api/tasks/scope');
-    if (!/^[a-f0-9]{64}$/.test(result.queueScope)) throw new Error('Hub returned an invalid task queue scope.');
+    if (!/^[a-f0-9]{64}$/.test(result.queueScope)) throw new Error(tr('tasks.err.invalidScope'));
     activeScope = result.queueScope;
     lastWorkspace = result.workspace;
     return activeScope;
@@ -103,12 +106,12 @@ export function createTasksStorage() {
           method: 'POST', headers: { 'X-Sorye-Queue-Scope': scope }, body: JSON.stringify({ actions: [retryRow.action] }),
         });
       } catch (error) {
-        await updateTaskAction(scope, { ...retryRow, status: 'failed', error: error instanceof Error ? error.message : 'Unknown network failure' });
+        await updateTaskAction(scope, { ...retryRow, status: 'failed', error: error instanceof Error ? error.message : tr('tasks.err.network') });
         continue;
       }
       const outcome = result.results.find((item) => item.actionId === retryRow.action.actionId);
       if (!outcome) {
-        await updateTaskAction(scope, { ...retryRow, status: 'failed', error: 'Rodrigo returned no result for this task action.' });
+        await updateTaskAction(scope, { ...retryRow, status: 'failed', error: tr('tasks.err.noResult') });
         continue;
       }
       const disposition = classifyTaskActionOutcome(outcome);
@@ -116,11 +119,11 @@ export function createTasksStorage() {
         revision = Math.max(revision, outcome.revision ?? revision);
         await removeTaskAction(scope, retryRow.action.actionId);
       } else if (disposition === 'conflict') {
-        const error = outcome.error?.message ?? 'The task board changed in another session. Reload and reconcile your queued board.';
+        const error = outcome.error?.message ?? tr('tasks.err.boardChangedQueued');
         await updateTaskAction(scope, { ...retryRow, status: 'conflict', error });
         if (retryRow.action.payload && typeof retryRow.action.payload === 'object') saveConflictDraft(retryRow.action.payload as unknown as TasksBoard);
       } else {
-        await updateTaskAction(scope, { ...retryRow, status: disposition, error: outcome.error?.message ?? outcome.error?.code ?? 'Rodrigo rejected this action.' });
+        await updateTaskAction(scope, { ...retryRow, status: disposition, error: outcome.error?.message ?? outcome.error?.code ?? tr('tasks.err.rodrigoRejected') });
       }
     }
   }
@@ -178,8 +181,8 @@ export function createTasksStorage() {
     await run;
     const remaining = await listTaskActions(scope);
     const row = remaining.find((item) => item.action.actionId === action.actionId);
-    if (row?.status === 'conflict') throw new ApiError(409, row.error ?? 'The task board changed in another session. Reload and reconcile.');
-    if (row) throw new ApiError(503, row.error ?? 'Rodrigo has not confirmed this task change.');
+    if (row?.status === 'conflict') throw new ApiError(409, row.error ?? tr('tasks.err.boardChanged'));
+    if (row) throw new ApiError(503, row.error ?? tr('tasks.err.notConfirmed'));
     clearConflictDraft();
     return stored;
   }

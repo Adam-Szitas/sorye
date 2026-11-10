@@ -10,7 +10,7 @@ export function LanguageSelector({ placement = 'page' }: { placement?: 'page' | 
   const pathname = usePathname();
   const selectId = useId();
   if (pathname?.startsWith('/learn/')) return null;
-  if (placement === 'page' && (pathname === '/' || pathname?.startsWith('/apps/'))) return null;
+  if (placement === 'page' && (pathname === '/' || pathname?.startsWith('/apps/') || pathname?.startsWith('/admin'))) return null;
 
   const navbar = placement === 'navbar';
 

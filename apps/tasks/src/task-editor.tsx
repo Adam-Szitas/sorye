@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { getLocale, translate, type MessageKey, type MessageParams } from '@sorye/platform';
+import { useI18n } from '@sorye/platform/react';
 import { Select } from '@sorye/sdk/react';
 import { taskImageIds, type TaskItem, type TaskStatus } from '@sorye/types';
 import type { TaskPatch } from './status-handler';
@@ -47,6 +49,8 @@ function sameIds(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorProps) {
   const titleId = useId();
   const descriptionId = useId();
@@ -64,6 +68,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
     pending: [],
   });
   const savedRef = useRef(false);
+  const discardRef = useRef(false);
   const busyRef = useRef(false);
   const originalRef = useRef<Original>({
     title: task.title,
@@ -84,6 +89,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
   const draft = { title, body, statusId, keptIds, pending };
   draftRef.current = draft;
   onCloseRef.current = onClose;
+  const { t } = useI18n();
   const sharePath = `${window.location.pathname}?ticket=${encodeURIComponent(task.id)}`;
 
   function isDirty(value: Draft) {
@@ -126,7 +132,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
     const { images, rejected } = imageFilesFromTransfer(event.clipboardData);
     if (rejected && images.length === 0) {
       event.preventDefault();
-      setError('Only JPEG, PNG, WebP, or GIF images can be added.');
+      setError(tr('tasks.onlyImages'));
       return;
     }
     if (images.length === 0) return;
@@ -138,11 +144,11 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
   async function persist(value: Draft): Promise<boolean> {
     const label = value.title.trim();
     if (!label) {
-      setError('Add a summary before saving.');
+      setError(tr('tasks.addSummary'));
       return false;
     }
     if (label.length > 200) {
-      setError('The summary is too long.');
+      setError(tr('tasks.summaryTooLong'));
       return false;
     }
     const room = takeTaskImages(value.keptIds.length, value.pending.map((image) => image.file));
@@ -171,7 +177,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
       return true;
     } catch (err) {
       for (const id of uploaded) void deleteTaskPhoto(id);
-      setError(err instanceof Error ? err.message : 'Could not save this ticket.');
+      setError(err instanceof Error ? err.message : tr('tasks.ticketSaveFailed'));
       return false;
     } finally {
       busyRef.current = false;
@@ -193,6 +199,11 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
       void (async () => {
         if (savedRef.current || busyRef.current) {
           if (savedRef.current) onCloseRef.current();
+          return;
+        }
+        // Explicit discard: never trap the user behind a save that cannot succeed.
+        if (discardRef.current) {
+          onCloseRef.current();
           return;
         }
         const current = draftRef.current;
@@ -252,7 +263,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
       idRef.current?.focus();
       idRef.current?.select();
       setCopied(false);
-      setError('Clipboard is unavailable. The ticket id is selected so you can copy it.');
+      setError(tr('tasks.clipboardUnavailable'));
     }
   }
 
@@ -314,7 +325,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
           setDragOver(false);
           const { images, rejected } = imageFilesFromTransfer(event.dataTransfer);
           if (rejected && images.length === 0) {
-            setError('Only JPEG, PNG, WebP, or GIF images can be added.');
+            setError(tr('tasks.onlyImages'));
             return;
           }
           addFiles(images);
@@ -322,31 +333,31 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
       >
         <header className="task-editor-header">
           <h2 id={titleId} className="task-ticket-heading">
-            <span className="task-ticket-kicker">Ticket</span>
+            <span className="task-ticket-kicker">{t('tasks.ticket')}</span>
             <input
               ref={idRef}
               className="task-ticket-id"
               readOnly
               value={task.id}
               size={Math.min(Math.max(task.id.length, 8), 48)}
-              aria-label="Ticket id"
+              aria-label={t('tasks.ticketId')}
               spellCheck={false}
               autoComplete="off"
             />
             <button type="button" className="btn-ghost" onClick={() => void copyId()}>
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('tasks.copied') : t('tasks.copy')}
             </button>
           </h2>
-          <button type="button" className="btn-icon" aria-label="Close" onClick={() => dialogRef.current?.close()}>
+          <button type="button" className="btn-icon" aria-label={t('close')} onClick={() => dialogRef.current?.close()}>
             ×
           </button>
         </header>
         <p className="task-ticket-share" role="status">
-          {copied ? 'Copied the ticket id. ' : ''}
-          A coworker with Tasks access in this workspace opens <span className="task-ticket-path">{sharePath}</span>
+          {copied ? `${t('tasks.copiedId')} ` : ''}
+          {t('tasks.shareHint')} <span className="task-ticket-path">{sharePath}</span>
         </p>
         <label className="field">
-          Summary
+          {t('tasks.summary')}
           <input
             autoFocus
             value={title}
@@ -357,7 +368,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
           />
         </label>
         <Select
-          label="Status"
+          label={t('tasks.status')}
           value={statusId}
           options={statuses.map((status) => ({ value: status.id, label: status.name }))}
           onSoryeChange={(event) => {
@@ -366,7 +377,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
           }}
         />
         <label className="field" htmlFor={descriptionId}>
-          Description
+          {t('tasks.description')}
         </label>
         <textarea
           id={descriptionId}
@@ -374,7 +385,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
           value={body}
           rows={6}
           maxLength={8000}
-          placeholder="Paste notes or images"
+          placeholder={t('tasks.notesPlaceholder')}
           onChange={(event) => setBody(event.target.value)}
         />
         {shown.length > 0 ? (
@@ -382,13 +393,13 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
             {shown.map((image) => (
               <li key={image.key}>
                 {image.src ? (
-                  <img src={image.src} alt={`Attached image ${image.index + 1}`} width={320} height={180} decoding="async" />
+                  <img src={image.src} alt={t('tasks.attachedImage', { n: image.index + 1 })} width={320} height={180} decoding="async" />
                 ) : null}
                 <button type="button" className="btn-ghost" onClick={() => {
                   if (keptIds.includes(image.key)) removeKept(image.key);
                   else removePending(image.key);
                 }}>
-                  Remove image {image.index + 1}
+                  {t('tasks.removeImage', { n: image.index + 1 })}
                 </button>
               </li>
             ))}
@@ -405,7 +416,7 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
               event.target.value = '';
             }}
           />
-          <span>Paste, drop, or choose images. JPEG, PNG, WebP, or GIF, up to 5 MB each, 8 per ticket.</span>
+          <span>{t('tasks.dropHint')}</span>
         </label>
         {error ? (
           <p id={errorId} className="task-editor-error" role="alert">
@@ -413,8 +424,21 @@ export function TaskEditor({ task, statuses, onPersist, onClose }: TaskEditorPro
           </p>
         ) : null}
         <div className="task-editor-actions">
+          {error ? (
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={busy}
+              onClick={() => {
+                discardRef.current = true;
+                dialogRef.current?.close();
+              }}
+            >
+              {t('tasks.discardClose')}
+            </button>
+          ) : null}
           <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
+            {busy ? t('tasks.saving') : t('save')}
           </button>
         </div>
       </form>

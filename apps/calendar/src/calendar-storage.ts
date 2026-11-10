@@ -1,8 +1,10 @@
-import { createDurableActionQueue, type DurableActionQueue } from '@sorye/platform';
+import { createDurableActionQueue, getLocale, translate, type DurableActionQueue, type MessageKey, type MessageParams } from '@sorye/platform';
 import type { RodrigoAction, RodrigoActionBatchResult, UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
 import { normalizeLegacyEvent, type CalendarEvent } from './event-schedule';
 
 export type { CalendarEvent, EventKind } from './event-schedule';
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 export interface CalendarQueueState { pending: number; failed: number; conflicts: number; rejected: number; }
 
 export function createCalendarStorage() {
@@ -18,19 +20,19 @@ export function createCalendarStorage() {
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
     try { response = await fetch(path, { credentials: 'include', ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } }); }
-    catch { throw new ApiError(0, 'Rodrigo could not be reached. The calendar action remains queued in this browser.'); }
+    catch { throw new ApiError(0, tr('calendar.err.unreachable')); }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const code = typeof data.error?.code === 'string' ? data.error.code : 'request_failed';
       throw new ApiError(response.status, code === 'rodrigo_unavailable' || response.status >= 500
-        ? 'Rodrigo could not confirm this calendar change. It remains queued in this browser.' : `Calendar action failed (${code}).`);
+        ? tr('calendar.err.unconfirmed') : tr('calendar.err.actionFailed', { code }));
     }
     return data as T;
   }
 
   async function getQueue() {
     const response = await request<{ queueScope: string }>('/api/calendar/scope');
-    if (!/^[a-f0-9]{64}$/.test(response.queueScope)) throw new Error('Hub returned an invalid Calendar queue scope.');
+    if (!/^[a-f0-9]{64}$/.test(response.queueScope)) throw new Error(tr('calendar.err.invalidScope'));
     activeScope = response.queueScope;
     let current = queues.get(activeScope);
     if (!current) { current = createDurableActionQueue<RodrigoAction>({ appId: 'calendar', scope: activeScope, maxRows: 500 }); queues.set(activeScope, current); }
@@ -72,13 +74,13 @@ export function createCalendarStorage() {
     let result: RodrigoActionBatchResult;
     try { result = await request('/api/backend/actions/batch', { method: 'POST', headers: { 'X-Sorye-Queue-Scope': scope }, body: JSON.stringify({ actions: candidates.map((item) => item.action) }) }); }
     catch (error) {
-      for (const item of candidates) await q.markTransportFailure(item.action.actionId, { code: 'rodrigo_unavailable', message: error instanceof Error ? error.message : 'Rodrigo could not be reached.' });
+      for (const item of candidates) await q.markTransportFailure(item.action.actionId, { code: 'rodrigo_unavailable', message: error instanceof Error ? error.message : tr('calendar.err.unreachableShort') });
       throw error;
     }
     const outcomes = new Map(result.results.map((outcome) => [outcome.actionId, outcome]));
     for (const item of candidates) {
       const outcome = outcomes.get(item.action.actionId);
-      if (!outcome) { await q.markTransportFailure(item.action.actionId, { code: 'missing_action_result', message: 'Rodrigo returned no result for this action.' }); continue; }
+      if (!outcome) { await q.markTransportFailure(item.action.actionId, { code: 'missing_action_result', message: tr('calendar.err.noResult') }); continue; }
       await q.settle({ actionId: outcome.actionId, status: outcome.status, error: outcome.error });
       if ((outcome.status === 'committed' || outcome.status === 'duplicate') && outcome.revision) revisions.set(item.action.resourceId, outcome.revision);
       else if (outcome.status === 'conflict' || outcome.status === 'rejected') {
@@ -116,8 +118,8 @@ export function createCalendarStorage() {
     await flush();
     const remaining = await q.list();
     if (remaining.some((item) => item.status === 'conflict')) throw new ApiError(409, 'A calendar event changed in another session. Reload and reconcile the saved draft.');
-    if (remaining.some((item) => item.status !== 'pending' && item.status !== 'failed')) throw new ApiError(400, 'Rodrigo rejected a calendar action. Review and reconcile it before continuing.');
-    if (remaining.length) throw new ApiError(503, 'Rodrigo has not confirmed every calendar change. Use Resend when the connection is available.');
+    if (remaining.some((item) => item.status !== 'pending' && item.status !== 'failed')) throw new ApiError(400, tr('calendar.err.rejected'));
+    if (remaining.length) throw new ApiError(503, tr('calendar.err.notConfirmedAll'));
     clearConflictDraft();
     return next;
   }
@@ -148,7 +150,10 @@ export function parseDateKey(key: string): Date {
 
 export function startOfMonth(date: Date): Date { return new Date(date.getFullYear(), date.getMonth(), 1); }
 export function addMonths(date: Date, delta: number): Date { return new Date(date.getFullYear(), date.getMonth() + delta, 1); }
-export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/** Monday-first short weekday names in the active language. */
+export function weekdayLabels(locale: string = getLocale()): string[] {
+  return Array.from({ length: 7 }, (_, index) => new Date(2024, 0, 1 + index).toLocaleDateString(locale, { weekday: 'short' }));
+}
 
 export function buildMonthGrid(viewDate: Date): Array<{ dateKey: string; day: number; inMonth: boolean }> {
   const year = viewDate.getFullYear(); const month = viewDate.getMonth();

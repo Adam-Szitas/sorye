@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useI18n } from '@sorye/platform/react';
 import { StatusHandler } from './status-handler';
 
 const COLOR_OPTIONS = [
@@ -20,6 +21,7 @@ interface StatusSettingsProps {
 }
 
 export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
+  const { t } = useI18n();
   const [newStatusName, setNewStatusName] = useState('');
   const statuses = handler.getStatuses();
 
@@ -34,11 +36,8 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
   return (
     <section className="status-settings">
       <div className="status-settings-intro">
-        <h2>Workflow statuses</h2>
-        <p>
-          Columns on the board mirror these statuses. Reorder them to change
-          column layout. Removing a status moves its tasks to a neighbor column.
-        </p>
+        <h2>{t('tasks.workflowStatuses')}</h2>
+        <p>{t('tasks.statusesIntro')}</p>
       </div>
 
       <ul className="status-list">
@@ -48,7 +47,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
               <button
                 type="button"
                 className="btn-icon"
-                aria-label={`Move ${status.name} earlier`}
+                aria-label={t('tasks.moveEarlier', { name: status.name })}
                 disabled={index === 0}
                 onClick={() => onChange(handler.moveStatus(status.id, -1))}
               >
@@ -57,7 +56,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
               <button
                 type="button"
                 className="btn-icon"
-                aria-label={`Move ${status.name} later`}
+                aria-label={t('tasks.moveLater', { name: status.name })}
                 disabled={index === statuses.length - 1}
                 onClick={() => onChange(handler.moveStatus(status.id, 1))}
               >
@@ -72,7 +71,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
             />
 
             <label className="field field-grow">
-              Name
+              {t('tasks.name')}
               <input
                 type="text"
                 value={status.name}
@@ -83,7 +82,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
             </label>
 
             <fieldset className="status-color-fieldset">
-              <legend>Color</legend>
+              <legend>{t('tasks.color')}</legend>
               <div className="status-color-options">
                 {COLOR_OPTIONS.map((color) => (
                   <button
@@ -96,7 +95,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
                       .filter(Boolean)
                       .join(' ')}
                     style={{ background: color }}
-                    aria-label={`Set color ${color}`}
+                    aria-label={t('tasks.setColor', { color })}
                     aria-pressed={status.color === color}
                     onClick={() =>
                       onChange(handler.updateStatus(status.id, { color }))
@@ -112,7 +111,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
               disabled={statuses.length <= 1}
               onClick={() => onChange(handler.removeStatus(status.id))}
             >
-              Remove
+              {t('tasks.remove')}
             </button>
           </li>
         ))}
@@ -120,10 +119,10 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
 
       <div className="status-add-row">
         <label className="field field-grow">
-          New status
+          {t('tasks.newStatus')}
           <input
             type="text"
-            placeholder="e.g. Blocked"
+            placeholder={t('tasks.newStatusPlaceholder')}
             value={newStatusName}
             onChange={(e) => setNewStatusName(e.target.value)}
             onKeyDown={(e) => {
@@ -132,7 +131,7 @@ export function StatusSettings({ handler, onChange }: StatusSettingsProps) {
           />
         </label>
         <button type="button" className="btn-primary" onClick={addStatus}>
-          Add status
+          {t('tasks.addStatus')}
         </button>
       </div>
     </section>

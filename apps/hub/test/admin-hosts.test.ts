@@ -83,4 +83,9 @@ test('mutations require a matching origin', () => {
   assert.equal(mutationOriginDenied({ ...base, pathname: '/api/auth/signin/google', secFetchSite: 'cross-site' }), null);
   assert.equal(mutationOriginDenied({ ...base, pathname: '/api/embed/bootstrap', secFetchSite: 'cross-site' }), null);
   assert.equal(mutationOriginDenied({ ...base, pathname: '/admin', secFetchSite: 'cross-site' }), null);
+  const admin = { ...base, requireBrowserOrigin: true };
+  assert.equal(mutationOriginDenied(admin), 'origin_required');
+  assert.equal(mutationOriginDenied({ ...admin, secFetchSite: 'same-origin' }), null);
+  assert.equal(mutationOriginDenied({ ...admin, origin: 'https://admin.sorye.app' }), null);
+  assert.equal(mutationOriginDenied({ ...admin, pathname: '/api/auth/callback/google' }), null);
 });

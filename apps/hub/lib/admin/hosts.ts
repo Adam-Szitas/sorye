@@ -143,7 +143,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /**
  * Mutation origin check. Sibling subdomains are same-site, so SameSite cookies do
  * not isolate admin.sorye.app from tasks.sorye.app; compare exact origins instead.
- * Non-browser callers send neither header and still need their own credentials.
+ * Non-browser callers send neither header and still need their own credentials;
+ * the admin host has no such callers, so it requires one of the two.
  */
 export function mutationOriginDenied(input: {
   method: string;
@@ -152,6 +153,7 @@ export function mutationOriginDenied(input: {
   secFetchSite: string | null;
   requestHost: string;
   devAllowedOrigin: boolean;
+  requireBrowserOrigin?: boolean;
 }): string | null {
   if (SAFE_METHODS.has(input.method.toUpperCase())) return null;
   if (!input.pathname.startsWith('/api/')) return null;
@@ -166,6 +168,7 @@ export function mutationOriginDenied(input: {
   }
   if (input.devAllowedOrigin) return null;
   if (input.secFetchSite === 'cross-site' || input.secFetchSite === 'same-site') return 'cross_site_request';
+  if (input.requireBrowserOrigin && !input.origin && input.secFetchSite !== 'same-origin') return 'origin_required';
   if (input.origin) {
     let originHost: string;
     try {

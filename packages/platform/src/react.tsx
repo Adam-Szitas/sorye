@@ -45,10 +45,10 @@ export function useKernelState(): KernelGlobalSnapshot {
   );
 }
 
-import { getLocale, subscribeLocale, setLocale, translate, type MessageKey } from './i18n';
+import { getLocale, subscribeLocale, setLocale, translate, type MessageKey, type MessageParams } from './i18n';
 export function useI18n() {
   const locale = useSyncExternalStore(subscribeLocale, getLocale, () => 'en' as const);
-  return { locale, setLocale, t: (key: MessageKey) => translate(locale, key) };
+  return { locale, setLocale, t: (key: MessageKey, params?: MessageParams) => translate(locale, key, params) };
 }
 
 export function TranslatedText({ message }: { message: MessageKey }) {

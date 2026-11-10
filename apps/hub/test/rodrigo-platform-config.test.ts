@@ -210,20 +210,29 @@ test('real Rodrigo + PostgreSQL: CAS, idempotency, rollback, audit, propagation,
       assert.equal(next.events.some((event) => ids.has(event.auditId)), false);
     }
 
+    // Hub write path: a retry of the same change is recognised, not refused as a reused key.
+    const { writeSharedAi } = await import('../lib/admin/shared-ai');
+    const actor = { actorId: admin, session: {} as never };
+    const hubChange = { changeId: randomUUID(), expectedRevision: base + 3, value: { ...first.value, maxOutputTokens: 1200 } };
+    const hubFirst = await writeSharedAi(actor, hubChange);
+    const hubRetry = await writeSharedAi(actor, hubChange);
+    assert.deepEqual([hubFirst.ok && hubFirst.status, hubFirst.ok && hubFirst.revision], ['committed', base + 4]);
+    assert.deepEqual([hubRetry.ok && hubRetry.status, hubRetry.ok && hubRetry.revision], ['duplicate', base + 4]);
+
     // Restart: durable state survives.
     await stop();
     await start();
-    assert.equal((await client.getPlatformConfig(admin, 'shared-ai')).revision, base + 3);
+    assert.equal((await client.getPlatformConfig(admin, 'shared-ai')).revision, base + 4);
 
     // Outage: writes report unknown outcome, the consumer keeps its last applied revision.
     await stop();
-    await assert.rejects(() => client.putPlatformConfig(admin, 'shared-ai', { ...first, changeId: randomUUID(), expectedRevision: base + 3 }), RodrigoUnavailableError);
+    await assert.rejects(() => client.putPlatformConfig(admin, 'shared-ai', { ...first, changeId: randomUUID(), expectedRevision: base + 4 }), RodrigoUnavailableError);
     const during = await refreshPlatformConfig('hub');
     assert.equal(during.lastError, 'rodrigo_unavailable');
-    assert.equal(during.appliedRevision, base + 3);
+    assert.equal(during.appliedRevision, base + 4);
     assert.equal(getLlmControlSettings().model, first.value.model);
     const cache = JSON.parse(await readFile(join(directory, 'platform-config', 'hub-shared-ai.json'), 'utf8'));
-    assert.equal(cache.revision, base + 3);
+    assert.equal(cache.revision, base + 4);
     stopPlatformConfigWatcher();
   } finally {
     await stop();

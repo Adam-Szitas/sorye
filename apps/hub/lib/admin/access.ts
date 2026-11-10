@@ -5,6 +5,7 @@ import { operatorDenial } from '@/lib/operator/access';
 import type { HubSession } from '@sorye/types';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { cache } from 'react';
 import { classifyHost, effectiveHost, hostConfig } from './hosts';
 
 export const adminNoStore = { 'Cache-Control': 'private, no-store' } as const;
@@ -22,8 +23,10 @@ export type AdminAccess =
 /**
  * Server-side gate for every admin page and API. The middleware host checks are
  * routing; this is the authorization decision and must run in each handler.
+ * Cached per render so the layout and page share one session lookup (and one
+ * first-visit user insert).
  */
-export async function adminAccess(): Promise<AdminAccess> {
+export const adminAccess = cache(async (): Promise<AdminAccess> => {
   const hdrs = await headers();
   const { host, forwarded } = effectiveHost(hdrs);
   if (classifyHost(host, { forwarded }, hostConfig()) !== 'admin') {
@@ -40,7 +43,7 @@ export async function adminAccess(): Promise<AdminAccess> {
     return { ok: false, status: denied?.status ?? 401, error: denied?.body.error ?? 'Unauthorized' };
   }
   return { ok: true, actor: { session, actorId: `user:${session.user.id}` } };
-}
+});
 
 export function adminDenied(access: Extract<AdminAccess, { ok: false }>): NextResponse {
   return NextResponse.json({ error: access.error }, { status: access.status, headers: adminNoStore });
@@ -78,7 +81,7 @@ export async function readAdminJson(req: Request, limit = 16_384): Promise<unkno
   const declared = Number(req.headers.get('content-length') ?? '0');
   if (declared > limit) return null;
   const text = await req.text();
-  if (text.length > limit) return null;
+  if (Buffer.byteLength(text) > limit) return null;
   try {
     return JSON.parse(text) as unknown;
   } catch {

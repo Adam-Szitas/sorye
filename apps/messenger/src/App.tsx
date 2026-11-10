@@ -1,5 +1,5 @@
-import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
-import { UserLoadSections } from '@sorye/platform/react';
+import { getLocale, registerPendingActionFlusher, switchAuthorizedWorkspace, translate, type MessageKey, type MessageParams } from '@sorye/platform';
+import { useI18n, UserLoadSections } from '@sorye/platform/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type {
@@ -32,6 +32,8 @@ import {
 } from './messenger-api';
 import './styles.css';
 
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 function channelLabel(
   channel: MessengerChannel,
   members: MessengerMember[],
@@ -40,7 +42,7 @@ function channelLabel(
   if (channel.kind === 'channel') return `#${channel.name}`;
   const peerId = channel.memberIds.find((id) => id !== myId);
   const peer = members.find((m) => m.id === peerId);
-  return peer?.displayName ?? 'Direct message';
+  return peer?.displayName ?? tr('messenger.directMessage');
 }
 
 function pickDefaultChannel(next: MessengerBootstrap): string | null {
@@ -118,6 +120,7 @@ function renderMessageText(text: string) {
 }
 
 export default function App() {
+  const { t, locale } = useI18n();
   const [data, setData] = useState<MessengerBootstrap | null>(null);
   const [channelId, setChannelId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -167,7 +170,7 @@ export default function App() {
     if (data && channel.workspaceId !== data.workspace.id) {
       const switched = await switchAuthorizedWorkspace(channel.workspaceId);
       if (!switched) {
-        setError('Could not open that workspace.');
+        setError(tr('messenger.openWorkspaceFailed'));
         return;
       }
       const next = await loadMessenger();
@@ -198,7 +201,7 @@ export default function App() {
         setChannelId(opened && known.has(opened) ? opened : pickDefaultChannel(next));
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load');
+          setError(err instanceof Error ? err.message : tr('messenger.loadFailed'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -339,7 +342,7 @@ export default function App() {
         : undefined;
     } catch (err) {
       if (req !== threadReqRef.current) return;
-      setError(err instanceof Error ? err.message : 'Could not load messages');
+      setError(err instanceof Error ? err.message : tr('messenger.messagesLoadFailed'));
     } finally {
       if (req === threadReqRef.current) setThreadLoading(false);
     }
@@ -481,13 +484,13 @@ export default function App() {
 
   async function forwardToMail(msg: MessengerMessage) {
     const subject = msg.text?.trim()
-      ? `Fwd: ${msg.text.trim().split('\n')[0]!.slice(0, 80)}`
+      ? tr('messenger.fwdSubject', { text: msg.text.trim().split('\n')[0]!.slice(0, 80) })
       : msg.kind === 'image'
-        ? 'Fwd: photo from Messenger'
-        : 'Fwd: Messenger message';
-    const stamp = new Date(msg.createdAt).toLocaleString();
+        ? tr('messenger.fwdPhoto')
+        : tr('messenger.fwdMessage');
+    const stamp = new Date(msg.createdAt).toLocaleString(locale);
     const body = [
-      `Forwarded from Messenger`,
+      tr('messenger.forwardedFrom'),
       `${msg.author.name} · ${stamp}`,
       msg.text?.trim() ? `\n${msg.text.trim()}` : '',
     ]
@@ -508,7 +511,7 @@ export default function App() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        throw new Error(data.error || 'Could not open Mail');
+        throw new Error(data.error || tr('messenger.mailOpenFailed'));
       }
       window.dispatchEvent(
         new CustomEvent(HUB_MAIL_COMPOSE_EVENT, {
@@ -520,7 +523,7 @@ export default function App() {
         }),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not forward to Mail');
+      setError(err instanceof Error ? err.message : tr('messenger.forwardFailed'));
     }
   }
 
@@ -559,7 +562,7 @@ export default function App() {
       setDraft('');
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Send failed');
+      setError(err instanceof Error ? err.message : tr('messenger.sendFailed'));
     } finally {
       await refreshQueueState();
     }
@@ -575,7 +578,7 @@ export default function App() {
       setChannelId(channel.id);
       setMobileShowChannels(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create channel');
+      setError(err instanceof Error ? err.message : tr('messenger.channelCreateFailed'));
     } finally {
       await refreshQueueState();
     }
@@ -589,7 +592,7 @@ export default function App() {
       setChannelId(channel.id);
       setMobileShowChannels(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open DM');
+      setError(err instanceof Error ? err.message : tr('messenger.dmOpenFailed'));
     } finally {
       await refreshQueueState();
     }
@@ -616,9 +619,9 @@ export default function App() {
         delivered?: boolean;
         reason?: string;
       };
-      if (!res.ok) throw new Error(body.reason || 'Test event failed');
+      if (!res.ok) throw new Error(body.reason || tr('messenger.testEventFailed'));
       if (!body.delivered) {
-        setError(body.reason || 'Event was not delivered');
+        setError(body.reason || tr('messenger.eventNotDelivered'));
       }
       const next = await refresh();
       const eventsCh = next.channels.find((c) => c.name === 'events');
@@ -630,7 +633,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Test event failed');
+      setError(err instanceof Error ? err.message : tr('messenger.testEventFailed'));
     } finally {
       setEventsBusy(false);
     }
@@ -648,23 +651,23 @@ export default function App() {
           deliverToMessengerEvents: !data.events.deliverToMessengerEvents,
         }),
       });
-      if (!res.ok) throw new Error('Could not update settings');
+      if (!res.ok) throw new Error(tr('messenger.settingsFailed'));
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Settings update failed');
+      setError(err instanceof Error ? err.message : tr('messenger.settingsFailed'));
     } finally {
       setEventsBusy(false);
     }
   }
 
   if (loading) {
-    return <div className="messenger-state">Loading Messenger…</div>;
+    return <div className="messenger-state">{t('messenger.loadingApp')}</div>;
   }
 
   if (!data) {
     return (
       <div className="messenger-state error">
-        {error ?? 'Messenger unavailable'}
+        {error ?? t('messenger.unavailable')}
       </div>
     );
   }
@@ -684,35 +687,35 @@ export default function App() {
           <h1>Messenger</h1>
           <p>
             {data.events?.alive
-              ? 'Events live · core movements → #events'
+              ? t('messenger.eventsLive')
               : data.events?.enabled
-                ? 'Events on — enable Messenger + another app'
-                : 'App events off · enable in Dashboard'}
+                ? t('messenger.eventsOnNeedApps')
+                : t('messenger.eventsOff')}
           </p>
         </div>
 
         {!data.events?.alive ? (
           <div className="events-inactive">
             {data.events?.enabled
-              ? 'Enable Messenger and at least one other app so movements can stream into #events.'
-              : 'App events are off by default. Turn them on in Dashboard → App events.'}
+              ? t('messenger.eventsInactiveEnable')
+              : t('messenger.eventsInactiveOff')}
           </div>
         ) : null}
-        <p className="hint-li">Read receipts are unavailable until their data contract moves to Rodrigo.</p>
+        <p className="hint-li">{t('messenger.readReceipts')}</p>
 
         <div className="sidebar-section">
-          <h2>Channels</h2>
+          <h2>{t('messenger.channels')}</h2>
           {(queueState.pending + queueState.failed + queueState.conflicts + queueState.rejected) > 0 ? (
             <div className="events-inactive" role="status">
-              <p>Messenger actions: {queueState.pending} pending, {queueState.failed} failed, {queueState.conflicts} conflicts, {queueState.rejected} rejected.</p>
-              {queueState.pending + queueState.failed > 0 ? <button type="button" onClick={() => void resendMessengerActions().then(refreshQueueState).catch((err) => setError(err instanceof Error ? err.message : 'Resend failed'))}>Resend</button> : null}
-              {queueState.conflicts + queueState.rejected > 0 ? <button type="button" onClick={() => void discardMessengerConflicts().then(refreshQueueState)}>Discard conflicts/rejections</button> : null}
+              <p>{t('messenger.queueSummary', { pending: queueState.pending, failed: queueState.failed, conflicts: queueState.conflicts, rejected: queueState.rejected })}</p>
+              {queueState.pending + queueState.failed > 0 ? <button type="button" onClick={() => void resendMessengerActions().then(refreshQueueState).catch((err) => setError(err instanceof Error ? err.message : tr('messenger.resendFailed')))}>{t('messenger.resend')}</button> : null}
+              {queueState.conflicts + queueState.rejected > 0 ? <button type="button" onClick={() => void discardMessengerConflicts().then(refreshQueueState)}>{t('messenger.discardConflicts')}</button> : null}
             </div>
           ) : null}
           {data.load ? (
             <UserLoadSections
               load={data.load}
-              empty="No channels you have joined."
+              empty={t('messenger.noChannels')}
               heading="h3"
               renderItems={(items) => (
                 <ul className="channel-list">
@@ -726,7 +729,7 @@ export default function App() {
                         <span aria-hidden>{item.value.kind === 'channel' ? '#' : '@'}</span>
                         {channelLabel(item.value, data.members, data.user.id)}
                         {item.value.kind === 'channel' && item.value.name === 'events' && data.events?.alive && item.workspaceId === data.workspace.id ? (
-                          <em className="events-pill">live</em>
+                          <em className="events-pill">{t('messenger.live')}</em>
                         ) : null}
                       </button>
                     </li>
@@ -739,7 +742,7 @@ export default function App() {
 
         <div className="sidebar-section">
           <div className="section-row">
-            <h2>Direct messages</h2>
+            <h2>{t('messenger.directMessages')}</h2>
             <button
               type="button"
               className="linkish"
@@ -749,11 +752,11 @@ export default function App() {
               }
               title={
                 data.members.length < 2
-                  ? 'Add teammates to a team workspace to DM'
-                  : 'Message a teammate'
+                  ? t('messenger.dmNeedTeammates')
+                  : t('messenger.dmMessageTeammate')
               }
             >
-              {dmOpen ? 'Close' : 'New'}
+              {dmOpen ? t('close') : t('messenger.new')}
             </button>
           </div>
 
@@ -762,8 +765,8 @@ export default function App() {
               {dmCandidates.length === 0 ? (
                 <li className="hint-li">
                   {data.members.length < 2
-                    ? 'No other members in this workspace yet.'
-                    : 'You already have a DM with everyone here.'}
+                    ? t('messenger.dmNoMembers')
+                    : t('messenger.dmAll')}
                 </li>
               ) : (
                 dmCandidates.map((m) => (
@@ -778,7 +781,7 @@ export default function App() {
             </ul>
           ) : null}
 
-          <p className="hint-li">Direct messages are listed with their workspace above.</p>
+          <p className="hint-li">{t('messenger.dmListedAbove')}</p>
         </div>
 
         <form
@@ -788,52 +791,52 @@ export default function App() {
           <input
             value={newChannel}
             onChange={(e) => setNewChannel(e.target.value)}
-            placeholder="New channel"
+            placeholder={t('messenger.newChannel')}
             maxLength={32}
-            aria-label="New channel name"
+            aria-label={t('messenger.newChannelName')}
           />
           <button type="submit" disabled={!newChannel.trim()}>
-            Add
+            {t('messenger.add')}
           </button>
         </form>
       </aside>
 
-      <section className="messenger-thread" aria-label="Conversation">
+      <section className="messenger-thread" aria-label={t('messenger.conversation')}>
         <header className="thread-head">
           <button
             type="button"
             className="back-channels"
             onClick={() => setMobileShowChannels(true)}
           >
-            Channels
+            {t('messenger.channels')}
           </button>
           <h2>{title}</h2>
           <p>
             {isEventsChannel
               ? data.events?.alive
                 ? data.events.deliverToMessengerEvents
-                  ? 'Default webhook sink · core app movements land here'
-                  : 'Delivery paused · toggle below to resume'
+                  ? t('messenger.subSink')
+                  : t('messenger.subPaused')
                 : data.events?.enabled
-                  ? 'Feature on — waiting for Messenger + another app'
-                  : 'Turn on App events in Dashboard to start this feed'
+                  ? t('messenger.subWaiting')
+                  : t('messenger.subTurnOn')
               : activeChannel?.kind === 'dm'
-                ? 'Private · synced for both teammates'
-                : 'Text & compressed photos · team-synced'}
+                ? t('messenger.subDm')
+                : t('messenger.subChannel')}
           </p>
         </header>
 
         {isEventsChannel ? (
           <div className="events-toolbar">
             <a className="events-dash-link" href="/apps/dashboard">
-              {data.events?.enabled ? 'Manage in Dashboard' : 'Enable in Dashboard'}
+              {data.events?.enabled ? t('messenger.manageDashboard') : t('messenger.enableDashboard')}
             </a>
             <button
               type="button"
               disabled={eventsBusy || !data.events?.alive}
               onClick={() => void sendTestEvent()}
             >
-              {eventsBusy ? 'Working…' : 'Send test event'}
+              {eventsBusy ? t('messenger.working') : t('messenger.sendTest')}
             </button>
             <button
               type="button"
@@ -842,8 +845,8 @@ export default function App() {
               onClick={() => void toggleEventsDelivery()}
             >
               {data.events?.deliverToMessengerEvents
-                ? 'Pause #events delivery'
-                : 'Resume #events delivery'}
+                ? t('messenger.pauseEvents')
+                : t('messenger.resumeEvents')}
             </button>
           </div>
         ) : null}
@@ -870,13 +873,13 @@ export default function App() {
               <p className="empty-thread">
                 {isEventsChannel
                   ? data.events?.alive
-                    ? 'No movements yet. Create a task, note, or calendar event — or send a test event.'
+                    ? t('messenger.emptyEvents')
                     : data.events?.enabled
-                      ? 'Enable Messenger and at least one other app in the Hub.'
-                      : 'Open Dashboard → App events and turn on the feature flag.'
+                      ? t('messenger.emptyEventsNeedApps')
+                      : t('messenger.emptyEventsOff')
                   : activeChannel?.kind === 'dm'
-                    ? 'Start the conversation — only you two can see it.'
-                    : 'No messages yet. Say hello or attach a photo.'}
+                    ? t('messenger.emptyDm')
+                    : t('messenger.emptyChannel')}
               </p>
             ) : (
               <div className="message-stack">
@@ -886,12 +889,12 @@ export default function App() {
                   aria-hidden
                 />
                 {loadingOlder ? (
-                  <p className="history-status">Loading earlier messages…</p>
+                  <p className="history-status">{t('messenger.loadingEarlier')}</p>
                 ) : !hasMoreOlder && messages.length > 0 ? (
-                  <p className="history-status">Beginning of conversation</p>
+                  <p className="history-status">{t('messenger.beginning')}</p>
                 ) : null}
                 {threadLoading ? (
-                  <p className="history-status">Loading conversation…</p>
+                  <p className="history-status">{t('messenger.loadingConversation')}</p>
                 ) : null}
                 {messages.map((msg: MessengerMessage) => {
                   const mine = msg.author.id === data.user.id;
@@ -904,7 +907,7 @@ export default function App() {
                       <header>
                         <strong>{msg.author.name}</strong>
                         <time>
-                          {new Date(msg.createdAt).toLocaleString(undefined, {
+                          {new Date(msg.createdAt).toLocaleString(locale, {
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',
@@ -916,7 +919,7 @@ export default function App() {
                         <figure>
                           <img
                             src={msg.imageDataUrl}
-                            alt={msg.text || 'Uploaded image'}
+                            alt={msg.text || t('messenger.uploadedImage')}
                             width={msg.imageWidth}
                             height={msg.imageHeight}
                             onLoad={() => {
@@ -936,7 +939,7 @@ export default function App() {
                           className="fwd-mail"
                           onClick={() => void forwardToMail(msg)}
                         >
-                          Forward to Mail
+                          {t('messenger.forwardMail')}
                         </button>
                       </footer>
                     </article>
@@ -952,7 +955,7 @@ export default function App() {
               className="jump-latest"
               onClick={() => scrollToLatest()}
             >
-              Latest
+              {t('messenger.latest')}
             </button>
           ) : null}
         </div>
@@ -963,7 +966,7 @@ export default function App() {
               id="messenger-mentions"
               className="mention-list"
               role="listbox"
-              aria-label="People you can ping"
+              aria-label={t('messenger.peopleToPing')}
             >
               {suggestions.map((member, index) => (
                 <li key={member.id} role="presentation">
@@ -984,10 +987,10 @@ export default function App() {
           <button
             type="button"
             className="attach"
-            title="Image messages need Rodrigo blob storage"
+            title={t('messenger.photoNeedsStorage')}
             disabled
           >
-            Photo unavailable
+            {t('messenger.photoUnavailable')}
           </button>
           <textarea
             ref={composerRef}
@@ -1012,10 +1015,10 @@ export default function App() {
             }}
             placeholder={
               isEventsChannel
-                ? 'Comment on an event…'
+                ? t('messenger.phEvent')
                 : activeChannel?.kind === 'dm'
-                  ? 'Direct message…'
-                  : 'Message…'
+                  ? t('messenger.phDm')
+                  : t('messenger.phChannel')
             }
             rows={1}
             disabled={!channelId}
@@ -1058,7 +1061,7 @@ export default function App() {
             disabled={!draft.trim() || !channelId}
             onClick={() => void sendText()}
           >
-            Send
+            {t('messenger.send')}
           </button>
         </footer>
       </section>

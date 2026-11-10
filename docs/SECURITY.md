@@ -100,7 +100,7 @@ A Vite app on its own port may call Hub `/api/*` with `credentials: 'include'` w
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| CSRF on cookie-authenticated POST/PATCH | Low | Middleware refuses `/api/*` writes whose `Origin` host differs from the request host or whose `Sec-Fetch-Site` is `cross-site`/`same-site` (exempt: Auth.js, embed bootstrap, the header-secret subscription API, development standalone remotes). No CSRF token. |
+| CSRF on cookie-authenticated POST/PATCH | Low | Middleware refuses `/api/*` writes whose `Origin` host differs from the request host or whose `Sec-Fetch-Site` is `cross-site`/`same-site` (exempt: Auth.js, embed bootstrap, the header-secret subscription API, development standalone remotes). On the admin host a write must also carry a same-origin `Origin` or `Sec-Fetch-Site: same-origin` (403 `origin_required`). No CSRF token. |
 | Plan limits not enforced server-side on `selectedAppIds` | Medium | UI enforces; API should call `trimWorkspaceToPlanLimits` |
 | Email/WhatsApp Relay channels | Low | Queued only — no real send yet |
 | `.data/` JSON at rest | Low | Dev only; production must use Postgres |

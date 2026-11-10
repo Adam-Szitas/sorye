@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { getLocale, translate, type MessageKey, type MessageParams } from '@sorye/platform';
+import { useI18n } from '@sorye/platform/react';
 import {
   defaultEndTime,
   type CalendarEvent,
@@ -23,19 +25,17 @@ interface EventFormProps {
   onSubmit: (event: Omit<CalendarEvent, 'id'>) => void;
 }
 
-const SCHEDULE_OPTIONS: Array<{ kind: EventKind; label: string; hint: string }> =
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
+const SCHEDULE_OPTIONS: Array<{ kind: EventKind; label: MessageKey; hint: MessageKey }> =
   [
-    { kind: 'timed', label: 'Time range', hint: 'One day with start and end' },
-    { kind: 'allDay', label: 'All day', hint: 'Blocks the full day' },
-    {
-      kind: 'multiDate',
-      label: 'Multiple days',
-      hint: 'Select days on the calendar',
-    },
+    { kind: 'timed', label: 'calendar.optTimed', hint: 'calendar.optTimedHint' },
+    { kind: 'allDay', label: 'calendar.allDay', hint: 'calendar.optAllDayHint' },
+    { kind: 'multiDate', label: 'calendar.optMulti', hint: 'calendar.optMultiHint' },
   ];
 
 function formatChipDate(dateKey: string): string {
-  return parseDateKey(dateKey).toLocaleDateString(undefined, {
+  return parseDateKey(dateKey).toLocaleDateString(getLocale(), {
     month: 'short',
     day: 'numeric',
   });
@@ -58,20 +58,21 @@ export function EventForm({
   onDraftChange,
   onSubmit,
 }: EventFormProps) {
+  const { t, locale } = useI18n();
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const selectedDatesLabel = useMemo(() => {
-    if (draft.dates.length === 0) return 'No dates selected';
+    if (draft.dates.length === 0) return t('calendar.noDates');
     if (draft.dates.length === 1) {
-      return parseDateKey(draft.dates[0]).toLocaleDateString(undefined, {
+      return parseDateKey(draft.dates[0]).toLocaleDateString(locale, {
         weekday: 'long',
         month: 'long',
         day: 'numeric',
       });
     }
-    return `${draft.dates.length} days selected`;
-  }, [draft.dates]);
+    return t('calendar.nDatesSelected', { n: draft.dates.length });
+  }, [draft.dates, locale]);
 
   const setKind = (kind: EventKind) => {
     setError(null);
@@ -94,11 +95,11 @@ export function EventForm({
   const submit = () => {
     const trimmed = title.trim();
     if (!trimmed) {
-      setError('Add a title for the event.');
+      setError(t('calendar.errTitle'));
       return;
     }
     if (draft.dates.length === 0) {
-      setError('Select at least one date.');
+      setError(t('calendar.errDate'));
       return;
     }
 
@@ -152,17 +153,17 @@ export function EventForm({
   return (
     <div className="calendar-form">
       <label className="field">
-        Title
+        {t('calendar.title')}
         <input
           type="text"
-          placeholder="Team standup"
+          placeholder={t('calendar.titlePlaceholder')}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
 
       <fieldset className="schedule-type-fieldset">
-        <legend>Schedule</legend>
+        <legend>{t('calendar.schedule')}</legend>
         <div className="schedule-type-options" role="radiogroup">
           {SCHEDULE_OPTIONS.map((option) => (
             <button
@@ -178,8 +179,8 @@ export function EventForm({
                 .join(' ')}
               onClick={() => setKind(option.kind)}
             >
-              <strong>{option.label}</strong>
-              <span>{option.hint}</span>
+              <strong>{t(option.label)}</strong>
+              <span>{t(option.hint)}</span>
             </button>
           ))}
         </div>
@@ -191,7 +192,7 @@ export function EventForm({
         <div className="multi-date-summary">
           <p className="schedule-date-summary">{selectedDatesLabel}</p>
           <p className="schedule-hint">
-            Click days on the calendar to add or remove them.
+            {t('calendar.multiClickHint')}
           </p>
           {draft.dates.length > 0 ? (
             <ul className="date-chip-list">
@@ -210,7 +211,7 @@ export function EventForm({
                 onDraftChange({ ...draft, multiTimed: e.target.checked })
               }
             />
-            <span>Same time range on each day</span>
+            <span>{t('calendar.sameTime')}</span>
           </label>
         </div>
       )}
@@ -220,7 +221,7 @@ export function EventForm({
         <div className="time-range-row">
           <TimePicker
             id="event-start"
-            label="From"
+            label={t('calendar.from')}
             value={draft.startTime}
             onChange={(startTime) =>
               onDraftChange({
@@ -235,19 +236,19 @@ export function EventForm({
           />
           <TimePicker
             id="event-end"
-            label="To"
+            label={t('calendar.to')}
             value={draft.endTime}
             onChange={(endTime) => onDraftChange({ ...draft, endTime })}
           />
         </div>
       ) : (
-        <p className="schedule-all-day-note">This event spans the entire day.</p>
+        <p className="schedule-all-day-note">{t('calendar.allDayNote')}</p>
       )}
 
       {error ? <p className="form-error">{error}</p> : null}
 
       <button type="button" className="btn-primary" onClick={submit}>
-        Add to calendar
+        {t('calendar.addToCalendar')}
       </button>
     </div>
   );

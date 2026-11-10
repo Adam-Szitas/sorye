@@ -108,6 +108,155 @@
   right: 0.35rem;
 }
 
+/* Compact command bar: quick add, search and ticket lookup share one row on
+   desktop and wrap to two on narrow screens. */
+.tasks-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tasks-add,
+.tasks-search,
+.tasks-ticket {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.tasks-add {
+  flex: 1 1 100%;
+  padding: 0.25rem 0.25rem 0.25rem 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(45, 212, 191, 0.25);
+  background: rgba(45, 212, 191, 0.06);
+}
+
+.tasks-add:focus-within,
+.tasks-search:focus-within {
+  border-color: rgba(45, 212, 191, 0.6);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.12);
+}
+
+.tasks-search {
+  position: relative;
+  flex: 1 1 0;
+  padding: 0 0.75rem;
+  min-height: 2.5rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+}
+
+.tasks-ticket {
+  margin-bottom: 0.75rem;
+  max-width: 24rem;
+}
+
+.bar-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #f1f5f9;
+  font: inherit;
+  font-size: 1rem; /* 16px keeps iOS from zooming on focus */
+  padding: 0.5rem 0;
+}
+
+.tasks-ticket .bar-input {
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bar-input::placeholder {
+  color: #64748b;
+}
+
+.bar-input[type='search']::-webkit-search-cancel-button {
+  display: none;
+}
+
+.bar-icon {
+  flex: none;
+}
+
+.tasks-search .search-clear {
+  position: static;
+  flex: none;
+}
+
+.tasks-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.25rem;
+  min-width: 2.25rem;
+  justify-content: center;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.7rem;
+  font-weight: 600;
+}
+
+.tasks-add-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tasks-add-label {
+  display: none;
+}
+
+.tasks-ticket-toggle {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.9rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.tasks-ticket-toggle.active {
+  background: rgba(45, 212, 191, 0.18);
+  color: #5eead4;
+}
+
+@media (min-width: 48rem) {
+  .tasks-bar {
+    flex-wrap: nowrap;
+    gap: 0.6rem;
+  }
+
+  .tasks-add {
+    flex: 2 1 0;
+  }
+
+  .tasks-search {
+    flex: 1 1 0;
+    max-width: 22rem;
+  }
+
+  .tasks-add-label {
+    display: inline;
+  }
+
+  .bar-input {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 40rem) {
+  .tasks-app {
+    padding: 1rem;
+  }
+}
+
 .search-results-meta {
   margin: 0 0 0.35rem;
   font-size: 0.75rem;

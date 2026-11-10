@@ -1,8 +1,11 @@
+import { getLocale, translate, type MessageKey, type MessageParams } from '@sorye/platform';
 import {
   normalizeLegacyCalendarEvent,
   type CalendarEvent,
   type CalendarEventKind,
 } from '@sorye/types';
+
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
 
 export type EventKind = CalendarEventKind;
 export type { CalendarEvent };
@@ -39,22 +42,22 @@ export function eventOccursOnDate(event: CalendarEvent, dateKey: string): boolea
 }
 
 export function formatEventSchedule(event: CalendarEvent): string {
-  if (event.kind === 'allDay') return 'All day';
+  if (event.kind === 'allDay') return tr('calendar.allDay');
   if (event.kind === 'multiDate') {
     const range =
       event.startTime && event.endTime
         ? `${event.startTime} – ${event.endTime}`
-        : 'All day';
+        : tr('calendar.allDay');
     const dayLabel =
       event.dates.length === 1
-        ? '1 day'
-        : `${event.dates.length} days`;
+        ? tr('calendar.oneDay')
+        : tr('calendar.nDays', { n: event.dates.length });
     return `${range} · ${dayLabel}`;
   }
   if (event.startTime && event.endTime) {
     return `${event.startTime} – ${event.endTime}`;
   }
-  return event.startTime ?? 'Timed';
+  return event.startTime ?? tr('calendar.timed');
 }
 
 export function sortEventsForDay(events: CalendarEvent[]): CalendarEvent[] {
@@ -69,10 +72,10 @@ export function sortEventsForDay(events: CalendarEvent[]): CalendarEvent[] {
 
 export function validateTimedRange(startTime: string, endTime: string): string | null {
   if (!isValidTime(startTime) || !isValidTime(endTime)) {
-    return 'Enter valid start and end times.';
+    return tr('calendar.errTimes');
   }
   if (compareTimes(endTime, startTime) <= 0) {
-    return 'End time must be after start time.';
+    return tr('calendar.errEnd');
   }
   return null;
 }

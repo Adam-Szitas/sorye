@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useI18n } from '@sorye/platform/react';
 import { StatusHandler, taskMatchesQuery } from './status-handler';
 import { TaskCard } from './task-card';
 
@@ -10,6 +11,7 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ handler, searchQuery, onChange, onOpen }: KanbanBoardProps) {
+  const { t } = useI18n();
   const statuses = handler.getStatuses();
   const isSearching = searchQuery.trim().length > 0;
 
@@ -56,7 +58,7 @@ export function KanbanBoard({ handler, searchQuery, onChange, onOpen }: KanbanBo
 
             <ul className="kanban-column-list">
               {tasks.length === 0 && isSearching ? (
-                <li className="kanban-column-empty">No matches</li>
+                <li className="kanban-column-empty">{t('tasks.noMatches')}</li>
               ) : null}
               {tasks.map((task) => (
                 <li key={task.id}>

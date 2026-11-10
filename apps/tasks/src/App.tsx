@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
-import { useKernel, useSignalValue, UserLoadSections } from '@sorye/platform/react';
+import { getLocale, registerPendingActionFlusher, switchAuthorizedWorkspace, translate, type MessageKey, type MessageParams } from '@sorye/platform';
+import { useI18n, useKernel, useSignalValue, UserLoadSections } from '@sorye/platform/react';
 import { findTaskByTicketId, taskImageIds, ticketIdFromInput, type TaskItem, type UserLoadPartition, type UserLoadWorkspace } from '@sorye/types';
 import { StatusHandler, taskMatchesQuery } from './status-handler';
 import { createDefaultBoard, createTasksStorage } from './tasks-storage';
@@ -58,7 +58,11 @@ function emitTaskDiff(kernel: KernelClient, prev: TasksBoard, next: TasksBoard) 
   }
 }
 
+/** Translate outside render (error state set from async callbacks). */
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 export default function App() {
+  const { t } = useI18n();
   const storage = useMemo(() => createTasksStorage(), []);
   const { loadBoard, saveBoard } = storage;
   const kernel = useKernel();
@@ -77,6 +81,7 @@ export default function App() {
   const [conflictDraftAvailable, setConflictDraftAvailable] = useState(false);
   const [taskLoad, setTaskLoad] = useState<UserLoadPartition<TaskItem> | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
   const [ticketQuery, setTicketQuery] = useState('');
   const [ticketError, setTicketError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -87,9 +92,9 @@ export default function App() {
       const state = await storage.queueState();
       setQueueState(state);
       if (state.conflicts > 0) {
-        setSaveError('The task board changed elsewhere. Download your queued draft or discard it and reload the latest board.');
+        setSaveError(tr('tasks.conflict'));
         setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
-      } else if (state.rejected > 0) setSaveError('Rodrigo rejected a queued task action. Review the error before continuing.');
+      } else if (state.rejected > 0) setSaveError(tr('tasks.rejected'));
     } catch { /* the queue error is shown with the save state */ }
   }, [storage]);
 
@@ -115,7 +120,7 @@ export default function App() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setLoadError(err instanceof Error && err.message ? err.message : 'Could not load tasks from the workspace.');
+          setLoadError(err instanceof Error && err.message ? err.message : tr('tasks.loadFailed'));
           setLoadState('error');
         }
       });
@@ -142,7 +147,7 @@ export default function App() {
       void saveBoard(snapshot).then(
         () => { emitTaskDiff(kernel, board, snapshot); setSaveError(null); setConflictDraftAvailable(false); void refreshQueueState(); },
         (err: unknown) => {
-          setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+          setSaveError(err instanceof Error ? err.message : tr('tasks.saveFailed'));
           if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
           void refreshQueueState();
         },
@@ -154,7 +159,7 @@ export default function App() {
   const resendPending = async () => {
     await storage.resendPending();
     await refreshQueueState();
-    if (queueState.pending + queueState.failed > 0) setSaveError('Some task actions still need confirmation. Review conflicts or retry again.');
+    if (queueState.pending + queueState.failed > 0) setSaveError(tr('tasks.needsConfirmation'));
     else setSaveError(null);
   };
 
@@ -182,7 +187,7 @@ export default function App() {
       setSaveError(null);
       await refreshQueueState();
     } catch {
-      setSaveError('Could not reload the latest tasks. Your draft is still available in this browser.');
+      setSaveError(tr('tasks.reloadFailed'));
     }
   };
 
@@ -216,7 +221,7 @@ export default function App() {
       await refreshQueueState();
     } catch (err) {
       setBoard(board);
-      setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+      setSaveError(err instanceof Error ? err.message : tr('tasks.saveFailed'));
       if (storage.isConflict(err)) setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
       await refreshQueueState();
       throw err;
@@ -226,13 +231,13 @@ export default function App() {
   const openTicket = useCallback((raw: string) => {
     const id = ticketIdFromInput(raw);
     if (!id) {
-      setTicketError('Enter a ticket id from this workspace.');
+      setTicketError(tr('tasks.ticketEnterId'));
       setEditingId(null);
       return;
     }
     const task = findTaskByTicketId(board.tasks, id);
     if (!task) {
-      setTicketError(id.length > 80 ? 'No task with that id is on this workspace board.' : `No task with id “${id}” is on this workspace board.`);
+      setTicketError(id.length > 80 ? tr('tasks.ticketNotFound') : tr('tasks.ticketNotFoundId', { id }));
       setEditingId(null);
       return;
     }
@@ -280,7 +285,7 @@ export default function App() {
                 ui.state.panel.value = 'board';
               }}
             >
-              Board
+              {t('tasks.board')}
             </button>
             <button
               type="button"
@@ -291,33 +296,33 @@ export default function App() {
                 ui.state.panel.value = 'settings';
               }}
             >
-              Statuses
+              {t('tasks.statuses')}
             </button>
           </div>
         </div>
       </header>
 
       {loadState === 'loading' ? (
-        <p className="search-results-meta">Loading workspace tasks…</p>
+        <p className="search-results-meta">{t('tasks.loading')}</p>
       ) : null}
       {loadState === 'error' ? (
         <p className="search-results-meta" role="alert">
-          {loadError ?? 'Could not load tasks from the workspace.'}
+          {loadError ?? t('tasks.loadFailed')}
         </p>
       ) : null}
       {saveError ? (
         <div className="search-results-meta" role="alert">
           {saveError}
           {conflictDraftAvailable ? <div className="tasks-toolbar">
-            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
-            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>{t('tasks.downloadDraft')}</button>
+            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>{t('tasks.discardDraft')}</button>
           </div> : null}
         </div>
       ) : null}
       {(queueState.pending + queueState.failed + queueState.conflicts + queueState.rejected) > 0 ? (
         <div className="search-results-meta" role="status">
-          {queueState.pending + queueState.failed} task action(s) awaiting confirmation; {queueState.conflicts} conflict(s); {queueState.rejected} rejected.
-          {queueState.pending + queueState.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
+          {t('tasks.queueSummary', { waiting: queueState.pending + queueState.failed, conflicts: queueState.conflicts, rejected: queueState.rejected })}
+          {queueState.pending + queueState.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>{t('tasks.resend')}</button> : null}
         </div>
       ) : null}
 
@@ -325,20 +330,20 @@ export default function App() {
         <>
           {taskWorkspace ? (
             <h2 className="search-results-meta">
-              {taskWorkspace.kind === 'team' ? `Work · ${taskWorkspace.name}` : 'Personal'}
+              {taskWorkspace.kind === 'team' ? t('tasks.workspaceWork', { name: taskWorkspace.name }) : t('tasks.workspacePersonal')}
             </h2>
           ) : null}
           {otherTasks ? (
             <UserLoadSections
               load={otherTasks}
-              empty="No tasks in this workspace."
+              empty={t('tasks.empty')}
               heading="h3"
               renderItems={(items) => (
                 <ul>
                   {items.map((item) => (
                     <li key={`${item.workspaceId}:${item.value.id}`}>
                       <button type="button" className="btn-ghost" onClick={() => void openTaskWorkspace(item.workspaceId)}>
-                        {item.value.title || 'Untitled task'}
+                        {item.value.title || t('tasks.untitled')}
                       </button>
                     </li>
                   ))}
@@ -346,72 +351,15 @@ export default function App() {
               )}
             />
           ) : null}
-          <div className="tasks-toolbar">
-            <label className="field field-search field-grow">
-              Search tasks
-              <div className="search-input-wrap">
-                <input
-                  type="search"
-                  placeholder="Search by title or notes..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    ui.state.searchQuery.value = e.target.value;
-                  }}
-                />
-                {searchQuery ? (
-                  <button
-                    type="button"
-                    className="btn-icon search-clear"
-                    aria-label="Clear search"
-                    onClick={() => {
-                      ui.state.searchQuery.value = '';
-                    }}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-            </label>
-            {matchCount !== null ? (
-              <p className="search-results-meta" aria-live="polite">
-                {matchCount === 0
-                  ? 'No tasks match'
-                  : `${matchCount} task${matchCount === 1 ? '' : 's'} match`}
-              </p>
-            ) : null}
-          </div>
-
-          <form
-            className="tasks-toolbar"
-            onSubmit={(event) => {
-              event.preventDefault();
-              openTicket(ticketQuery);
-            }}
-          >
-            <label className="field field-grow">
-              Open ticket
+          <div className="tasks-bar">
+            <div className="tasks-add">
               <input
                 type="text"
-                placeholder="Paste a ticket id"
-                value={ticketQuery}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setTicketQuery(event.target.value)}
-              />
-            </label>
-            <button type="submit" className="btn-ghost">Open</button>
-          </form>
-          {ticketError ? (
-            <p className="search-results-meta" role="alert">{ticketError}</p>
-          ) : null}
-
-          <div className="tasks-toolbar">
-            <label className="field field-grow">
-              New task
-              <input
-                type="text"
-                placeholder="What needs to be done?"
+                className="bar-input"
+                aria-label={t('tasks.newTask')}
+                placeholder={t('tasks.addPlaceholder')}
                 value={newTaskTitle}
+                enterKeyHint="done"
                 onChange={(e) => {
                   ui.state.newTaskTitle.value = e.target.value;
                 }}
@@ -419,11 +367,93 @@ export default function App() {
                   if (e.key === 'Enter') addTask();
                 }}
               />
-            </label>
-            <button type="button" className="btn-primary" onClick={addTask}>
-              Add task
+              <button
+                type="button"
+                className="btn-primary tasks-add-btn"
+                aria-label={t('tasks.addTask')}
+                disabled={!newTaskTitle.trim()}
+                onClick={addTask}
+              >
+                <span aria-hidden="true">+</span>
+                <span className="tasks-add-label">{t('tasks.addTask')}</span>
+              </button>
+            </div>
+
+            <div className="tasks-search">
+              <svg className="bar-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                <circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                <path d="M13.2 13.2 17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              <input
+                type="search"
+                className="bar-input"
+                aria-label={t('tasks.search')}
+                placeholder={t('tasks.search')}
+                value={searchQuery}
+                onChange={(e) => {
+                  ui.state.searchQuery.value = e.target.value;
+                }}
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  className="btn-icon search-clear"
+                  aria-label={t('tasks.clearSearch')}
+                  onClick={() => {
+                    ui.state.searchQuery.value = '';
+                  }}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              className={`btn-icon tasks-ticket-toggle${ticketOpen || ticketError ? ' active' : ''}`}
+              aria-label={t('tasks.openTicketById')}
+              aria-expanded={ticketOpen || Boolean(ticketError)}
+              title={t('tasks.openTicketById')}
+              onClick={() => setTicketOpen((open) => !open)}
+            >
+              #
             </button>
           </div>
+
+          {ticketOpen || ticketError ? (
+            <form
+              className="tasks-ticket"
+              onSubmit={(event) => {
+                event.preventDefault();
+                openTicket(ticketQuery);
+              }}
+            >
+              <input
+                type="text"
+                className="bar-input"
+                aria-label={t('tasks.ticketId')}
+                placeholder={t('tasks.pasteTicket')}
+                value={ticketQuery}
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+                onChange={(event) => setTicketQuery(event.target.value)}
+              />
+              <button type="submit" className="btn-ghost">{t('open')}</button>
+            </form>
+          ) : null}
+          {ticketError ? (
+            <p className="search-results-meta" role="alert">{ticketError}</p>
+          ) : null}
+          {matchCount !== null ? (
+            <p className="search-results-meta" aria-live="polite">
+              {matchCount === 0
+                ? t('tasks.matchNone')
+                : matchCount === 1
+                  ? t('tasks.matchOne')
+                  : t('tasks.matchMany', { n: matchCount })}
+            </p>
+          ) : null}
 
           <KanbanBoard
             handler={handler}

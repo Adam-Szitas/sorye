@@ -26,6 +26,7 @@ flowchart LR
 | Settings precedence | Rodrigo revision, then the legacy `llm-control.json` settings (read-only now), then `OCR_LLM_*` environment. |
 | Propagation | Pull. Hub and the OCR worker poll every 15 s (`PLATFORM_CONFIG_POLL_MS`), apply, cache the last good revision on disk, and report the applied revision. A write also refreshes the Hub immediately. |
 | Pause, stop, cancel | Pause is configuration (`paused: true`); consumers refuse new AI requests after applying it, running requests finish. Stop is a Hub-process action available only while paused: it aborts this Hub's in-flight requests and unloads the Ollama model. There is no cancel of OCR worker jobs in progress. |
+| Retries and conflicts | The console keeps one `changeId` per intended change and resends the same body on retry; Hub sends `correlationId = changeId` because Rodrigo digests the whole body. A stale `expectedRevision` (or `If-Match: "shared-ai-<n>"`) returns 409; the console then lists only the fields this administrator changed and can apply just those on top of the latest revision. |
 | Hub-owned actions (plans, notices, stop) | Audited as a pending intent before the action and an outcome after. If the intent cannot be recorded, the action does not run (503 `audit_unavailable`). |
 
 ## Environment

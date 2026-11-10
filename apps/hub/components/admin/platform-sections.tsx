@@ -54,9 +54,11 @@ export function OverviewStatus() {
             <dd>
               {ai.state.data.store !== 'ready'
                 ? <Badge tone="warn">Store {ai.state.data.store.replace('_', ' ')}</Badge>
-                : drift.length === 0
+                : ai.state.data.revision === 0
+                  ? <Link href="/admin/ai"><Badge tone="info">Nothing saved yet · deployment defaults</Badge></Link>
+                  : drift.length === 0
                   ? <Badge tone="ok">Revision {ai.state.data.revision} applied everywhere</Badge>
-                  : <Link href="/admin/ai"><Badge tone="warn">{drift.length} consumer{drift.length === 1 ? '' : 's'} not on revision {ai.state.data.revision}</Badge></Link>}
+                  : <Link href="/admin/ai"><Badge tone="warn">{drift.length} consumer{drift.length === 1 ? '' : 's'} not confirmed on revision {ai.state.data.revision}</Badge></Link>}
               {ai.state.data.hubEffective.paused ? <> <Badge tone="warn">Paused</Badge></> : null}
             </dd>
           </div>

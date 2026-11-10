@@ -84,6 +84,7 @@ export interface PublishEventResult {
 async function maybeRecordNotification(
   event: WorkspaceEvent,
   workspaceId: string,
+  actorId?: string,
 ): Promise<WorkspaceNotification | undefined> {
   if (event.name.startsWith('sorye.system.')) return undefined;
   if (event.name === 'sorye.test.ping') return undefined;
@@ -95,6 +96,7 @@ async function maybeRecordNotification(
 
   return recordWorkspaceNotification({
     workspaceId,
+    actorId,
     appId,
     title: event.payload.title,
     body: event.payload.summary?.trim() ?? '',
@@ -213,7 +215,7 @@ export async function publishWorkspaceEvent(input: {
       event,
       allowMessenger: false,
     });
-    const notification = await maybeRecordNotification(event, input.workspaceId);
+    const notification = await maybeRecordNotification(event, input.workspaceId, input.userId);
     return {
       eligible: true,
       enabled: true,
@@ -246,7 +248,7 @@ export async function publishWorkspaceEvent(input: {
     allowMessenger: true,
   });
 
-  const notification = await maybeRecordNotification(event, input.workspaceId);
+  const notification = await maybeRecordNotification(event, input.workspaceId, input.userId);
 
   return {
     eligible: true,

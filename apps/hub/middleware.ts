@@ -63,14 +63,6 @@ function jsonError(status: number, code: string): NextResponse {
   return NextResponse.json({ error: code }, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-/** Same-origin redirect with a relative Location, so the proxied scheme and host are kept. */
-function relativeRedirect(location: string): NextResponse {
-  return new NextResponse(null, {
-    status: 307,
-    headers: { Location: location, 'Cache-Control': 'no-store' },
-  });
-}
-
 function withAdminHeaders(res: NextResponse): NextResponse {
   res.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
   res.headers.set('X-Frame-Options', 'DENY');
@@ -95,6 +87,7 @@ export default auth((req) => {
     secFetchSite: req.headers.get('sec-fetch-site'),
     requestHost: host,
     devAllowedOrigin: Boolean(standaloneOrigin) && hostKind !== 'admin',
+    requireBrowserOrigin: hostKind === 'admin',
   });
   // Read the flag here so Next.js inlines AUTH_DEV_BYPASS into the Edge bundle.
   const localBypass =
@@ -103,13 +96,19 @@ export default auth((req) => {
     isAuthDevBypass();
 
   if (hostKind === 'admin') {
-    if (pathname === '/') return withAdminHeaders(relativeRedirect('/admin'));
+    // Middleware redirects need an absolute URL; Next.js relativizes it when the origin matches.
+    const adminRedirect = (location: string) => {
+      const response = NextResponse.redirect(`${adminOrigin(host, req.nextUrl.protocol, config)}${location}`, 307);
+      response.headers.set('Cache-Control', 'no-store');
+      return withAdminHeaders(response);
+    };
+    if (pathname === '/') return adminRedirect('/admin');
     if (!isAdminSurfacePath(pathname, config.production)) return withAdminHeaders(plain(404, 'Not found'));
     if (originDenied) return withAdminHeaders(jsonError(403, originDenied));
     const isPage = pathname === '/admin' || pathname.startsWith('/admin/');
     if (isPage && !req.auth && !localBypass) {
       const callbackUrl = encodeURIComponent(`${pathname}${search}`);
-      return withAdminHeaders(relativeRedirect(`/login?callbackUrl=${callbackUrl}`));
+      return adminRedirect(`/login?callbackUrl=${callbackUrl}`);
     }
     return withAdminHeaders(NextResponse.next());
   }

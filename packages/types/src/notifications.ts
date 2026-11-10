@@ -12,6 +12,8 @@ export interface WorkspaceNotification {
   createdAt: string;
   /** When set, only this member of the workspace sees the notice. */
   userId?: string;
+  /** Member whose own action produced the notice. They already know about it, so it is never shown to them. */
+  actorId?: string;
   /** Background job that produced the notice. */
   jobId?: string;
   /** Stored OCR analysis to open. Present for a successful OCR job. */

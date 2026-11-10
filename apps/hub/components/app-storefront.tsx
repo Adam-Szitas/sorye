@@ -384,7 +384,7 @@ export function AppStorefront() {
   const dialog = mounted ? (
       <dialog
         ref={dialogRef}
-        className="w-[min(28rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-0 text-[var(--color-text)] shadow-2xl backdrop:bg-black/60"
+        className="m-auto w-[min(28rem,calc(100%-2rem))] rounded-2xl border border-white/10 bg-[var(--color-surface-raised)] p-0 text-[var(--color-text)] shadow-2xl backdrop:bg-black/60"
         aria-labelledby={`${uid}-product-title`}
         onClick={onBackdropClick}
         onClose={() => setSelected(null)}

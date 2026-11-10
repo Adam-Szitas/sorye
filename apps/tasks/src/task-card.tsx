@@ -1,3 +1,4 @@
+import { useI18n } from '@sorye/platform/react';
 import { Select } from '@sorye/sdk/react';
 import { taskImageIds } from '@sorye/types';
 import type { TaskItem, TaskStatus } from './status-handler';
@@ -12,6 +13,7 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, statuses, onOpen, onMove, onRemove }: TaskCardProps) {
+  const { t } = useI18n();
   const images = taskImageIds(task);
   const photo = taskPhotoUrl(images[0]);
 
@@ -44,7 +46,7 @@ export function TaskCard({ task, statuses, onOpen, onMove, onRemove }: TaskCardP
           type="button"
           className="btn-icon"
           data-no-drag=""
-          aria-label="Remove task"
+          aria-label={t('tasks.removeTask')}
           onClick={() => onRemove(task.id)}
         >
           ×
@@ -54,13 +56,13 @@ export function TaskCard({ task, statuses, onOpen, onMove, onRemove }: TaskCardP
       {photo ? (
         <img className="task-card-photo" src={photo} alt="" width={320} height={180} decoding="async" draggable={false} />
       ) : null}
-      {images.length > 1 ? <p className="task-card-id">{images.length} images</p> : null}
+      {images.length > 1 ? <p className="task-card-id">{t('tasks.imageCount', { n: images.length })}</p> : null}
       {task.body ? <p className="task-card-preview">{task.body}</p> : null}
 
       <div data-no-drag="">
         <Select
           compact
-          label="Status"
+          label={t('tasks.status')}
           value={task.statusId}
           options={statuses.map((status) => ({
             value: status.id,

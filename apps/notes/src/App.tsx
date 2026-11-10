@@ -1,5 +1,5 @@
-import { TranslatedText, UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
-import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
+import { TranslatedText, useI18n, UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
+import { getLocale, registerPendingActionFlusher, switchAuthorizedWorkspace, translate, type MessageKey, type MessageParams } from '@sorye/platform';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UserLoadPartition } from '@sorye/types';
 import { createNotesStorage, type Note } from './notes-storage';
@@ -8,8 +8,10 @@ import './styles.css';
 
 const DRAFT_SAVE_MS = 450;
 
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString(getLocale(), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -26,16 +28,18 @@ function NoteButton({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <button type="button" className={active ? 'active' : undefined} onClick={onClick}>
-      <strong>{note.title || 'Untitled'}</strong>
+      <strong>{note.title || t('notes.untitled')}</strong>
       <span>{formatWhen(note.updatedAt)}</span>
-      <p>{note.body.slice(0, 80) || 'Empty note'}</p>
+      <p>{note.body.slice(0, 80) || t('notes.empty')}</p>
     </button>
   );
 }
 
 export default function App() {
+  const { t } = useI18n();
   const storage = useMemo(() => createNotesStorage(), []);
   const { loadSnapshot, saveNotes } = storage;
   const [notes, setNotes] = useState<Note[]>([]);
@@ -118,7 +122,7 @@ export default function App() {
     }
     const switched = await switchAuthorizedWorkspace(itemWorkspaceId);
     if (!switched) {
-      setSaveError('Could not open that workspace.');
+      setSaveError(tr('notes.openWorkspaceFailed'));
       return;
     }
     const next = await loadSnapshot();
@@ -148,7 +152,7 @@ export default function App() {
         },
         (err: unknown) => {
           if (pendingNotes.current) return null;
-          setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+          setSaveError(err instanceof Error ? err.message : tr('notes.saveFailed'));
           setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
           return storage.queueState();
         },
@@ -177,7 +181,7 @@ export default function App() {
       setActiveId((current) => latest.notes.some((note) => note.id === current) ? current : latest.notes[0]?.id ?? null);
       setSaveError(null);
     }
-    catch (error) { setSaveError(error instanceof Error ? error.message : 'Rodrigo has not confirmed the pending notes.'); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : tr('notes.pendingUnconfirmed')); }
     setQueueStatus(await storage.queueState().catch(() => queueStatus));
   };
 
@@ -205,7 +209,7 @@ export default function App() {
       setSaveError(null);
       setQueueStatus(await storage.queueState());
     } catch {
-      setSaveError('Could not reload the latest notes. Your draft is still available in this browser.');
+      setSaveError(tr('notes.reloadFailed'));
     }
   };
 
@@ -213,7 +217,7 @@ export default function App() {
     if (emitTimer.current) window.clearTimeout(emitTimer.current);
     emitTimer.current = window.setTimeout(() => {
       void emitWorkspaceEvent('sorye.notes.saved', {
-        title: `Note saved: ${note.title || 'Untitled'}`,
+        title: `Note saved: ${note.title || tr('notes.untitled')}`,
         appId: 'notes',
         entityId: note.id,
       });
@@ -223,7 +227,7 @@ export default function App() {
   const createNote = () => {
     const note: Note = {
       id: `note-${crypto.randomUUID().slice(0, 8)}`,
-      title: 'Untitled note',
+      title: tr('notes.untitledNote'),
       body: '',
       updatedAt: new Date().toISOString(),
     };
@@ -262,11 +266,11 @@ export default function App() {
   return (
     <div className="notes-app">
       {loadState === 'loading' ? (
-        <p className="notes-empty">Loading workspace notes…</p>
+        <p className="notes-empty">{t('notes.loading')}</p>
       ) : null}
       {loadState === 'error' ? (
         <p className="notes-empty" role="alert">
-          Could not load notes from the workspace.
+          {t('notes.loadFailed')}
         </p>
       ) : null}
 
@@ -274,9 +278,9 @@ export default function App() {
         <div className="notes-layout">
           <section className="notes-panel notes-list-panel">
             <div className="notes-list-toolbar">
-              <h2>All notes</h2>
+              <h2>{t('notes.allNotes')}</h2>
               <button type="button" className="btn-primary btn-sm" onClick={createNote}>
-                New
+                {t('notes.new')}
               </button>
             </div>
 
@@ -312,7 +316,7 @@ export default function App() {
                 ))}
               </ul>
             ) : (
-              <p className="notes-list-empty">No notes in this workspace.</p>
+              <p className="notes-list-empty">{t('notes.noneInWorkspace')}</p>
             )}
           </section>
 
@@ -321,7 +325,7 @@ export default function App() {
               <>
                 <div className="notes-editor-toolbar">
                   <label className="field field-grow" htmlFor="note-title">
-                    Title
+                    {t('notes.title')}
                     <input
                       id="note-title"
                       name="title"
@@ -339,27 +343,27 @@ export default function App() {
                 </div>
 
                 <label className="field" htmlFor="note-body">
-                  Body
+                  {t('notes.body')}
                   <textarea
                     id="note-body"
                     name="body"
                     value={activeNote.body}
                     aria-describedby={saveStatusId}
                     onChange={(e) => updateActive({ body: e.target.value })}
-                    placeholder="Write your note..."
+                    placeholder={t('notes.bodyPlaceholder')}
                     rows={14}
                   />
                 </label>
 
                 <p className="notes-meta">
-                  Last updated {formatWhen(activeNote.updatedAt)}
+                  {t('notes.lastUpdated', { when: formatWhen(activeNote.updatedAt) })}
                 </p>
               </>
             ) : (
               <div className="notes-empty">
-                <p>No notes yet.</p>
+                <p>{t('notes.noneYet')}</p>
                 <button type="button" className="btn-primary" onClick={createNote}>
-                  Create your first note
+                  {t('notes.createFirst')}
                 </button>
               </div>
             )}
@@ -370,15 +374,15 @@ export default function App() {
                   <div className="notes-status" id="note-save-status" role="alert">
                     {saveError}
                     {conflictDraftAvailable ? <div className="notes-status-actions">
-                      <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
-                      <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+                      <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>{t('notes.downloadDraft')}</button>
+                      <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>{t('notes.discardDraft')}</button>
                     </div> : null}
                   </div>
                 ) : null}
                 {attention > 0 ? (
                   <div className="notes-status" role="status">
                     {queueStatus.pending + queueStatus.failed} note action(s) await Rodrigo; {queueStatus.conflicts} conflict(s); {queueStatus.rejected} rejected.
-                    {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
+                    {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>{t('notes.resend')}</button> : null}
                   </div>
                 ) : null}
               </div>

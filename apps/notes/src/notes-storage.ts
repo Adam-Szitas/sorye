@@ -1,6 +1,8 @@
-import { createDurableActionQueue, type DurableActionQueue } from '@sorye/platform';
+import { createDurableActionQueue, getLocale, translate, type DurableActionQueue, type MessageKey, type MessageParams } from '@sorye/platform';
 import type { RodrigoAction, RodrigoActionBatchResult, UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
 import type { Note } from '@sorye/types';
+
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
 
 export interface NotesSnapshot { notes: Note[]; empty: boolean; load?: UserLoadPartition<Note>; workspace?: UserLoadWorkspace; }
 export type { Note };
@@ -21,19 +23,19 @@ export function createNotesStorage() {
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let response: Response;
     try { response = await fetch(path, { credentials: 'include', ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } }); }
-    catch { throw new ApiError(0, 'Rodrigo could not be reached. The note action remains queued in this browser.'); }
+    catch { throw new ApiError(0, tr('notes.err.unreachable')); }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const code = typeof data.error?.code === 'string' ? data.error.code : 'request_failed';
       throw new ApiError(response.status, code === 'rodrigo_unavailable' || response.status >= 500
-        ? 'Rodrigo could not confirm this note change. It remains queued in this browser.' : `Note action failed (${code}).`);
+        ? tr('notes.err.unconfirmed') : tr('notes.err.actionFailed', { code }));
     }
     return data as T;
   }
 
   async function getQueue() {
     const response = await request<{ queueScope: string }>('/api/notes/scope');
-    if (!/^[a-f0-9]{64}$/.test(response.queueScope)) throw new Error('Hub returned an invalid Notes queue scope.');
+    if (!/^[a-f0-9]{64}$/.test(response.queueScope)) throw new Error(tr('notes.err.invalidScope'));
     activeScope = response.queueScope;
     let current = queues.get(activeScope);
     if (!current) { current = createDurableActionQueue<RodrigoAction>({ appId: 'notes', scope: activeScope, maxRows: 500 }); queues.set(activeScope, current); }
@@ -74,13 +76,13 @@ export function createNotesStorage() {
     let result: RodrigoActionBatchResult;
     try { result = await request('/api/backend/actions/batch', { method: 'POST', headers: { 'X-Sorye-Queue-Scope': scope }, body: JSON.stringify({ actions: candidates.map((item) => item.action) }) }); }
     catch (error) {
-      for (const item of candidates) await q.markTransportFailure(item.action.actionId, { code: 'rodrigo_unavailable', message: error instanceof Error ? error.message : 'Rodrigo could not be reached.' });
+      for (const item of candidates) await q.markTransportFailure(item.action.actionId, { code: 'rodrigo_unavailable', message: error instanceof Error ? error.message : tr('notes.err.unreachableShort') });
       throw error;
     }
     const outcomes = new Map(result.results.map((outcome) => [outcome.actionId, outcome]));
     for (const item of candidates) {
       const outcome = outcomes.get(item.action.actionId);
-      if (!outcome) { await q.markTransportFailure(item.action.actionId, { code: 'missing_action_result', message: 'Rodrigo returned no result for this action.' }); continue; }
+      if (!outcome) { await q.markTransportFailure(item.action.actionId, { code: 'missing_action_result', message: tr('notes.err.noResult') }); continue; }
       await q.settle({ actionId: outcome.actionId, status: outcome.status, error: outcome.error });
       if (outcome.status === 'committed' || outcome.status === 'duplicate') {
         if (outcome.revision) revisions.set(item.action.resourceId, outcome.revision);
@@ -131,8 +133,8 @@ export function createNotesStorage() {
     await flush();
     const remaining = await q.list();
     if (remaining.some((item) => item.status === 'conflict')) throw new ApiError(409, 'A note changed in another session. Reload and reconcile the saved draft.');
-    if (remaining.some((item) => item.status !== 'pending' && item.status !== 'failed')) throw new ApiError(400, 'Rodrigo rejected a note action. Review and reconcile it before continuing.');
-    if (remaining.length) throw new ApiError(503, 'Rodrigo has not confirmed every note change. Use Resend when the connection is available.');
+    if (remaining.some((item) => item.status !== 'pending' && item.status !== 'failed')) throw new ApiError(400, tr('notes.err.rejected'));
+    if (remaining.length) throw new ApiError(503, tr('notes.err.notConfirmedAll'));
     clearConflictDraft();
     return next;
   }

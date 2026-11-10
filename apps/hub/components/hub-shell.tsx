@@ -454,7 +454,7 @@ function HubShellLoaded({
   setPanes,
   navigatePanel,
   openApp: openAppBase,
-  closePane,
+  closePane: closePaneBase,
   expandPane,
   swapPanes,
   movePane,
@@ -482,6 +482,15 @@ function HubShellLoaded({
       openAppBase(app, side);
     },
     [markAppRead, openAppBase],
+  );
+  const closePane = useCallback(
+    (side: PaneSide) => {
+      // Whatever happened while the app was open, the member was looking at it.
+      const open = resolveApp(side === 'left' ? panes.leftId : panes.rightId);
+      if (open) void markAppRead(open.id);
+      closePaneBase(side);
+    },
+    [closePaneBase, markAppRead, panes.leftId, panes.rightId, resolveApp],
   );
 
   useEffect(() => {
@@ -520,6 +529,17 @@ function HubShellLoaded({
   });
   const leftApp = resolveApp(panes.leftId);
   const rightApp = resolveApp(panes.rightId);
+  // An app that is on screen is being looked at: anything that arrives for it
+  // (including the member's own actions) is read, not a pending notification.
+  const visibleLeftId = panel === 'workspace' ? leftApp?.id : undefined;
+  const visibleRightId = panel === 'workspace' ? rightApp?.id : undefined;
+  const leftUnread = visibleLeftId ? unreadByApp[visibleLeftId] ?? 0 : 0;
+  const rightUnread = visibleRightId ? unreadByApp[visibleRightId] ?? 0 : 0;
+  useEffect(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (visibleLeftId && leftUnread > 0) void markAppRead(visibleLeftId);
+    if (visibleRightId && rightUnread > 0 && visibleRightId !== visibleLeftId) void markAppRead(visibleRightId);
+  }, [visibleLeftId, visibleRightId, leftUnread, rightUnread, markAppRead]);
   const workspaceOpen = Boolean(leftApp || rightApp);
   const activeAppId =
     (panes.focus === 'right' ? rightApp?.id : leftApp?.id) ??

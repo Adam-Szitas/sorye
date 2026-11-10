@@ -1,5 +1,5 @@
-import { registerPendingActionFlusher, switchAuthorizedWorkspace } from '@sorye/platform';
-import { UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
+import { getLocale, registerPendingActionFlusher, switchAuthorizedWorkspace, translate, type MessageKey, type MessageParams } from '@sorye/platform';
+import { useI18n, UserLoadSections, withActiveWorkspaceItems } from '@sorye/platform/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UserLoadPartition, UserLoadWorkspace } from '@sorye/types';
 
@@ -9,6 +9,7 @@ import {
   createCalendarStorage,
   parseDateKey,
   toDateKey,
+  weekdayLabels,
   type CalendarEvent,
 } from './calendar-storage';
 import {
@@ -39,7 +40,11 @@ function toggleDateInList(dates: string[], dateKey: string): string[] {
   return [...dates, dateKey].sort();
 }
 
+/** Translate outside render (error state set from async callbacks). */
+const tr = (key: MessageKey, params?: MessageParams) => translate(getLocale(), key, params);
+
 export default function App() {
+  const { t, locale } = useI18n();
   const storage = useMemo(() => createCalendarStorage(), []);
   const { loadEvents, saveEvents } = storage;
   const [viewDate, setViewDate] = useState(() => {
@@ -104,7 +109,7 @@ export default function App() {
     };
   }, [storage]);
 
-  const monthLabel = viewDate.toLocaleDateString(undefined, {
+  const monthLabel = viewDate.toLocaleDateString(locale, {
     month: 'long',
     year: 'numeric',
   });
@@ -132,7 +137,7 @@ export default function App() {
     void saveEvents(next).then(
       () => { setSaveError(null); setConflictDraftAvailable(false); return storage.queueState(); },
       (err: unknown) => {
-        setSaveError(err instanceof Error ? err.message : 'Could not save to the workspace.');
+        setSaveError(err instanceof Error ? err.message : tr('calendar.saveFailed'));
         setConflictDraftAvailable(Boolean(storage.readConflictDraft()));
         return storage.queueState();
       },
@@ -146,7 +151,7 @@ export default function App() {
       setEvents(latest);
       setSaveError(null);
     }
-    catch (error) { setSaveError(error instanceof Error ? error.message : 'Rodrigo has not confirmed the pending calendar changes.'); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : tr('calendar.pendingUnconfirmed')); }
     setQueueStatus(await storage.queueState().catch(() => queueStatus));
   };
 
@@ -171,7 +176,7 @@ export default function App() {
       setSaveError(null);
       setQueueStatus(await storage.queueState());
     } catch {
-      setSaveError('Could not reload the latest calendar. Your draft is still available in this browser.');
+      setSaveError(tr('calendar.reloadFailed'));
     }
   };
 
@@ -223,26 +228,26 @@ export default function App() {
   return (
     <div className="calendar-app">
       {loadState === 'loading' ? (
-        <p className="calendar-empty">Loading workspace calendar…</p>
+        <p className="calendar-empty">{t('calendar.loading')}</p>
       ) : null}
       {loadState === 'error' ? (
         <p className="calendar-empty" role="alert">
-          Could not load calendar events from the workspace.
+          {t('calendar.loadFailed')}
         </p>
       ) : null}
       {saveError ? (
         <div className="calendar-empty" role="alert">
           {saveError}
           {conflictDraftAvailable ? <div className="calendar-month-toolbar">
-            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>Download my draft</button>
-            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>Discard draft and load latest</button>
+            <button type="button" className="btn-ghost" onClick={downloadConflictDraft}>{t('calendar.downloadDraft')}</button>
+            <button type="button" className="btn-ghost" onClick={() => void discardDraftAndReload()}>{t('calendar.discardDraft')}</button>
           </div> : null}
         </div>
       ) : null}
       {queueStatus.pending + queueStatus.failed + queueStatus.conflicts + queueStatus.rejected > 0 ? (
         <div className="calendar-empty" role="status">
           {queueStatus.pending + queueStatus.failed} calendar action(s) await Rodrigo; {queueStatus.conflicts} conflict(s); {queueStatus.rejected} rejected.
-          {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>Resend</button> : null}
+          {queueStatus.pending + queueStatus.failed > 0 ? <button type="button" className="btn-ghost" onClick={() => void resendPending()}>{t('calendar.resend')}</button> : null}
         </div>
       ) : null}
 
@@ -253,6 +258,7 @@ export default function App() {
               <button
                 type="button"
                 className="btn-ghost"
+                aria-label={t('calendar.prevMonth')}
                 onClick={() => setViewDate((d) => addMonths(d, -1))}
               >
                 ←
@@ -261,6 +267,7 @@ export default function App() {
               <button
                 type="button"
                 className="btn-ghost"
+                aria-label={t('calendar.nextMonth')}
                 onClick={() => setViewDate((d) => addMonths(d, 1))}
               >
                 →
@@ -269,12 +276,12 @@ export default function App() {
 
             {multiPickActive ? (
               <p className="calendar-pick-hint">
-                Multi-day mode: click days to add or remove them from the event.
+                {t('calendar.multiHint')}
               </p>
             ) : null}
 
             <div className="calendar-weekdays">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+              {weekdayLabels(locale).map((d) => (
                 <span key={d}>{d}</span>
               ))}
             </div>
@@ -313,7 +320,7 @@ export default function App() {
           <div className="calendar-side">
             <section className="calendar-panel">
               <h2 className="panel-title">
-                {parseDateKey(selectedDate).toLocaleDateString(undefined, {
+                {parseDateKey(selectedDate).toLocaleDateString(locale, {
                   weekday: 'long',
                   month: 'long',
                   day: 'numeric',
@@ -337,7 +344,7 @@ export default function App() {
                                 if (item.workspaceId !== calendarWorkspace.id) {
                                   const switched = await switchAuthorizedWorkspace(item.workspaceId);
                                   if (!switched) {
-                                    setSaveError('Could not open that workspace.');
+                                    setSaveError(tr('calendar.openWorkspaceFailed'));
                                     return;
                                   }
                                   const next = await loadEvents();
@@ -361,7 +368,7 @@ export default function App() {
                 />
               ) : null}
               {dayEvents.length === 0 ? (
-                <p className="calendar-empty">No events yet.</p>
+                <p className="calendar-empty">{t('calendar.noEvents')}</p>
               ) : (
                 <ul className="calendar-events">
                   {sortEventsForDay(dayEvents).map((event) => (
@@ -378,7 +385,7 @@ export default function App() {
                         className="btn-ghost"
                         onClick={() => removeEvent(event.id)}
                       >
-                        Remove
+                        {t('calendar.remove')}
                       </button>
                     </li>
                   ))}
@@ -387,7 +394,7 @@ export default function App() {
             </section>
 
             <section className="calendar-panel">
-              <h3 className="panel-title">Add event</h3>
+              <h3 className="panel-title">{t('calendar.addEvent')}</h3>
               <EventForm
                 anchorDate={selectedDate}
                 draft={draft}

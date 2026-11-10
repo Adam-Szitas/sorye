@@ -1,4 +1,5 @@
 import { listMessengerUnreadPreviews, messengerReadSummary } from '@/lib/store/messenger-summary';
+import { bootstrapMessenger } from '@/lib/store/messenger';
 import { jsonDataFile } from '@/lib/store/json-file';
 
 /** workspaceId → userId → channelId → last-read ISO timestamp */
@@ -23,6 +24,23 @@ function readMap(
 }
 
 const MESSENGER_NOTICE_PREFIX = 'msgu:';
+
+/** channelId -> last-read ISO timestamp for this member. */
+export async function messengerReadMap(
+  userId: string,
+  workspaceId: string,
+): Promise<Record<string, string>> {
+  return readMap(await readStore(workspaceId), workspaceId, userId);
+}
+
+/** Channels this member can actually open. Empty when they have none. */
+export async function accessibleMessengerChannelIds(
+  userId: string,
+  workspaceId: string,
+): Promise<Set<string>> {
+  const bootstrap = await bootstrapMessenger(userId, workspaceId);
+  return new Set((bootstrap?.channels ?? []).map((channel) => channel.id));
+}
 
 export async function listMessengerUnreadNotices(
   userId: string,

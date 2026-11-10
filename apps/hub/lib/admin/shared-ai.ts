@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type {
   PlatformConfigConsumerState,
   PlatformConsumer,
@@ -70,21 +69,28 @@ export function propagationFor(
 function consumerViews(consumers: PlatformConfigConsumerState[], currentRevision: number): ConsumerView[] {
   const views: ConsumerView[] = [];
   for (const expected of EXPECTED_CONSUMERS) {
-    const instances = consumers.filter((entry) => entry.consumer === expected);
+    // Every restart leaves a report from the previous process behind. Show instances that are
+    // still reporting; if none are, show only the most recent one (as unknown), not the history.
+    const reported = consumers
+      .filter((entry) => entry.consumer === expected)
+      .sort((left, right) => Date.parse(right.reportedAt) - Date.parse(left.reportedAt));
+    const fresh = reported.filter((entry) => Date.now() - Date.parse(entry.reportedAt) <= STALE_REPORT_MS);
+    const instances = fresh.length ? fresh : reported.slice(0, 1);
     if (!instances.length) {
       views.push({ consumer: expected, instanceId: null, appliedRevision: null, reportedAt: null, code: null, propagation: 'unknown' });
       continue;
     }
-    for (const entry of instances.slice(0, 10)) {
-      views.push({
-        consumer: entry.consumer,
-        instanceId: entry.instanceId,
-        appliedRevision: entry.appliedRevision,
-        reportedAt: entry.reportedAt,
-        code: entry.code,
-        propagation: propagationFor(entry, currentRevision),
-      });
-    }
+    const rows = instances.slice(0, 10).map((entry): ConsumerView => ({
+      consumer: entry.consumer,
+      instanceId: entry.instanceId,
+      appliedRevision: entry.appliedRevision,
+      reportedAt: entry.reportedAt,
+      code: entry.code,
+      propagation: propagationFor(entry, currentRevision),
+    }));
+    // Instances replaced by a restart stop reporting; once a live one reports, they are history, not drift.
+    const live = rows.filter((row) => row.propagation !== 'unknown');
+    views.push(...(live.length ? live : rows));
   }
   return views;
 }
@@ -175,7 +181,8 @@ export async function writeSharedAi(actor: AdminActor, input: {
       expectedRevision: input.expectedRevision,
       schemaVersion: 1,
       value: input.value,
-      correlationId: randomUUID(),
+      // Rodrigo digests the whole body; a retry must resend it byte-for-byte.
+      correlationId: input.changeId,
       ...(input.reason ? { reason: input.reason } : {}),
     });
     return { ok: true, status: commit.status, revision: commit.revision, auditId: commit.auditId, changeId: commit.changeId, hubAppliedRevision: await afterCommit(commit.revision) };
@@ -193,7 +200,7 @@ export async function rollbackSharedAi(actor: AdminActor, input: {
       changeId: input.changeId,
       expectedRevision: input.expectedRevision,
       targetRevision: input.targetRevision,
-      correlationId: randomUUID(),
+      correlationId: input.changeId,
       ...(input.reason ? { reason: input.reason } : {}),
     });
     return { ok: true, status: commit.status, revision: commit.revision, auditId: commit.auditId, changeId: commit.changeId, hubAppliedRevision: await afterCommit(commit.revision) };
