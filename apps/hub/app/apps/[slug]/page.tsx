@@ -15,13 +15,22 @@ import {
   isHubNativeApp,
   type AppCatalogEntry,
 } from '@sorye/types';
+import { useI18n } from '@sorye/platform/react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { StatusPage } from '@/components/status-page';
+import NotFound from '@/app/not-found';
+
+/** Why the app is not shown: the access check failed, or the app is not on this workspace. */
+type Denied = 'not-on-workspace' | 'check-failed';
 
 export default function MicroAppPage() {
   const params = useParams<{ slug: string }>();
+  const { t, locale } = useI18n();
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [denied, setDenied] = useState<Denied>('not-on-workspace');
+  const [attempt, setAttempt] = useState(0);
   const [app, setApp] = useState<AppCatalogEntry | null>(null);
 
   useEffect(() => {
@@ -40,12 +49,20 @@ export default function MicroAppPage() {
     }
 
     async function checkAccess() {
-      const res = await fetch('/api/workspace', { credentials: 'include' });
-      if (!res.ok) {
+      // A failed check is not the same as "not on your workspace": say so and offer a retry.
+      const res = await fetch('/api/workspace', { credentials: 'include', cache: 'no-store' }).catch(() => null);
+      if (!res || !res.ok) {
+        setDenied('check-failed');
         setAllowed(false);
         return;
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!data?.workspace) {
+        setDenied('check-failed');
+        setAllowed(false);
+        return;
+      }
+      setDenied('not-on-workspace');
       const isAdmin = data.user?.isAdmin === true;
       const isAllowed =
         catalogApp &&
@@ -58,7 +75,7 @@ export default function MicroAppPage() {
     }
 
     checkAccess();
-  }, [params.slug]);
+  }, [params.slug, attempt]);
 
   if (allowed === null) {
     return (
@@ -68,19 +85,35 @@ export default function MicroAppPage() {
     );
   }
 
-  if (!app || !allowed) {
+  if (!app) return <NotFound />;
+
+  if (!allowed) {
+    if (denied === 'check-failed') {
+      return (
+        <StatusPage
+          lang={locale}
+          code="503"
+          title={t('status.checkFailed.title')}
+          body={t('status.checkFailed.body')}
+          actions={[
+            { kind: 'link', href: '/', label: t('status.goHub') },
+            { kind: 'button', label: t('status.tryAgain'), primary: true, onClick: () => { setAllowed(null); setAttempt((n) => n + 1); } },
+          ]}
+        />
+      );
+    }
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
-        <p className="text-[var(--color-text-muted)]">
-          This app is not available on your workspace.
-        </p>
-        <Link
-          href="/"
-          className="rounded-xl bg-white/10 px-4 py-2 text-sm transition hover:bg-white/15"
-        >
-          Back to Hub
-        </Link>
-      </div>
+      <StatusPage
+        lang={locale}
+        code="403"
+        title={t('status.appUnavailable.title')}
+        body={t('status.appUnavailable.body')}
+        hint={t('status.appUnavailable.hint')}
+        actions={[
+          { kind: 'link', href: '/billing', label: t('status.seePlans') },
+          { kind: 'link', href: '/', label: t('status.goHub'), primary: true },
+        ]}
+      />
     );
   }
 

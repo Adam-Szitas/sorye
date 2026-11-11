@@ -196,6 +196,20 @@
 
 /* Reusable controls. Components rank below utilities, so per-use classes such as w-auto still apply. */
 @layer components {
+  /* Status pages (404, app not available): a short rise-in, skipped when motion is reduced. */
+  @media (prefers-reduced-motion: no-preference) {
+    .status-rise {
+      animation: status-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    }
+  }
+
+  @keyframes status-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
   /*
    * Shared themed select. Every browser gets a solid dark control; browsers with
    * customizable select (appearance: base-select) also get a themed picker,

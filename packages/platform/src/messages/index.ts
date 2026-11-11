@@ -8,9 +8,10 @@ import { forms } from './forms';
 import { apikeys } from './apikeys';
 import { billing } from './billing';
 import { ownstorage } from './ownstorage';
+import { status } from './status';
 
 // Add a namespace here after creating its file in this folder.
-const bundles = [common, tasks, messenger, calendar, notes, forms, apikeys, billing, ownstorage] as const;
+const bundles = [common, tasks, messenger, calendar, notes, forms, apikeys, billing, ownstorage, status] as const;
 
 // Distributes over the bundle union, so the result is the union of every namespace's keys.
 type KeysOf<Bundle> = Bundle extends { en: infer English } ? keyof English : never;
