@@ -18,7 +18,7 @@ const STYLE = `:root{color-scheme:dark}*{box-sizing:border-box}
 body{margin:0;min-height:100dvh;display:grid;place-items:center;overflow:hidden;background:#0b0f17;color:#f1f5f9;font:16px/1.5 "Segoe UI Variable","Segoe UI",system-ui,-apple-system,sans-serif;padding:64px 16px}
 .glow{position:fixed;left:50%;top:50%;width:36rem;height:36rem;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.14),transparent 62%);pointer-events:none}
 main{position:relative;max-width:28rem;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center}
-.mark{display:inline-grid;place-items:center;width:2.5rem;height:2.5rem;border-radius:.75rem;background:#38bdf8;color:#0b0f17;font-weight:700;box-shadow:0 8px 30px -8px rgba(56,189,248,.6);margin-bottom:2.5rem}
+.mark{display:inline-grid;place-items:center;width:2.5rem;height:2.5rem;border-radius:.75rem;background:#38bdf8;color:#0b0f17;font-weight:700;text-decoration:none;box-shadow:0 8px 30px -8px rgba(56,189,248,.6);margin-bottom:2.5rem}
 .code{font-size:clamp(6.5rem,20vw,8rem);font-weight:600;line-height:1;letter-spacing:-.05em;margin:0;background:linear-gradient(to bottom,rgba(255,255,255,.7),rgba(255,255,255,.04));-webkit-background-clip:text;background-clip:text;color:transparent;user-select:none}
 h1{font-size:1.5rem;font-weight:600;letter-spacing:-.01em;margin:1rem 0 0;text-wrap:balance}
 p.body{color:#94a3b8;margin:.75rem 0 0;text-wrap:pretty}
