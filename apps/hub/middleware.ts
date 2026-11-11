@@ -12,7 +12,7 @@ import {
   isAdminSurfacePath,
   mutationOriginDenied,
 } from '@/lib/admin/hosts';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 
 const publicPaths = [
   '/sitemap.xml',
@@ -93,7 +93,7 @@ function withAdminHeaders(res: NextResponse): NextResponse {
   return res;
 }
 
-export default auth((req) => {
+const hubMiddleware = auth((req) => {
   const { pathname, search } = req.nextUrl;
   const config = hostConfig();
   const { host, forwarded } = effectiveHost(req.headers);
@@ -189,6 +189,33 @@ export default auth((req) => {
 
   return standaloneOrigin ? withDevCors(res, standaloneOrigin) : res;
 });
+
+/**
+ * Safety net around the middleware: an unexpected failure (configuration,
+ * Auth.js, a dependency) answers with a clear 503 instead of Next.js' bare
+ * "Internal Server Error", and the cause is logged by name for `docker logs`.
+ */
+export default async function middleware(req: NextRequest, event: NextFetchEvent) {
+  try {
+    return await (hubMiddleware as unknown as (r: NextRequest, e: NextFetchEvent) => Promise<Response | undefined>)(req, event);
+  } catch (error) {
+    const name = error instanceof Error ? error.name : 'Error';
+    const message = error instanceof Error ? error.message.split('\n')[0]!.slice(0, 300) : String(error).slice(0, 300);
+    console.error(`[sorye] request failed before reaching the page: ${req.method} ${req.nextUrl.pathname} — ${name}: ${message}`);
+    return hubUnavailable(req.nextUrl.pathname);
+  }
+}
+
+function hubUnavailable(pathname: string): Response {
+  const headers = { 'Cache-Control': 'no-store', 'Retry-After': '30', 'X-Content-Type-Options': 'nosniff' };
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: { code: 'hub_unavailable' } }, { status: 503, headers });
+  }
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Sorye is temporarily unavailable</title>
+<style>:root{color-scheme:dark}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#0b0f17;color:#f1f5f9;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px}main{max-width:28rem;text-align:center}.mark{display:inline-grid;place-items:center;width:3rem;height:3rem;border-radius:.75rem;background:#38bdf8;color:#0b0f17;font-weight:700;font-size:1.25rem}h1{font-size:1.25rem;margin:1rem 0 .5rem}p{color:#94a3b8;margin:0 0 1.25rem}a{color:#38bdf8}</style></head>
+<body><main><div class="mark" aria-hidden="true">S</div><h1>Sorye is temporarily unavailable</h1><p>The service is starting or being configured. Please try again in a minute.</p><a href="/">Try again</a></main></body></html>`;
+  return new Response(html, { status: 503, headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8' } });
+}
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],

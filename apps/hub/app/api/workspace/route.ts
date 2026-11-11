@@ -14,19 +14,27 @@ export async function GET() {
   }
 
   let profile: { revision: number; resource: Record<string, unknown> | null };
+  // False while Rodrigo is not configured or not reachable. The shell still opens
+  // with default profile values; apps that need Rodrigo report that themselves.
+  let profileAvailable = true;
   try {
     profile = await getRodrigoResource(
       { userId: hubSession.user.id, workspaceId: hubSession.workspace.id },
       'workspace', 'settings', 'main',
     );
   } catch (error) {
-    const status = error instanceof RodrigoResponseError ? error.status : 503;
-    const code = error instanceof RodrigoResponseError ? error.code : 'rodrigo_unavailable';
-    return NextResponse.json({ error: { code } }, { status, headers: { 'Cache-Control': 'private, no-store' } });
+    if (error instanceof RodrigoResponseError && error.status < 500) {
+      // A real refusal from Rodrigo (forbidden, conflict, …) is not hidden.
+      return NextResponse.json({ error: { code: error.code } }, { status: error.status, headers: { 'Cache-Control': 'private, no-store' } });
+    }
+    profileAvailable = false;
+    profile = { revision: 0, resource: null };
   }
 
   const defaults = {
-    name: hubSession.workspace.kind === 'personal' ? 'Personal workspace' : 'Workspace',
+    name: profileAvailable
+      ? (hubSession.workspace.kind === 'personal' ? 'Personal workspace' : 'Workspace')
+      : hubSession.workspace.name,
     locale: 'en', timezone: 'UTC',
   };
   const resource = profile.resource;
@@ -37,7 +45,7 @@ export async function GET() {
 
   const personalPackageAppIds = await viewerPersonalPackageAppIds(hubSession);
   return NextResponse.json(
-    { ...session, workspaceSettings: settings, personalPackageAppIds },
+    { ...session, workspaceSettings: { ...settings, profileAvailable }, personalPackageAppIds },
     { headers: { ...timings.headers(), 'Cache-Control': 'private, no-store' } },
   );
 }
