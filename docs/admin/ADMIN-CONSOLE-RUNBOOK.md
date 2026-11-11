@@ -140,3 +140,13 @@ Do not drop the platform tables to roll back. The audit trail is meant to be ret
 - `AUTH_DEV_BYPASS=true` gives a local admin session for both hosts. To test real sign-in on the admin host, leave `AUTH_URL` unset (otherwise Auth.js pins callbacks to one origin) and add `http://admin.localhost:3000/api/auth/callback/google` to a development OAuth client.
 - Rodrigo-backed sections need `RODRIGO_*` and a Rodrigo with PostgreSQL and migration 005. Without them the console shows those sections as unavailable.
 - In development every non-admin host is treated as the customer host. Production allows only the configured hosts and loopback without `X-Forwarded-Host` (container healthchecks).
+
+## Release checks and limitations
+
+Before a release, verify admin-host routing, anonymous/member/revoked-admin access, configuration conflicts, audit failures, worker propagation, restart recovery, and image builds. Consult the generated [settings matrix](SETTINGS-MATRIX.md) for supported controls.
+
+Hub-owned actions and their audit records are not one atomic transaction: an outcome append can fail after the action succeeds. Check `auditOutcomeRecorded` before assuming the audit trail is complete.
+
+Pause prevents new model requests after each consumer applies the configuration. Stop affects Hub requests; it does not cancel requests already running in the OCR worker. Verify worker signing credentials and propagation independently.
+
+Membership editing, price definitions, billing, secret rotation, deployment operations, recent-authentication enforcement, and distributed rate limiting must not be presented as supported merely because an admin page exists. Check the implementation and settings matrix. The removed November 10 handoff was a historical work log, not evidence of deployment or current readiness.

@@ -44,6 +44,10 @@ The live Hub-to-Rodrigo integrations are `/api/backend/capabilities` and platfor
 
 Hub's `.data` volume protects records still owned by the current implementation during image replacement. Remove a storage path or credential only after its domain has moved successfully. Hub-native UI also remains in Hub; separate gateway images do not extract it. Protocolio's renderer and MongoDB remain a separate service boundary until explicitly migrated.
 
+## Callers that are not browsers
+
+Software can call Rodrigo's `/api/v1/` directly with a workspace API key. Hub is used once, by the workspace owner, to create or revoke the key; it is not in the request path afterwards. Tasks, Notes, Calendar and Forms are reachable today. See [Using Sorye without the web app](HEADLESS-API.md) for the division of work and what remains.
+
 ## Completing the boundary
 
 - Define identity bootstrap first: Hub verifies the login subject; a signed session-resolution contract lets Rodrigo resolve membership and workspace authority without trusting client input.

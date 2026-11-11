@@ -3,6 +3,7 @@
 import { AppCatalogBrowser } from '@/components/app-catalog';
 import { AppContact } from '@/components/app-contact';
 import { AppFiles } from '@/components/app-files';
+import { AppForms } from '@/components/app-forms';
 import { AppMail } from '@/components/app-mail';
 import { AppReports } from '@/components/app-reports';
 import { AppSite } from '@/components/app-site';
@@ -31,6 +32,9 @@ export function HubNativeAppBody({
   }
   if (app.id === 'site') {
     return <AppSite />;
+  }
+  if (app.id === 'forms') {
+    return <AppForms />;
   }
   if (app.id === 'contact') {
     return <AppContact paneSide={paneSide} alone={alone} />;

@@ -253,6 +253,7 @@ Chrome-less MF mount; embed session cookie scoped to widget workspace.
 | `/api/storefront/products` | Workspace product catalog (seeded kits) |
 | `/api/storefront/orders` | Enquiry/order requests for this workspace |
 | `/api/site` | Workspace public site editor (blocks); public view is `/s/[slug]` |
+| `/api/forms/scope`, `/api/forms/public/[slug]`, `/api/forms/public/[slug]/submissions` | Forms queue scope; anonymous, rate-limited read and submit of a published form. Public page is `/f/[slug]` |
 | `/api/mail` | In-workspace mailbox + settings; draft/forward for Messenger |
 | `/api/mail/accounts` | Connected IMAP/SMTP accounts (list/add/remove/sync/send/read) |
 | `/api/files` | Drive list/upload; `/api/files/[id]` download (or inline preview for safe types), rename, delete |

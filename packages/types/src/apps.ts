@@ -264,6 +264,27 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     costWeight: 1,
   },
   {
+    id: 'forms',
+    name: 'Forms',
+    description:
+      'Build a form, publish it at a public link, and read the answers in one place.',
+    usageIntro: {
+      summary: 'Add fields, publish, share /f/… and handle the answers that come in.',
+      steps: [
+        'Create a form and add the fields you need.',
+        'Turn on Published and copy the share link.',
+        'Open Answers to read submissions and mark them handled.',
+      ],
+    },
+    slug: 'forms',
+    category: 'productivity',
+    status: 'available',
+    icon: 'forms',
+    color: '#22c55e',
+    mountPath: '/apps/forms',
+    costWeight: 1,
+  },
+  {
     id: 'devtools',
     name: 'DevKit',
     description:
@@ -438,54 +459,6 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     costWeight: 3,
   },
   {
-    id: 'susm',
-    name: 'SUSM',
-    description: 'External SUSM workspace hosted on Vercel.',
-    usageIntro: {
-      summary: 'Opens the SUSM product in this pane (external site).',
-      steps: [
-        'Use SUSM as you would in its own tab.',
-        'Sign in there if the site asks for an account.',
-        'Close the pane when you are done — Hub keeps your other apps.',
-      ],
-    },
-    slug: 'susm',
-    category: 'productivity',
-    status: 'available',
-    icon: 'susm',
-    color: '#38bdf8',
-    mountPath: '/apps/susm',
-    external: {
-      url: 'https://susm.vercel.app',
-      title: 'SUSM',
-    },
-    costWeight: 1,
-  },
-  {
-    id: 'espm',
-    name: 'ESPM',
-    description: 'External ESPM workspace hosted on Vercel.',
-    usageIntro: {
-      summary: 'Opens the ESPM product in this pane (external site).',
-      steps: [
-        'Work in ESPM inside the embedded frame.',
-        'Sign in on that site if required.',
-        'Return to Hub apps anytime from the launcher.',
-      ],
-    },
-    slug: 'espm',
-    category: 'productivity',
-    status: 'available',
-    icon: 'espm',
-    color: '#a78bfa',
-    mountPath: '/apps/espm',
-    external: {
-      url: 'https://espm-beta.vercel.app',
-      title: 'ESPM',
-    },
-    costWeight: 1,
-  },
-  {
     id: 'ocr',
     name: 'OCR',
     description:
@@ -571,7 +544,7 @@ export const APP_CATALOG: AppCatalogEntry[] = [
  * are ignored for launchers and plan usage. Operator moved to the administration
  * console on the admin hostname.
  */
-export const RETIRED_APP_IDS: readonly string[] = ['operator'];
+export const RETIRED_APP_IDS: readonly string[] = ['operator', 'susm', 'espm'];
 
 /** Yearly electricity floor for one stack, split across sold apps. */
 export const APP_RUNNING_COST: RunningCostQuote = quoteRunningCost(APP_CATALOG);

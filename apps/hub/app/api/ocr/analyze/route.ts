@@ -135,7 +135,8 @@ async function analyzeUpload(
   if (typeof fileId !== 'string') {
     try {
       await createWorkspaceFile({ workspaceId: session.workspace.id, displayName: upload.name,
-        bytes: Buffer.from(bytes), sourceAppId: 'ocr' });
+        bytes: Buffer.from(bytes), sourceAppId: 'ocr',
+        uploader: { userId: session.user.id, tier: session.workspace.subscriptionId } });
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message : 'Could not save PDF to Drive' },
         { status: err instanceof FileAccessError ? err.status : 500 });

@@ -1,4 +1,5 @@
 'use client';
+import { ApiKeysPanel } from '@/components/api-keys-panel';
 import { TranslatedText, UserLoadSections } from '@sorye/platform/react';
 
 
@@ -23,7 +24,7 @@ interface ConnectionsPanelProps {
   onClose: () => void;
 }
 
-type Tab = 'outbound' | 'embed';
+type Tab = 'outbound' | 'embed' | 'api';
 
 export function ConnectionsPanel({
   connections,
@@ -191,9 +192,20 @@ export function ConnectionsPanel({
         >
           Outbound APIs
         </button>
+        <button
+          type="button"
+          className={`rounded-lg px-3 py-1.5 text-sm ${
+            tab === 'api' ? 'bg-white/15 text-white' : 'text-[var(--color-text-muted)] hover:bg-white/10'
+          }`}
+          onClick={() => setTab('api')}
+        >
+          <TranslatedText message="apikeys.tab" />
+        </button>
       </div>
 
-      {tab === 'embed' ? (
+      {tab === 'api' ? (
+        <ApiKeysPanel />
+      ) : tab === 'embed' ? (
         <div className="space-y-8">
           <p className="text-sm text-[var(--color-text-muted)]">
             Create an embed key for your own app. Only apps enabled in your hub
@@ -475,8 +487,10 @@ export function ConnectionsPanel({
             </form>
           ) : (
             <p className="text-center text-sm text-amber-400">
-              Connection limit reached ({plan.maxConnections}). Upgrade your
-              plan to add more.
+              <TranslatedText message="billing.limitReachedConnections" />{' '}
+              <a href="/billing" className="font-medium underline underline-offset-2">
+                <TranslatedText message="billing.seePlans" />
+              </a>
             </p>
           )}
         </>

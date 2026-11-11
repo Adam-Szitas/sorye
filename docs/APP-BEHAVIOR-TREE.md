@@ -22,7 +22,7 @@ flowchart TD
     Shell --> Catalog[App launcher and catalog]
     Catalog --> Choose{App kind}
 
-    Choose -->|Hub-native| Native[Catalog, Reports, Storefront, Site, Mail, Drive]
+    Choose -->|Hub-native| Native[Catalog, Reports, Storefront, Site, Forms, Mail, Drive]
     Choose -->|Module Federation remote| Remote[Dashboard, Calendar, Notes, Tasks, Relay, Protocolio, Canvas, DevKit, Messenger, OCR, Studio]
     Choose -->|External app| Iframe[SUSM / ESPM iframe]
 
@@ -263,6 +263,95 @@ Tasks has no owner toggle or Hub fallback: v2 reads and writes go to Rodrigo, mi
 
 When a feature changes where state lives or how long it survives, update this table and the state branch above. Do not imply that all app state survives a full browser restart: that is true only where the app explicitly persists it.
 
+## Forms: build, publish, collect
+
+```mermaid
+flowchart LR
+    Member[Member in Forms app] -->|form create / update / delete through the scoped queue| Batch[Hub /api/backend/actions/batch]
+    Batch -->|signed v2 action| Rodrigo[Rodrigo: forms.form + slug index]
+    Visitor[Visitor, no sign-in] -->|GET /f/slug| Page[Hub public form page]
+    Page -->|reserved public grant, read:forms.form| Rodrigo
+    Visitor -->|POST answers + submissionId| Submit[Hub /api/forms/public/slug/submissions]
+    Submit -->|rate limit, 64 KB cap, trap field| Submit
+    Submit -->|reserved public grant, forms.submission.create| Rodrigo
+    Rodrigo -->|validates answers against the stored definition, stores forms.submission| Rodrigo
+    Member -->|reads answers, sets status, deletes| Rodrigo
+```
+
+A member builds a form in the Hub-native Forms app. Saves are typed `forms.form` actions through the app's scoped IndexedDB queue; Rodrigo reserves the public slug in the same transaction. `/f/<slug>` and the two `/api/forms/public/` routes need no sign-in. The slug selects the form, never a workspace: Rodrigo resolves the owner, validates every answer against the stored definition, stamps the time and stores the submission. `submissionId` makes a retry safe. Members can change a submission's status or delete it; they cannot create one or edit its answers. Hub does not learn which workspace received a submission, so no event, notification or badge is raised. An unpublished, deleted or unknown slug is 404; a form that is not accepting shows a closed message.
+
+| State | Owner | Lifetime |
+|---|---|---|
+| Form definitions, slug index, submissions | Rodrigo (PostgreSQL) | Until a member deletes them |
+| Unconfirmed form edits | Forms scoped IndexedDB queue | Until Rodrigo confirms or the member discards |
+| Draft being edited, selected tab | Forms component state | Until the app unmounts |
+| Anonymous rate-limit windows | Hub process memory | One minute per window, per replica |
+
+## Plans and self-service billing
+
+```mermaid
+flowchart LR
+    Visitor[Visitor] -->|/pricing, no sign-in| Pricing[Hub pricing page]
+    Pricing -->|Start free or choose a plan| Billing[Hub /billing, signed in]
+    Pricing -->|Enterprise: Talk to us| Sales[Email to sales]
+    Member[Member: top-bar plan badge or limit-reached link] --> Billing
+    Billing -->|GET and POST /api/billing; workspace from session; owner only for changes| Service[Hub billing service]
+    Service -->|no provider configured| Unavailable[Plans shown; actions send people to sales]
+    Service -->|BILLING_SIMULATOR=true, never production| Simulator[Billing simulator: state machine and payment events]
+    Simulator -->|setWorkspaceTier, nothing removed| Workspace[Workspace subscription tier]
+    Workspace -->|limits| Hub[Launcher, connections, team creation]
+```
+
+Plans belong to a workspace and only its owner changes them; the workspace comes from the server session. No payment provider is connected: in production every plan action explains that and links to sales, and administrators still assign plans in the administration console. With the local/test simulator on, upgrades apply at once, paid downgrades and cancellations wait for the end of the period, and failed payments move through past due and a 7-day grace period before Free. Going over a limit locks the newest apps and connections instead of deleting them; the Plan & billing page reports the locked counts (the launcher does not yet hide locked items). Flows, states and the provider plan: [SUBSCRIPTIONS.md](SUBSCRIPTIONS.md).
+
+| State | Owner | Lifetime |
+|-------|-------|----------|
+| Tier that limits apply to | Hub workspace record (`subscriptionId`) | Until the next plan change |
+| Billing state in test mode (status, period, schedule, grace) | Hub `.data/billing-simulator.json` | Local/test only; deleted by hand |
+| Selected billing period on the page | `/billing` and `/pricing` component state | Until the page closes |
+
+## Own upload storage (drive or database)
+
+```mermaid
+flowchart LR
+    Owner[Workspace owner, Pro or Enterprise] -->|Relay: Your storage| Setup[Hub /api/own-storage]
+    Setup -->|validate, public-address check, live write/read/delete probe| Customer[Customer S3-compatible bucket or PostgreSQL]
+    Setup -->|encrypted credentials, target, limit| Settings[(Hub store: workspace_upload_storage)]
+    Member[Member uploads in Drive, Tasks or OCR] --> Files[Hub /api/files]
+    Files -->|validate type and size, reserve space under lock| Ledger[(Hub store: upload_ledger)]
+    Files -->|target sorye| Sorye[Sorye file storage]
+    Files -->|target drive or database; unreachable means refused| Customer
+    Download[Download or OCR read] -->|size and SHA-256 must match the ledger| Files
+```
+
+Only the workspace owner on Pro or Enterprise changes the destination or connections; the workspace comes from the session. Uploads go to the chosen destination and never fall back to Sorye storage. Each file records where its bytes are, so switching the destination later does not move existing files. Customer bytes are checked against the stored SHA-256 before they are served. A connection cannot be removed while it is the target or still holds files. The workspace app-data database setting (`/api/workspace/storage`) follows the same owner, plan, network and TLS rules. Design and threat model: [OWN-STORAGE.md](OWN-STORAGE.md).
+
+| State | Owner | Lifetime |
+|-------|-------|----------|
+| Upload destination, connection settings, encrypted credentials, limits | Hub `workspace_upload_storage` (JSON: `.data/own-storage.json`) | Until the owner changes or disconnects it |
+| Upload record (who, what, where, size, SHA-256, status) | Hub `upload_ledger` | Kept after the file is deleted |
+| File bytes on own storage | Customer bucket (`prefix/workspace/file-id`) or `schema.files` | Until the file is deleted in Sorye |
+
+## API keys and headless callers
+
+```mermaid
+flowchart LR
+    Owner[Workspace owner] -->|Connect, API keys| Panel[Hub API keys panel]
+    Panel -->|owner check from server session| Route[Hub /api/backend/api-keys]
+    Route -->|signed apikeys:read / apikeys:write| Rodrigo[Rodrigo /v2/api-keys]
+    Rodrigo -->|token, once| Panel
+    Client[Script or backend] -->|Bearer rk_live_...| Public[Rodrigo /api/v1]
+    Public -->|verify digest, per-key rate limit, scopes| Store[Typed resources in the key's workspace]
+```
+
+The owner creates a key in Hub; Rodrigo mints it and stores only its digest. The token is shown once and Hub keeps no copy. From then on the caller talks to Rodrigo's `/api/v1/` directly: Hub is not in the path. A key acts as `apikey-<keyId>` inside its own workspace, limited to its scopes, and reaches Tasks, Notes, Calendar and Forms. Revoking a key takes effect on its next request. API keys are refused on Hub-signed routes and Hub assertions are refused on `/api/v1/`.
+
+| State | Owner | Lifetime |
+|---|---|---|
+| Key digest, workspace, scopes, timestamps | Rodrigo (PostgreSQL) | Until revoked; revoked rows are kept for the record |
+| The token | The owner who copied it | Shown once; not recoverable |
+| Per-key request windows | Rodrigo process memory | One minute, per replica |
+
 ## Public app introductions
 
 Visitor ? catalog-slug.sorye.app/ (DNS/TLS routed to Hub) ? Hub rewrites to /learn/slug ? public app description ? Open app on https://sorye.app ? existing sign-in and workspace authorization ? app. Direct /learn/slug links are public too. Unknown slugs return 404; unknown hosts do not select an app. Hub owns static landing copy; no workspace data is read and no app is mounted by the landing page.
@@ -288,7 +377,7 @@ The former Operator app is retired; its views are console sections and its catal
 
 ## Language preference
 
-Hub language selector ? browser-owned sorye:locale localStorage ? same-document locale event / cross-tab storage event ? subscribed app controls. Supported locales: en, de, sk, hu, es. Server rendering defaults to English. This changes presentation only, not workspace records. Current translated coverage is shared controls; app-specific copy remains English. Inside an open app the switcher is the shell top bar. Standalone pages outside the shell use the same locales through `StandaloneAppBar`.
+Hub language selector ? browser-owned sorye:locale localStorage ? same-document locale event / cross-tab storage event ? subscribed app controls. Supported locales: en, de, sk, hu, es. Server rendering defaults to English. This changes presentation only, not workspace records. Current translated coverage is shared controls plus Tasks, Messenger, Calendar, Notes, Forms (builder and public page), API keys, Pricing and Plan & billing, and Relay's Your storage tab; other app-specific copy (including the per-app "How to use" banner) remains English. Inside an open app the switcher is the shell top bar. Standalone pages outside the shell use the same locales through `StandaloneAppBar`.
 
 Public landing pages use /learn/<slug>/<locale> for en, de, sk, hu and es. Each URL renders translated text and metadata on the server, has a self-canonical URL and hreflang alternatives, and is listed in the sitemap. Language links preserve the app. Unqualified landing URLs and catalog subdomain roots select the best supported Accept-Language preference (English fallback) with a private, non-cacheable temporary redirect; esp redirects to es. The URL owns landing language, independently of the workspace browser preference. Unsupported languages return 404. New apps must add all five translations; preserve limitations in every translation.
 

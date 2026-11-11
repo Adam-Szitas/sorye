@@ -9,10 +9,39 @@ import {
   STUDIO_MESH_EXTENSIONS,
   TASK_PHOTO_MAX_BYTES,
   isTaskPhotoMime,
+  type OwnStorageErrorCode,
+  type SubscriptionTierId,
+  type UploadRecord,
   type WorkspaceFile,
 } from '@sorye/types';
 import { jsonDataFile } from '@/lib/store/json-file';
 import { putFileBlob, streamFileBlob, deleteFileBlob } from './file-blobs';
+import {
+  OwnStorageError,
+  deleteExternalFile,
+  noteStorageFailure,
+  readExternalFile,
+  sha256Hex,
+  uploadDestination,
+  type UploadDestination,
+} from './upload-storage/service';
+import { QuotaExceededError, finishUpload, markFileDeleted, recordRejected, reserveUpload } from './upload-storage/store';
+
+/** Bytes kept on the customer's own drive or database rather than Sorye's storage. */
+function isExternal(file: WorkspaceFile): boolean {
+  return file.storedIn === 'drive' || file.storedIn === 'database';
+}
+
+async function readExternal(file: WorkspaceFile): Promise<Buffer> {
+  try {
+    return await readExternalFile(file.workspaceId, file);
+  } catch (error) {
+    if (error instanceof OwnStorageError && error.code === 'integrity_failed') {
+      throw new FileAccessError('This file was changed outside Sorye and is not served. Check your own storage.', 502);
+    }
+    throw new FileAccessError('Your own storage could not be reached. Try again or check the connection in Relay.', 503);
+  }
+}
 
 type FileStore = Record<string, WorkspaceFile[]>;
 
@@ -370,6 +399,7 @@ export async function readWorkspaceFileBytes(
   if (file.workspaceId !== workspaceId) {
     throw new FileAccessError('File not found', 404);
   }
+  if (isExternal(file)) return { file, bytes: await readExternal(file) };
   try {
     const stream = await streamFileBlob(workspaceId, fileId);
     const reader = stream.getReader();
@@ -394,66 +424,130 @@ export async function readWorkspaceFileBytes(
   }
 }
 
+/** Who uploads, for the upload ledger and the own-storage plan check. */
+export interface FileUploader {
+  userId: string;
+  tier: SubscriptionTierId;
+}
+
+const OWN_STORAGE_UPLOAD_MESSAGES: Partial<Record<OwnStorageErrorCode, [string, number]>> = {
+  not_eligible: ['Uploads go to your own storage, but this workspace plan no longer includes it. Switch uploads back to Sorye storage in Relay or upgrade the plan.', 403],
+  target_not_ready: ['Your own storage is not set up completely. Check it in Relay → Your storage.', 503],
+  encryption_unavailable: ['Your own storage cannot be used right now. Ask your Sorye administrator.', 503],
+  quota_exceeded: ['The storage limit you set for your own storage is reached. Raise it in Relay or delete files.', 413],
+};
+
+function ownStorageFailure(code: OwnStorageErrorCode): FileAccessError {
+  const known = OWN_STORAGE_UPLOAD_MESSAGES[code];
+  // Fail closed: the file is not stored anywhere, including Sorye's storage.
+  return new FileAccessError(known?.[0] ?? 'Your own storage could not be reached, so the file was not uploaded. Try again or check the connection in Relay.', known?.[1] ?? 503);
+}
+
 export async function createWorkspaceFile(input: {
   workspaceId: string;
   displayName: string;
   bytes: Buffer;
   sourceAppId?: string;
+  uploader: FileUploader;
 }): Promise<WorkspaceFile> {
   const sourceAppId = input.sourceAppId ?? 'files';
   if (!APP_CATALOG.some((app) => app.id === sourceAppId)) {
     throw new FileAccessError('Unknown source app', 400);
   }
   const workspaceId = assertSafeSegment(input.workspaceId, 'workspace');
-  if (input.bytes.length === 0) {
-    throw new FileAccessError('File is empty', 400);
-  }
-  if (input.bytes.length > FILE_MAX_BYTES) {
-    throw new FileAccessError(
-      `File is too large (max ${Math.floor(FILE_MAX_BYTES / (1024 * 1024))} MB)`,
-      400,
-    );
-  }
-
   const displayName = sanitizeDisplayName(input.displayName);
-  const mime = resolveMime(input.bytes, displayName);
-  if (sourceAppId === 'tasks') {
-    const photoError = taskSectionPhotoError(input.bytes.length, mime);
-    if (photoError) throw new FileAccessError(photoError, 400);
-  }
-  const id = randomUUID();
-  const relativePath = relativeStoragePath(workspaceId, id);
-  const abs = storedAbsolutePath(workspaceId, id);
-  const now = new Date().toISOString();
-
-  const row: WorkspaceFile = {
-    sourceAppId,
-    id,
-    workspaceId,
-    displayName,
-    relativePath,
-    mime,
-    size: input.bytes.length,
-    createdAt: now,
-    updatedAt: now,
+  const ledger: UploadRecord = {
+    id: randomUUID(), workspaceId, fileId: null, userId: input.uploader.userId, target: 'sorye', location: null,
+    displayName, mime: null, size: input.bytes.length, sha256: null, sourceAppId,
+    status: 'rejected', errorCode: 'file_rejected', createdAt: new Date().toISOString(), completedAt: null,
+  };
+  const reject = async (error: FileAccessError, errorCode: UploadRecord['errorCode'] = 'file_rejected') => {
+    await recordRejected({ ...ledger, errorCode, completedAt: new Date().toISOString() }).catch(() => undefined);
+    return error;
   };
 
-  await putFileBlob(workspaceId, id, input.bytes, mime);
-
+  // 1. Validate the file itself: size, blocked types, content sniffing.
+  let mime: string;
   try {
-    return await metaFile.update((store) => {
+    if (input.bytes.length === 0) throw new FileAccessError('File is empty', 400);
+    if (input.bytes.length > FILE_MAX_BYTES) {
+      throw new FileAccessError(`File is too large (max ${Math.floor(FILE_MAX_BYTES / (1024 * 1024))} MB)`, 400);
+    }
+    mime = resolveMime(input.bytes, displayName);
+    if (sourceAppId === 'tasks') {
+      const photoError = taskSectionPhotoError(input.bytes.length, mime);
+      if (photoError) throw new FileAccessError(photoError, 400);
+    }
+  } catch (error) {
+    if (error instanceof FileAccessError) throw await reject(error);
+    throw error;
+  }
+
+  // 2. Decide where the bytes go. Own storage fails closed.
+  let destination: UploadDestination | null;
+  try {
+    destination = await uploadDestination(workspaceId, input.uploader.tier);
+  } catch (error) {
+    const code = error instanceof OwnStorageError ? error.code : 'storage_unavailable';
+    throw await reject(ownStorageFailure(code), code);
+  }
+  const target = destination?.target ?? 'sorye';
+  const id = randomUUID();
+  const sha256 = sha256Hex(input.bytes);
+  const relativePath = relativeStoragePath(workspaceId, id);
+  storedAbsolutePath(workspaceId, id);
+  const now = new Date().toISOString();
+  const row: WorkspaceFile = {
+    sourceAppId, id, workspaceId, displayName, relativePath, storedIn: target, sha256, mime,
+    size: input.bytes.length, createdAt: now, updatedAt: now,
+  };
+
+  // 3. Reserve the space (checked against the owner's limit under a lock).
+  try {
+    await reserveUpload({ ...ledger, target, fileId: id, mime, sha256, status: 'pending', errorCode: null }, destination?.limitBytes ?? null);
+  } catch (error) {
+    if (error instanceof QuotaExceededError) {
+      throw await reject(ownStorageFailure('quota_exceeded'), 'quota_exceeded');
+    }
+    throw new FileAccessError('File storage is temporarily unavailable', 503);
+  }
+
+  // 4. Store the bytes.
+  let location: string;
+  try {
+    if (destination) {
+      location = await destination.put(id, input.bytes, mime, sha256, displayName);
+    } else {
+      await putFileBlob(workspaceId, id, input.bytes, mime);
+      location = `files/${workspaceId}/${id}`;
+    }
+  } catch (error) {
+    const code: OwnStorageErrorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string'
+      ? (error as { code: OwnStorageErrorCode }).code : 'storage_unavailable';
+    await finishUpload(workspaceId, ledger.id, { status: 'failed', errorCode: destination ? code : 'storage_unavailable' }).catch(() => undefined);
+    if (destination) {
+      await noteStorageFailure(workspaceId, destination.target as 'drive' | 'database', code).catch(() => undefined);
+      throw ownStorageFailure(code);
+    }
+    throw new FileAccessError('File storage is temporarily unavailable', 503);
+  }
+
+  // 5. Add the Drive record; undo the stored bytes if that fails.
+  try {
+    const saved = await metaFile.update((store) => {
       const existing = listForWorkspace(store, workspaceId);
       if (existing.length >= FILE_MAX_PER_WORKSPACE) {
-        throw new FileAccessError(
-          `This workspace already has ${FILE_MAX_PER_WORKSPACE} files`,
-          400,
-        );
+        throw new FileAccessError(`This workspace already has ${FILE_MAX_PER_WORKSPACE} files`, 400);
       }
       store[workspaceId] = [...existing, row];
       return cloneFile(row);
     }, input.workspaceId);
+    await finishUpload(workspaceId, ledger.id, { status: 'stored', location }).catch(() => undefined);
+    return saved;
   } catch (err) {
-    await deleteFileBlob(workspaceId, id).catch(() => undefined);
+    if (destination) await deleteExternalFile(workspaceId, row).catch(() => undefined);
+    else await deleteFileBlob(workspaceId, id).catch(() => undefined);
+    await finishUpload(workspaceId, ledger.id, { status: err instanceof FileAccessError ? 'rejected' : 'failed', errorCode: err instanceof FileAccessError ? 'file_rejected' : 'storage_unavailable' }).catch(() => undefined);
     throw err;
   }
 }
@@ -491,6 +585,15 @@ export async function deleteWorkspaceFile(
   workspaceId: string,
   fileId: string,
 ): Promise<void> {
+  // Customer storage first: if it cannot be reached, keep the record so the file is not orphaned there.
+  const existing = await getWorkspaceFile(workspaceId, fileId);
+  if (isExternal(existing)) {
+    try {
+      await deleteExternalFile(workspaceId, existing);
+    } catch {
+      throw new FileAccessError('Your own storage could not be reached, so the file was not deleted. Try again or check the connection in Relay.', 503);
+    }
+  }
   const row = await metaFile.update((store) => {
     const rows = listForWorkspace(store, workspaceId);
     const index = rows.findIndex((item) => item.id === assertFileId(fileId));
@@ -505,11 +608,17 @@ export async function deleteWorkspaceFile(
     return current;
   }, workspaceId);
 
-  await deleteFileBlob(row.workspaceId, row.id);
+  if (!isExternal(row)) await deleteFileBlob(row.workspaceId, row.id);
+  await markFileDeleted(workspaceId, row.id).catch(() => undefined);
 }
 
 export async function streamWorkspaceFile(workspaceId: string, fileId: string) {
   const file = await getWorkspaceFile(workspaceId, fileId);
+  if (isExternal(file)) {
+    // Buffered (at most FILE_MAX_BYTES) so size and SHA-256 are checked before anything is sent.
+    const bytes = await readExternal(file);
+    return { file, body: new Blob([new Uint8Array(bytes)]).stream() };
+  }
   try {
     return { file, body: await streamFileBlob(workspaceId, file.id) };
   } catch {

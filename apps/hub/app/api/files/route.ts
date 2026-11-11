@@ -114,6 +114,7 @@ async function uploadFile(req: Request, session: NonNullable<Awaited<ReturnType<
       displayName: upload.name,
       sourceAppId,
       bytes,
+      uploader: { userId: session.user.id, tier: session.workspace.subscriptionId },
     });
   } catch (err) {
     return errorResponse(err);

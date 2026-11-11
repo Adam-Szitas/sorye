@@ -58,6 +58,19 @@ const envSchema = z
       .default('http://localhost:3008/remoteEntry.js')
       .optional(),
 
+    /**
+     * Local and test only. "true" turns on the billing simulator: plan changes and
+     * payment events without a payment provider. Rejected in production.
+     */
+    BILLING_SIMULATOR: z.string().optional(),
+
+    /**
+     * Local and test only. "true" lets own-storage connections (Relay → Your storage)
+     * reach private hosts and use plain HTTP / non-TLS PostgreSQL, so a local MinIO or
+     * Postgres can stand in for a customer's. Rejected in production.
+     */
+    OWN_STORAGE_DEV_INSECURE: z.string().optional(),
+
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
@@ -101,6 +114,24 @@ const envSchema = z
         message:
           'AUTH_DEV_BYPASS is local-only and is not allowed when NODE_ENV=production.',
         path: ['AUTH_DEV_BYPASS'],
+      });
+    }
+
+    if (productionRuntime && env.BILLING_SIMULATOR === 'true') {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'BILLING_SIMULATOR changes plans without payment and is not allowed when NODE_ENV=production.',
+        path: ['BILLING_SIMULATOR'],
+      });
+    }
+
+    if (productionRuntime && env.OWN_STORAGE_DEV_INSECURE === 'true') {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'OWN_STORAGE_DEV_INSECURE allows private hosts and unencrypted customer storage and is not allowed when NODE_ENV=production.',
+        path: ['OWN_STORAGE_DEV_INSECURE'],
       });
     }
 

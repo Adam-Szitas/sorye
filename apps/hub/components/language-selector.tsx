@@ -10,7 +10,8 @@ export function LanguageSelector({ placement = 'page' }: { placement?: 'page' | 
   const pathname = usePathname();
   const selectId = useId();
   if (pathname?.startsWith('/learn/')) return null;
-  if (placement === 'page' && (pathname === '/' || pathname?.startsWith('/apps/') || pathname?.startsWith('/admin'))) return null;
+  // Pages with StandaloneAppBar already carry a language switcher.
+  if (placement === 'page' && (pathname === '/' || pathname?.startsWith('/apps/') || pathname?.startsWith('/admin') || pathname === '/pricing' || pathname === '/billing')) return null;
 
   const navbar = placement === 'navbar';
 

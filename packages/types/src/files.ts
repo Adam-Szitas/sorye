@@ -78,6 +78,13 @@ export interface WorkspaceFile {
   /** App folder; older uploads without a source remain in Drive. */
   sourceAppId?: string;
   relativePath: string;
+  /**
+   * Where the bytes live. Missing on files stored before own storage existed,
+   * which means Sorye's storage. Set once at upload and never changed.
+   */
+  storedIn?: 'sorye' | 'drive' | 'database';
+  /** SHA-256 of the bytes at upload; checked before serving bytes from customer storage. */
+  sha256?: string;
   mime: string;
   size: number;
   createdAt: string;

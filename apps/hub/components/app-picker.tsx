@@ -3,6 +3,7 @@ import type {
   SubscriptionPlan,
   SubscriptionSource,
 } from '@sorye/types';
+import { TranslatedText } from '@sorye/platform/react';
 import {
   APP_CATALOG,
   APP_RUNNING_COST,
@@ -100,7 +101,10 @@ export function AppPicker({
         </span>
         {atLimit && (
           <span className="text-xs text-amber-400">
-            App limit reached — contact admin to upgrade
+            <TranslatedText message="billing.limitReachedApps" />{' '}
+            <a href="/billing" className="font-medium underline underline-offset-2">
+              <TranslatedText message="billing.seePlans" />
+            </a>
           </span>
         )}
       </div>

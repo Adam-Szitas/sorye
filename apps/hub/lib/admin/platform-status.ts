@@ -43,7 +43,7 @@ export function integrationRows(): IntegrationRow[] {
     { id: 'protocolio', label: 'Protocolio renderer', status: present('PROTOCOLIO_API_URL') ? 'configured' : 'not_configured', managedBy: 'deployment', detail: present('PROTOCOLIO_API_URL') ? `${originOf(process.env.PROTOCOLIO_API_URL)} · service token ${present('PROTOCOLIO_SERVICE_TOKEN') ? 'set' : 'missing'}` : null },
     { id: 'sentry-server', label: 'Server telemetry', status: present('SENTRY_DSN') ? 'configured' : 'not_configured', managedBy: 'deployment', detail: present('SENTRY_DSN') ? `${process.env.SENTRY_ENVIRONMENT ?? 'environment unset'} · sample ${process.env.SENTRY_TRACES_SAMPLE_RATE ?? 'default'}` : null },
     { id: 'sentry-browser', label: 'Browser telemetry', status: present('NEXT_PUBLIC_SENTRY_DSN') ? 'configured' : 'not_configured', managedBy: 'deployment', detail: present('NEXT_PUBLIC_SENTRY_DSN') ? `${process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? 'environment unset'} (build input)` : 'build input' },
-    { id: 'stripe', label: 'Card payments', status: 'not_configured', managedBy: 'deployment', detail: 'Not implemented: no checkout or billing flow exists.' },
+    { id: 'stripe', label: 'Card payments', status: 'not_configured', managedBy: 'deployment', detail: 'No payment provider is connected. /pricing and /billing exist; plan actions send people to sales (BILLING_SIMULATOR for local testing).' },
   ];
   return rows;
 }

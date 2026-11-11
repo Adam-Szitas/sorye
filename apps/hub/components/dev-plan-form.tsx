@@ -11,7 +11,7 @@ function formatLimit(value: number): string {
 
 function formatPrice(plan: SubscriptionPlan): string {
   if (plan.priceMonthly === 0) return 'Free';
-  return `$${plan.priceMonthly}/mo`;
+  return `€${plan.priceMonthly}/mo`;
 }
 
 interface DevPlanFormProps {

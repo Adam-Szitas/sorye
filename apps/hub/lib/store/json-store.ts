@@ -295,6 +295,23 @@ export async function assignWorkspacePlan(
   );
 }
 
+/**
+ * Set the tier that applies to a workspace without removing anything. Apps and
+ * connections over the new limits stay and are reported as locked.
+ */
+export async function setWorkspaceTier(
+  workspaceId: string,
+  subscriptionId: SubscriptionTierId,
+): Promise<Workspace | null> {
+  return storeFile.update((store) => {
+    const current = store.workspaces[workspaceId];
+    if (!current) return null;
+    const next = { ...current, subscriptionId, updatedAt: new Date().toISOString() };
+    store.workspaces[workspaceId] = next;
+    return next;
+  });
+}
+
 export async function operatorWorkspaceExists(workspaceId: string): Promise<boolean> {
   const store = await readStore();
   return Boolean(store.workspaces[workspaceId]);

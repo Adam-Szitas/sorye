@@ -25,11 +25,10 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Chatten Sie mit Menschen in Ihrem Arbeitsbereich.|Unterhaltung oder Kanal öffnen.|Nachricht schreiben oder Foto teilen.|Teamgespräche an einem Ort halten.',
  'Lesen und schreiben Sie Nachrichten im Arbeitsbereich.|Das Postfach öffnen.|Nachricht schreiben oder Entwurf speichern.|Optional ein bestehendes E-Mail-Konto zum Lesen und Senden verbinden.',
  'Bewahren Sie Dateien an einem Ort auf.|Datei hochladen.|In Drive finden oder umbenennen.|Bei Bedarf herunterladen.',
- 'Öffnen Sie den separaten SUSM-Dienst in Sorye.|SUSM öffnen.|Anmeldung und Anweisungen des Dienstes befolgen.|In der eingebetteten Seite arbeiten. Daten werden getrennt von Sorye verwaltet.',
- 'Öffnen Sie den separaten ESPM-Dienst in Sorye.|ESPM öffnen.|Anmeldung und Anweisungen des Dienstes befolgen.|Den externen Beta-Dienst nutzen. Daten werden getrennt von Sorye verwaltet.',
  'Holen Sie Tabellen und Informationen aus PDF-Dokumenten.|PDF hochladen.|Tabellen prüfen und unklare Ergebnisse kontrollieren.|Tabelle herunterladen oder an Protocolio senden. Optionale KI-Analyse benötigt einen eingerichteten Dienst.',
  'Betrachten Sie ein 3D-Modell aus verschiedenen Blickwinkeln.|Unterstütztes Modell hochladen.|Drehen und heranzoomen.|Bei überschrittenen Grenzen ein kleineres Modell verwenden. Ein kompatibler Browser ist nötig.',
  'Helfen Sie Administratoren, Aktivitäten zu verstehen.|Als Administrator anmelden.|Zeitraum auswählen.|Aktivitätszahlen und Zustellprobleme prüfen. Nachrichten- und Dateiinhalte werden nicht angezeigt.',
+ 'Sammeln Sie Antworten mit einem eigenen Formular.|Formular mit den benötigten Feldern erstellen.|Veröffentlichen und den Link teilen.|Eingegangene Antworten lesen und als erledigt markieren.',
  ],
  sk: [
  'Nájdite správny nástroj na svoju prácu.|Prezrite si aplikácie.|Prečítajte si, čo každá robí.|Otvorte aktivovanú aplikáciu.',
@@ -47,11 +46,10 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Píšte si s ľuďmi v pracovnom priestore.|Otvorte rozhovor alebo kanál.|Napíšte správu alebo zdieľajte fotografiu.|Majte tímové diskusie pohromade.',
  'Čítajte a píšte správy z pracovného priestoru.|Otvorte schránku.|Napíšte správu alebo uložte koncept.|Voliteľne pripojte existujúci e-mailový účet na čítanie a odosielanie pošty.',
  'Majte pracovné súbory na jednom mieste.|Nahrajte súbor.|Nájdite alebo premenujte ho v Drive.|Stiahnite si ho, keď ho potrebujete.',
- 'Otvorte samostatnú službu SUSM v Sorye.|Otvorte SUSM.|Postupujte podľa prihlásenia a pokynov služby.|Pracujte na vloženej stránke. Údaje sú spravované oddelene od Sorye.',
- 'Otvorte samostatnú službu ESPM v Sorye.|Otvorte ESPM.|Postupujte podľa prihlásenia a pokynov služby.|Používajte externú beta službu. Údaje sú spravované oddelene od Sorye.',
  'Získajte tabuľky a užitočné údaje z PDF.|Nahrajte PDF.|Skontrolujte tabuľky a nejasné výsledky.|Stiahnite tabuľku alebo ju pošlite do Protocolio. Voliteľná analýza AI vyžaduje nastavenú službu.',
  'Prezrite si 3D model z rôznych uhlov.|Nahrajte podporovaný model.|Otáčajte a približujte ho.|Pri prekročení limitov použite menší model. Vyžaduje sa kompatibilný prehliadač.',
  'Pomôžte správcom porozumieť aktivite pracovného priestoru.|Prihláste sa ako správca.|Vyberte obdobie.|Skontrolujte počty aktivít a problémy s doručením. Obsah správ a súborov sa nezobrazuje.',
+ 'Zbierajte odpovede vlastným formulárom.|Vytvorte formulár s potrebnými poľami.|Zverejnite ho a zdieľajte odkaz.|Čítajte prijaté odpovede a označte ich ako vybavené.',
  ],
  hu: [
  'Találja meg a munkájához megfelelő eszközt.|Böngésszen az alkalmazások között.|Olvassa el, mire valók.|Nyisson meg egy engedélyezett alkalmazást.',
@@ -69,11 +67,10 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Beszélgessen a munkaterület tagjaival.|Nyisson meg beszélgetést vagy csatornát.|Írjon üzenetet, vagy osszon meg fényképet.|Tartsa együtt a csapat beszélgetéseit.',
  'Olvasson és írjon üzeneteket a munkaterületén.|Nyissa meg a postaládát.|Írjon üzenetet, vagy mentsen piszkozatot.|Igény szerint kapcsoljon meglévő e-mail-fiókot a levelek olvasásához és küldéséhez.',
  'Tartsa egy helyen a munkaterület fájljait.|Töltsön fel fájlt.|Keresse meg vagy nevezze át a Drive-ban.|Töltse le, amikor szüksége van rá.',
- 'Nyissa meg a különálló SUSM-szolgáltatást a Sorye-ban.|Nyissa meg a SUSM-et.|Kövesse a szolgáltatás bejelentkezési lépéseit és útmutatóját.|Dolgozzon a beágyazott oldalon. Az adatokat a Sorye-tól külön kezelik.',
- 'Nyissa meg a különálló ESPM-szolgáltatást a Sorye-ban.|Nyissa meg az ESPM-et.|Kövesse a szolgáltatás bejelentkezési lépéseit és útmutatóját.|Használja a külső béta szolgáltatást. Az adatokat a Sorye-tól külön kezelik.',
  'Nyerjen ki táblázatokat és hasznos adatokat PDF-ekből.|Töltsön fel PDF-et.|Ellenőrizze a táblázatokat és a bizonytalan eredményeket.|Töltse le a táblázatot, vagy küldje a Protocolióba. Az opcionális AI-elemzéshez beállított szolgáltatás szükséges.',
  'Nézzen meg egy 3D-modellt különböző szögekből.|Töltsön fel támogatott modellt.|Forgassa és nagyítsa.|A korlátok túllépésekor használjon kisebb modellt. Kompatibilis böngésző szükséges.',
  'Segítse a rendszergazdákat a tevékenységek megértésében.|Jelentkezzen be rendszergazdaként.|Válasszon időszakot.|Tekintse át az aktivitási számokat és kézbesítési hibákat. Üzenet- és fájltartalom nem jelenik meg.',
+ 'Gyűjtsön válaszokat saját űrlappal.|Hozzon létre űrlapot a szükséges mezőkkel.|Tegye közzé, és ossza meg a hivatkozást.|Olvassa el a beérkezett válaszokat, és jelölje őket kezeltnek.',
  ],
  es: [
  'Encuentra la herramienta adecuada para tu trabajo.|Explora las aplicaciones.|Lee para qué sirve cada una.|Abre una aplicación activada.',
@@ -91,13 +88,12 @@ const rows: Record<Exclude<LandingLocale,'en'>, string[]> = {
  'Habla con las personas de tu espacio de trabajo.|Abre una conversación o un canal.|Escribe un mensaje o comparte una foto.|Mantén juntas las conversaciones del equipo.',
  'Lee y escribe mensajes desde tu espacio de trabajo.|Abre el buzón.|Escribe un mensaje o guarda un borrador.|Si quieres, conecta una cuenta de correo existente para leer y enviar mensajes.',
  'Guarda los archivos de trabajo en un solo lugar.|Sube un archivo.|Búscalo o cambia su nombre en Drive.|Descárgalo cuando lo necesites.',
- 'Abre el servicio independiente SUSM dentro de Sorye.|Abre SUSM.|Sigue el inicio de sesión y las instrucciones del servicio.|Trabaja en su página integrada. Sus datos se gestionan por separado de Sorye.',
- 'Abre el servicio independiente ESPM dentro de Sorye.|Abre ESPM.|Sigue el inicio de sesión y las instrucciones del servicio.|Usa el servicio beta externo. Sus datos se gestionan por separado de Sorye.',
  'Extrae tablas e información útil de documentos PDF.|Sube un PDF.|Revisa las tablas y comprueba los resultados dudosos.|Descarga la tabla o envíala a Protocolio. El análisis opcional con IA requiere un servicio configurado.',
  'Abre un modelo 3D y míralo desde distintos ángulos.|Sube un modelo compatible.|Gíralo y amplíalo para examinarlo.|Usa un modelo más pequeño si supera los límites. Se necesita un navegador compatible.',
  'Ayuda a los administradores a entender la actividad.|Inicia sesión como administrador.|Elige un intervalo de fechas.|Revisa los recuentos y problemas de entrega. No se muestran contenidos de mensajes ni archivos.',
+ 'Recoge respuestas con tu propio formulario.|Crea un formulario con los campos que necesitas.|Publícalo y comparte el enlace.|Lee las respuestas recibidas y márcalas como gestionadas.',
  ]
 };
-const ids = ['catalog','contact','dashboard','notes','calendar','relay','storefront','site','devtools','protocolio','canvas','tasks','messenger','mail','files','susm','espm','ocr','studio','reports'];
+const ids = ['catalog','contact','dashboard','notes','calendar','relay','storefront','site','devtools','protocolio','canvas','tasks','messenger','mail','files','ocr','studio','reports','forms'];
 export const localizedLandings = Object.fromEntries(landingLocales.map(locale => [locale, locale === 'en' ? APP_LANDINGS : Object.fromEntries(ids.map((id,index) => { const [summary,...steps] = rows[locale][index].split('|'); return [id,{summary,steps}]; }))])) as Record<LandingLocale, typeof APP_LANDINGS>;
 export function landingUrl(slug: string, locale: LandingLocale) { return `https://sorye.app/learn/${slug}/${locale}`; }

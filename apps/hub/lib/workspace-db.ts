@@ -4,6 +4,8 @@ import postgres from 'postgres';
 import * as schema from '@sorye/db/schema';
 import { getStoreDriver } from '@/lib/env';
 import { WorkspaceDocConflict } from './store/workspace-doc-conflict';
+import { devInsecure } from './upload-storage/mode';
+import { safePostgresOptions } from './upload-storage/pg-url';
 import {
   getWorkspaceDatabaseUrl,
   markWorkspaceStorageError,
@@ -82,11 +84,13 @@ async function acquireWorkspaceDb(workspaceId: string): Promise<{ db: WorkspaceD
     while (livePools.size >= MAX_WORKSPACE_POOLS) {
       if (!(await evictIdlePool())) throw new WorkspaceDatabaseUnavailableError();
     }
-    const sqlClient = postgres(url, {
+    // Public-address check, pinned address and TLS on every new pool (see pg-url.ts).
+    const options = await safePostgresOptions(url, devInsecure());
+    const sqlClient = postgres({
+      ...options,
       max: WORKSPACE_POOL_CONNECTIONS,
       idle_timeout: 20,
       connect_timeout: 10,
-      ssl: url.includes('sslmode=require') ? 'require' : undefined,
     });
     pool = { workspaceId, fingerprint, sql: sqlClient, db: drizzle(sqlClient, { schema }), active: 0, lastUsed: Date.now(), closed: false };
     poolsByWorkspace.set(workspaceId, pool);

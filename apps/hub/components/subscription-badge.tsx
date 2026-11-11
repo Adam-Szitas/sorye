@@ -6,8 +6,10 @@ interface SubscriptionBadgeProps {
 
 export function SubscriptionBadge({ plan }: SubscriptionBadgeProps) {
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
+    <a
+      href="/billing"
+      title="Plan & billing"
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition hover:brightness-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]"
       style={{
         background: `${plan.accent}22`,
         color: plan.accent,
@@ -19,6 +21,6 @@ export function SubscriptionBadge({ plan }: SubscriptionBadgeProps) {
         aria-hidden
       />
       {plan.name}
-    </span>
+    </a>
   );
 }

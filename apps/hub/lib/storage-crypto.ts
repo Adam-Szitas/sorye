@@ -75,6 +75,34 @@ export function decryptStorageSecret(payload: string): string {
   return decryptWithKey(payload, storageKey());
 }
 
+/** True when STORAGE_SECRET_KEY is long enough to encrypt customer storage credentials. */
+export function storageEncryptionReady(): boolean {
+  const value = process.env.STORAGE_SECRET_KEY?.trim();
+  return Boolean(value && value.length >= 32);
+}
+
+/**
+ * Encrypt a secret bound to a context (for example `drive:<workspaceId>`).
+ * The context is AES-GCM associated data: a ciphertext moved to another
+ * workspace or field does not decrypt.
+ */
+export function encryptBoundStorageSecret(plain: string, context: string): string {
+  const iv = randomBytes(IV_LEN);
+  const cipher = createCipheriv(ALGO, storageKey(), iv);
+  cipher.setAAD(Buffer.from(context, 'utf8'));
+  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  return `b1.${iv.toString('base64')}.${cipher.getAuthTag().toString('base64')}.${enc.toString('base64')}`;
+}
+
+export function decryptBoundStorageSecret(payload: string, context: string): string {
+  const parts = payload.split('.');
+  if (parts.length !== 4 || parts[0] !== 'b1') throw new Error('Invalid encrypted payload');
+  const decipher = createDecipheriv(ALGO, storageKey(), Buffer.from(parts[1]!, 'base64'));
+  decipher.setAAD(Buffer.from(context, 'utf8'));
+  decipher.setAuthTag(Buffer.from(parts[2]!, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(parts[3]!, 'base64')), decipher.final()]).toString('utf8');
+}
+
 export function hintsFromDatabaseUrl(url: string): {
   hostHint: string;
   databaseHint: string;

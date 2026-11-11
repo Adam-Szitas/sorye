@@ -1,4 +1,6 @@
 export * from './subscription';
+export * from './billing';
+export * from './upload-storage';
 export * from './running-cost';
 export * from './rodrigo';
 export * from './platform-config';
@@ -24,6 +26,7 @@ export * from './analytics';
 export * from './storefront';
 export * from './site';
 export * from './forms';
+export * from './api-keys';
 export * from './mail';
 export * from './files';
 export * from './cloud-storage';

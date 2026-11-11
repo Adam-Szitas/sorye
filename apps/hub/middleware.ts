@@ -23,9 +23,13 @@ const publicPaths = [
   '/api/embed',
   '/embed.js',
   '/contact',
+  // Plan comparison for visitors; choosing a plan goes to the signed-in /billing page.
+  '/pricing',
   '/apps/contact',
   '/architecture',
   '/s',
+  // Published forms.
+  '/f',
   // Anonymous Forms read and submit. Bounded and rate-limited in the route handlers.
   '/api/forms/public',
 ];

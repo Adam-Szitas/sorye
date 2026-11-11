@@ -17,7 +17,8 @@ export async function submitOcr(req: Request, session: HubSession) {
         if (!(file instanceof File) || file.size > MAX_OCR_PDF_BYTES) throw new UploadLimitError('Choose a PDF within the upload limit', 413);
         const bytes = Buffer.from(await file.arrayBuffer());
         if (bytes.subarray(0, 5).toString() !== '%PDF-') throw new UploadLimitError('Only PDF files can be analyzed', 400);
-        const saved = await createWorkspaceFile({ workspaceId: session.workspace.id, sourceAppId: 'ocr', displayName: file.name, bytes });
+        const saved = await createWorkspaceFile({ workspaceId: session.workspace.id, sourceAppId: 'ocr', displayName: file.name, bytes,
+          uploader: { userId: session.user.id, tier: session.workspace.subscriptionId } });
         fileId = saved.id;
       }
       const file = await getWorkspaceFile(session.workspace.id, String(fileId));

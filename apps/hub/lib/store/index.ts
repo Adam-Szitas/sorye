@@ -38,6 +38,10 @@ export const assignWorkspacePlan = (
   ...args: Parameters<typeof jsonStore.assignWorkspacePlan>
 ) => activeStore().assignWorkspacePlan(...args);
 
+export const setWorkspaceTier = (
+  ...args: Parameters<typeof jsonStore.setWorkspaceTier>
+) => activeStore().setWorkspaceTier(...args);
+
 export const operatorWorkspaceExists = (
   ...args: Parameters<typeof jsonStore.operatorWorkspaceExists>
 ) => activeStore().operatorWorkspaceExists(...args);

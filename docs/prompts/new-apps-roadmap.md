@@ -47,7 +47,7 @@ Build these as part of the first app that needs them, behind explicit contracts:
 
 | Phase | Item | Why first |
 |---|---|---|
-| 1 | Forms | Small, reuses events/Relay, immediate value, feeds CRM/Tasks |
+| 1 | Forms (implemented, see status below) | Small, reuses events/Relay, immediate value, feeds CRM/Tasks |
 | 1 | Invoicing & Quotes | Highest willingness to pay; reuses Protocolio, Mail, Storefront |
 | 2 | CRM / Contacts | Ties every other app to a customer |
 | 2 | Bring-your-own drive | Requested; unlocks Team plan value |
@@ -59,6 +59,13 @@ Build these as part of the first app that needs them, behind explicit contracts:
 | 5 | Inventory, Expenses, HR basics, Wiki, Helpdesk | After the core is stable |
 
 ---
+
+## Status
+
+| Item | State | Notes |
+|---|---|---|
+| Forms | Implemented as a Hub-native app | Rodrigo contract and PostgreSQL test pass. Deferred from the MVP list: file uploads, notification recipients and the `sorye.forms.submitted` event (Hub does not learn the owning workspace), submission limit, close date, CAPTCHA, CSV-safe export only, Site block, per-plan limits, Playwright journey. |
+| Everything else | Not started | |
 
 ## 1. Forms
 

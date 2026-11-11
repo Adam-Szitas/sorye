@@ -21,6 +21,7 @@ export const APP_LANDINGS: Record<string, { summary: string; steps: string[] }> 
   espm: { summary: 'Open the separate ESPM service inside your Sorye workspace.', steps: ['Open ESPM from Sorye.', 'Follow the service’s own sign-in and instructions.', 'Use the external beta service. Its data is managed separately from Sorye.'] },
   ocr: { summary: 'Take tables and useful information out of PDF documents.', steps: ['Upload a PDF.', 'Review the extracted tables and check unclear results.', 'Download a table or send its layout to Protocolio. Optional AI analysis requires a configured service.'] },
   studio: { summary: 'Open a 3D model and look at it from different angles.', steps: ['Upload a supported 3D model.', 'Rotate it and zoom in to inspect it.', 'Use a smaller model if the file exceeds the viewer’s limits. A compatible browser is required.'] },
+  forms: { summary: 'Collect answers with your own form.', steps: ['Build a form with the fields you need.', 'Publish it and share the link.', 'Read the answers you receive and mark them handled.'] },
   reports: { summary: 'Help administrators understand workspace activity.', steps: ['Sign in as an administrator.', 'Choose a date range.', 'Review activity counts and delivery issues. Reports do not show message or file contents.'] },
 };
 

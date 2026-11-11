@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import type { RodrigoCapabilities, RodrigoDocumentKind, RodrigoDocumentWrite, RodrigoDocumentDelete, RodrigoSnapshot, RodrigoTopology, RodrigoActionBatch, RodrigoActionBatchResult, RodrigoActionAppId, RodrigoActionResourceType, RodrigoResourceSnapshot, RodrigoCollectionPage, RodrigoMessengerMessagePage } from '@sorye/types';
-import { FORM_FIELD_KINDS, type FormAnswers, type PublishedForm } from '@sorye/types';
+import { FORM_FIELD_KINDS, isApiKeyId, isApiKeyName, isApiKeyScopeList, type ApiKeyCreated, type ApiKeySummary, type FormAnswers, type PublishedForm } from '@sorye/types';
 import { signRodrigoRequest } from './sign-request';
 import { actionBatchSchema as validatedActionBatchSchema } from './action-validation';
 
@@ -197,6 +197,30 @@ export function submitPublicForm(slug: string, input: { submissionId: string; an
   if (!FORMS_PUBLIC_SLUG.test(slug) || slug.length > 64) throw new Error('Invalid public form slug.');
   return request(PUBLIC_SITE_CONTEXT, `/v2/public/forms/${encodeURIComponent(slug)}/submissions`, 'actions:write', publicSubmissionResultSchema, 'POST',
     { submissionId: input.submissionId, answers: input.answers }, 65536, { apps: ['forms'], actions: ['forms.submission.create'] });
+}
+const apiKeyId = z.string().regex(/^[0-9a-f]{16}$/);
+const apiKeySummarySchema = z.object({
+  keyId: apiKeyId, name: z.string().min(1).max(80), scopes: z.array(z.string().max(64)).max(16), createdByUserId: z.string().min(1).max(160),
+  createdAt: z.string().max(64), lastUsedAt: z.string().max(64).optional(), revokedAt: z.string().max(64).optional(),
+}).strict();
+const apiKeyListSchema = z.object({ keys: z.array(apiKeySummarySchema).max(200) }).strict();
+const apiKeyCreatedSchema = z.object({
+  keyId: apiKeyId, name: z.string().min(1).max(80), scopes: z.array(z.string().max(64)).max(16),
+  token: z.string().regex(/^rk_live_[0-9a-f]{16}_[0-9a-f]{64}$/),
+}).strict();
+const API_KEY_MANAGEMENT = { apps: ['workspace'], actions: [] as string[] };
+/** Keys of the context workspace. Callers must have checked that the member owns it. */
+export async function listRodrigoApiKeys(context: RodrigoContext): Promise<ApiKeySummary[]> {
+  return (await request(context, '/v2/api-keys', 'apikeys:read', apiKeyListSchema, 'GET', undefined, 262144, API_KEY_MANAGEMENT)).keys;
+}
+/** Creates a key. The returned token exists only in this response; never log or store it. */
+export function createRodrigoApiKey(context: RodrigoContext, input: { name: string; scopes: string[] }): Promise<ApiKeyCreated> {
+  if (!isApiKeyName(input.name) || !isApiKeyScopeList(input.scopes)) throw new Error('Invalid API key request.');
+  return request(context, '/v2/api-keys', 'apikeys:write', apiKeyCreatedSchema, 'POST', { name: input.name, scopes: input.scopes }, 65536, API_KEY_MANAGEMENT);
+}
+export async function revokeRodrigoApiKey(context: RodrigoContext, keyId: string): Promise<void> {
+  if (!isApiKeyId(keyId)) throw new Error('Invalid API key id.');
+  await request(context, `/v2/api-keys/${keyId}`, 'apikeys:write', z.object({ keyId: apiKeyId, revoked: z.literal(true) }).strict(), 'DELETE', undefined, 65536, API_KEY_MANAGEMENT);
 }
 export async function listRodrigoResourcesBounded(context: RodrigoContext, appId: RodrigoActionAppId, resourceType: RodrigoActionResourceType, pages = 5) {
   const items: RodrigoCollectionPage['items'] = [];

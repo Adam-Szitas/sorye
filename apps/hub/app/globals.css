@@ -20,7 +20,24 @@
 
   html {
     color-scheme: dark;
+    accent-color: var(--color-accent);
     background: var(--color-surface);
+  }
+
+  /*
+   * Native option lists draw outside the page. Without a solid background they
+   * fall back to the operating system's light palette (white on white with our
+   * light text, or a translucent select colour bleeding into the list), so every
+   * select in the Hub gets the dark surface explicitly.
+   */
+  select option,
+  select optgroup {
+    background-color: var(--color-surface-raised);
+    color: var(--color-text);
+  }
+
+  select option:disabled {
+    color: var(--color-text-muted);
   }
 
   body {
@@ -173,6 +190,150 @@
     ::view-transition-old(root),
     ::view-transition-new(root) {
       animation-duration: 0.2s;
+    }
+  }
+}
+
+/* Reusable controls. Components rank below utilities, so per-use classes such as w-auto still apply. */
+@layer components {
+  /*
+   * Shared themed select. Every browser gets a solid dark control; browsers with
+   * customizable select (appearance: base-select) also get a themed picker,
+   * checkmark and arrow. Others keep the native list, themed by the base rules.
+   */
+  .ui-select {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.625rem;
+    background-color: var(--color-surface-overlay);
+    color: var(--color-text);
+    font-size: 1rem;
+  }
+
+  .ui-select:hover:not(:disabled) {
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+
+  .ui-select:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .ui-select:disabled {
+    opacity: 0.5;
+  }
+
+  .ui-select[aria-invalid='true'] {
+    border-color: #f87171;
+  }
+
+  @supports (appearance: base-select) {
+    .ui-select,
+    .ui-select::picker(select) {
+      appearance: base-select;
+    }
+
+    .ui-select {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .ui-select::picker(select) {
+      margin-block: 0.375rem;
+      padding: 0.25rem;
+      max-block-size: min(20rem, 50dvh);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 0.75rem;
+      background-color: var(--color-surface-overlay);
+      color: var(--color-text);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    .ui-select::picker-icon {
+      color: var(--color-text-muted);
+    }
+
+    .ui-select option {
+      min-block-size: 2.5rem;
+      padding: 0.5rem 0.625rem;
+      border-radius: 0.5rem;
+      background-color: transparent;
+      gap: 0.5rem;
+    }
+
+    .ui-select option:hover,
+    .ui-select option:focus-visible {
+      background-color: rgba(56, 189, 248, 0.12);
+      outline: none;
+    }
+
+    .ui-select option:checked {
+      background-color: rgba(56, 189, 248, 0.18);
+      font-weight: 500;
+    }
+
+    .ui-select option::checkmark {
+      color: var(--color-accent);
+    }
+  }
+
+  /* On/off control built on a native checkbox, so forms and assistive technology see a checkbox. */
+  .ui-switch {
+    appearance: none;
+    position: relative;
+    flex-shrink: 0;
+    inline-size: 2.5rem;
+    block-size: 1.5rem;
+    margin: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+  }
+
+  .ui-switch::before {
+    content: '';
+    position: absolute;
+    inset-block-start: 0.1875rem;
+    inset-inline-start: 0.1875rem;
+    inline-size: 1.125rem;
+    block-size: 1.125rem;
+    border-radius: 50%;
+    background: #fff;
+  }
+
+  .ui-switch:checked {
+    background: var(--color-accent);
+  }
+
+  .ui-switch:checked::before {
+    translate: 1rem 0;
+  }
+
+  .ui-switch:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  .ui-switch:disabled {
+    opacity: 0.5;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-switch,
+    .ui-switch::before {
+      transition: background-color 0.15s ease, translate 0.15s ease;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .ui-switch {
+      appearance: auto;
+    }
+
+    .ui-switch::before {
+      content: none;
     }
   }
 }

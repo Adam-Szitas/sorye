@@ -23,6 +23,7 @@ const ICON_PATHS: Record<string, string> = {
   catalog: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',
   contact: 'M4 6h16v12H4zm0 0 8 7 8-7',
   site: 'M6 3h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm9 0v5h5',
+  forms: 'M5 4h14v16H5zm3 4h8M8 12h8M8 16h4',
 };
 
 interface AppIconProps {

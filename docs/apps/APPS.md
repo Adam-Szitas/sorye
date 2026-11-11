@@ -18,12 +18,11 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 | Messenger | 3010 | MF remote | [Messenger](#messenger) |
 | OCR | 3011 | MF remote | [OCR](#ocr) |
 | Studio | 3012 | MF remote | [Studio](#studio) |
-| SUSM | — | External iframe | [SUSM](#susm) |
-| ESPM | — | External iframe | [ESPM](#espm) |
 | Storefront | — | Hub-native | [Storefront](#storefront) |
 | Mail | — | Hub-native | [Mail](#mail) |
 | Drive | — | Hub-native | [Drive](#drive) |
 | Site | — | Hub-native, public section builder | [Site](#site) |
+| Forms | — | Hub-native, public form builder | [Forms](#forms) |
 | Reports | — | Hub-native, admins only | [Reports](#reports) |
 
 Not an app: the [administration console](#administration-console) at `admin.sorye.app` (Hub `/admin` routes). It replaced the retired Operator app.
@@ -38,6 +37,7 @@ The intended boundary is **app → Hub → Rodrigo**. Hub remains the browser-fa
 | Canvas | Rodrigo v2 board resources and queued mutations | Realtime invalidation remains Hub-owned; nested payload validation and app-specific end-to-end coverage remain |
 | Site | Rodrigo v2 page editing, queued mutations, and anonymous published reads | Relay publish events are not emitted. Unpublished and unknown slugs are 404 |
 | Storefront | Rodrigo v2 product resources, enquiry creates, and queued mutations | Status transitions are not a Hub workflow. Seed products cannot be ordered |
+| Forms | Rodrigo v2 form definitions, slug index, anonymous submissions, queued member mutations | No submission notification or event; no file uploads, quotas or close dates; end-to-end browser coverage remains |
 | Workspace profile | Rodrigo v2 profile read and name update | Membership, app access, team settings, and other account policy remain Hub-owned |
 | Messenger | Rodrigo v2 channels and text messages; channel-authorized timeline reads and queued writes | Attachments, read receipts, reactions if enabled, and event delivery remain uncovered |
 | All other catalog apps and Hub-native features | Existing Hub or app-specific paths | Not yet migrated; do not treat their data as Rodrigo-authoritative |
@@ -68,7 +68,7 @@ Each row keeps its workspace id, name, and kind. The UI labels are **Personal** 
 | Site | Saved pages. The editor stays on the active workspace and does not invent an empty draft for the other side. |
 | Studio | Drive files whose `sourceAppId` is `studio`. |
 | Protocolio | Browser drafts keyed by workspace id (`sorye:protocolio:draft:v1:<workspaceId>`). The old unscoped key is copied into the active workspace once. |
-| Contact, Catalog, SUSM, ESPM | No member data. They do not render the two sections. |
+| Contact, Catalog | No member data. They do not render the two sections. |
 | Reports | Active-workspace event charts. It has no member-activity list, so it is not split, and platform series are not added to it. |
 
 ## Communication principles
@@ -334,12 +334,16 @@ Opened from Hub, `mount(container, { kernel })` uses the shell kernel. Opened on
 
 Configuration UI for routing workspace events to Messenger, email, webhooks, WhatsApp. Shows delivery activity log.
 
+The **Your storage** tab lets the owner of a Pro or Enterprise workspace connect their own S3-compatible drive or PostgreSQL database and send all new Drive uploads (Drive, Tasks photos, OCR PDFs) there. It shows what each field needs, the minimum permissions, used / free / limit space, and the upload record. Uploads never fall back to Sorye storage when the chosen storage is unreachable. Details and threat model: [OWN-STORAGE.md](../OWN-STORAGE.md).
+
 ## Key files
 
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Configure sources/channels/routes |
 | `src/relay-api.ts` | `GET/PATCH/POST /api/relay` |
+| `src/own-storage.tsx`, `src/own-storage.css` | Your storage tab |
+| `apps/hub/lib/upload-storage/*`, `apps/hub/app/api/own-storage/**` | Validation, network guard, drive and database adapters, settings and upload ledger, API |
 | `src/mount.tsx` | MF entry |
 
 ## Communications
@@ -734,36 +738,6 @@ WebGPU is required. There is no WebGL fallback; missing GPU surfaces a clear err
 
 ---
 
-# SUSM
-
-**Catalog id:** `susm`  
-**Type:** External iframe  
-**URL:** `https://susm.vercel.app`
-
-## Purpose
-
-Embeds external SUSM product in Hub pane. No Sorye API integration.
-
-## Implementation
-
-`ExternalAppFrame` in Hub loads iframe from `AppCatalogEntry.external.url`.
-
-## Communications
-
-None with Sorye event/handoff pipeline. Isolated third-party origin.
-
----
-
-# ESPM
-
-**Catalog id:** `espm`  
-**Type:** External iframe  
-**URL:** `https://espm-beta.vercel.app`
-
-Same pattern as SUSM — external beta product in iframe shell.
-
----
-
 # Storefront
 
 **Path:** Hub-native (`apps/hub/components/app-storefront.tsx`) — not a Vite remote  
@@ -831,6 +805,43 @@ Starters: Company landing, Shop-front, Hiring. Slug is derived from the workspac
 - Public `GET /s/[slug]` — published blocks only; slug lookup is signed with the reserved public-site grant; active USD product cards are attached when a shop block is present. Unknown, unpublished, and unsafe pages are 404. A Rodrigo outage is an unavailable page, not a Hub JSON fallback
 - `sorye.site.published` is not emitted by this save
 - No first-run `AppUsageGuide`
+
+---
+
+# Forms
+
+**Path:** Hub-native (`apps/hub/components/app-forms.tsx`) — not a Vite remote  
+**Catalog id:** `forms`  
+**Editor:** `/apps/forms`  
+**Public route:** `/f/[slug]` — no sign-in. Unpublished, deleted or unknown slug → 404.
+
+## Purpose
+
+Members build a form (short and long text, email, phone, number, date, dropdown, multiple choice, checkbox, consent), publish it at `/f/<slug>`, and read the answers. The builder shows a live preview beside the editor on wide screens and as a Preview tab on narrow ones; the preview sends nothing. On the public page, a dropdown with six choices or fewer shows as a list of choices to tap, and optional questions are marked instead of required ones. Each answer has a handling status (new, handled, spam), can be filtered by that status, and can be deleted or exported as CSV. Forms is Hub-native because its public page and anonymous routes are Hub routes, like Site; it has no remote, port or gateway, and it cannot be mounted through `/embed/`. The public page itself can be linked or framed.
+
+Not provided: file-upload fields, conditional logic, close dates, submission quotas, CAPTCHA, and any notification or event when an answer arrives.
+
+## Key files
+
+| File | Purpose |
+|------|---------|
+| `packages/types/src/forms.ts` | Field kinds, definition and submission types, validators that mirror Rodrigo |
+| `packages/platform/src/messages/forms.ts` | All Forms text in en, de, sk, hu, es |
+| `apps/hub/components/app-forms.tsx`, `forms-answers-panel.tsx` | Builder and answers list |
+| `apps/hub/components/form-public-view.tsx`, `apps/hub/app/f/[slug]/page.tsx` | Public page and the builder preview |
+| `apps/hub/components/forms-ui.tsx` | Shared Forms styles and icons |
+| `apps/hub/lib/forms/forms-client.ts` | Browser data layer: reads, durable queue, CSV |
+| `apps/hub/lib/forms/public-rate-limit.ts`, `public-submission.ts` | Anonymous limits and body parsing |
+| `apps/hub/app/api/forms/**` | Queue scope and the two anonymous routes |
+| Rodrigo `src/actions.rs`, `src/adapters/sql.rs`, `migrations/postgresql/006_form_public_slugs.sql` | Authoritative validation, slug index, anonymous submit |
+
+## Communications
+
+- Member writes: `forms.form` create/update/delete and `forms.submission` update/delete through `/api/backend/actions/batch` with the Forms queue scope. Any member with the app may edit.
+- Member reads: `/api/backend/resources/forms/form` and `/forms/submission`. Submissions are not filtered by form on the server; the app reads at most ten pages and says when it stopped.
+- Anonymous: `GET /api/forms/public/[slug]` and `POST /api/forms/public/[slug]/submissions`, signed with the reserved public grant. Limits: 10 submissions a minute per client address, 300 a minute per form, 64 KB body, per Hub process.
+- No workspace event is emitted. Hub does not learn the owning workspace of a submission.
+- Rodrigo migration `006_form_public_slugs.sql` must be applied before a Rodrigo build with Forms starts.
 
 ---
 

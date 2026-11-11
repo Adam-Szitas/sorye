@@ -92,11 +92,17 @@ Routes app events to channels.
 | Source-to-channel routes (`relay.routes`) | In the owning app | workspace | Hub relay.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/app/api/relay/route.ts` |
 | Quiet hours (default off, 22:00–07:00) (`relay.quietHours`) | In the owning app | workspace | Hub relay.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/lib/relay.ts` |
 | Cloud storage connections (credentials encrypted) (`relay.storages`) | In the owning app | workspace | Hub relay-storages.json (STORAGE_SECRET_KEY) | Platform administrator (in Relay) | secret | next-request | `apps/hub/app/api/relay/storages/route.ts` |
+| Where new uploads go (Sorye storage, own drive, own database); Pro and Enterprise (`ownStorage.target`) | In the owning app | workspace | Hub workspace_upload_storage / own-storage.json | Workspace owner (in Relay) | internal | next-request | `apps/hub/app/api/own-storage/target/route.ts` |
+| Own S3-compatible drive: bucket, region, endpoint, folder, limit; credentials encrypted and write-only (`ownStorage.drive`) | In the owning app | workspace | Hub workspace_upload_storage (STORAGE_SECRET_KEY, workspace-bound) | Workspace owner (in Relay) | secret | next-request | `apps/hub/lib/upload-storage/service.ts` |
+| Own PostgreSQL: host, port, database, user, schema, TLS mode, limit; password and CA encrypted and write-only (`ownStorage.database`) | In the owning app | workspace | Hub workspace_upload_storage (STORAGE_SECRET_KEY, workspace-bound) | Workspace owner (in Relay) | secret | next-request | `apps/hub/lib/upload-storage/service.ts` |
+| Own storage may reach private hosts and skip TLS (local/test only; refused in production) (`OWN_STORAGE_DEV_INSECURE`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-storage/mode.ts` |
 
 Gaps:
 
 - Email and WhatsApp channels queue messages but do not deliver.
 - Rodrigo relay.config exists in the contract but the Relay UI still writes relay.json.
+- Own storage supports S3-compatible drives and PostgreSQL only; Google Drive and OneDrive need an OAuth app registration.
+- Existing files are not moved when the upload destination changes.
 
 ## Storefront (`storefront`)
 
@@ -122,6 +128,22 @@ Public workspace page at /s/<slug>.
 Gaps:
 
 - No custom domains.
+
+## Forms (`forms`)
+
+Form builder with a public page at /f/<slug>.
+
+| Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Form slug, title, fields (≤50), published and accepting flags (`forms.form`) | In the owning app | workspace | Rodrigo forms.form | Workspace member (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Submission handling status (answers are immutable) (`forms.submission`) | In the owning app | workspace | Rodrigo forms.submission | Workspace member (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Anonymous read and submit limits per client and per form (`forms.publicRateLimit`) | Code constant | deployment | apps/hub/lib/forms/public-rate-limit.ts | Code release | internal | release | `apps/hub/lib/forms/public-rate-limit.ts` |
+
+Gaps:
+
+- No notification when a submission arrives.
+- No file-upload fields, close dates or submission quotas.
+- The anonymous rate limit is per Hub process.
 
 ## DevKit (`devtools`)
 
@@ -215,29 +237,27 @@ Gaps:
 
 - No per-folder permissions.
 
-## SUSM (`susm`)
+## SUSM (removed) (`susm`)
 
-External site embedded by URL.
-
-| Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| External URL (`susm.url`) | Code constant | platform | packages/types/src/apps.ts | Code release | public | release | `packages/types/src/apps.ts` |
-
-Gaps:
-
-- No Hub-side settings; sign-in happens on the external site.
-
-## ESPM (`espm`)
-
-External site embedded by URL.
+Embedded app removed; optional service integration is not configured.
 
 | Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| External URL (`espm.url`) | Code constant | platform | packages/types/src/apps.ts | Code release | public | release | `packages/types/src/apps.ts` |
 
 Gaps:
 
-- No Hub-side settings.
+- Requires a service API, authentication contract and explicit per-user opt-in before integration.
+
+## ESPM (removed) (`espm`)
+
+Embedded app removed; optional service integration is not configured.
+
+| Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+
+Gaps:
+
+- Requires a service API, authentication contract and explicit per-user opt-in before integration.
 
 ## OCR (`ocr`)
 
@@ -321,11 +341,14 @@ App selection, profile, plans.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Selected apps and connected apps (plan-capped) (`workspace.selectedAppIds`) | In the owning app | workspace | Hub store.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/app/api/workspace/route.ts` |
 | Name, locale, timezone (`workspace.settings`) | In the owning app | workspace | Rodrigo workspace.settings | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
-| Plan limits (free 2/1, starter 5/3, pro 12/10, enterprise 999/999) (`plans`) | Code constant | platform | packages/types/src/subscription.ts | Code release | public | release | `packages/types/src/subscription.ts` |
+| Plan limits and EUR prices (free 2/1, starter 5/3, pro 12/10, enterprise 999/999; yearly = 10 months) (`plans`) | Code constant | platform | packages/types/src/subscription.ts | Code release | public | release | `packages/types/src/subscription.ts` |
+| Billing simulator: plan changes and payment events without a provider (local/test only; refused in production) (`BILLING_SIMULATOR`) | Deployment input | deployment | Environment; state in Hub .data/billing-simulator.json | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/billing/service.ts` |
 
 Gaps:
 
-- No self-service billing.
+- No payment provider: /billing shows plans and sends people to sales unless the local billing simulator is on.
+- Locked apps and connections over a plan limit are reported on /billing but not yet hidden in the launcher.
+- Administrator plan changes still trim apps and connections instead of locking them.
 
 ## Persistence, delivery and telemetry (`platform.infrastructure`)
 

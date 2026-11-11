@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -283,5 +284,50 @@ export const ocrAnalyses = pgTable(
       table.workspaceId,
       table.createdAt,
     ),
+  ],
+);
+
+/**
+ * Customer-owned upload storage per workspace ("Connect your drive" / "Connect your database").
+ * Credentials are AES-256-GCM ciphertexts bound to the workspace (STORAGE_SECRET_KEY); never returned.
+ */
+export const workspaceUploadStorage = pgTable('workspace_upload_storage', {
+  workspaceId: text('workspace_id').primaryKey(),
+  /** sorye | drive | database */
+  target: text('target').notNull().default('sorye'),
+  /** Non-secret drive settings (provider, bucket, region, endpoint, prefix, limit, status). */
+  drive: jsonb('drive').$type<Record<string, unknown> | null>(),
+  driveSecretEncrypted: text('drive_secret_encrypted'),
+  /** Non-secret database settings (host, port, database, user, schema, TLS mode, limit, status). */
+  database: jsonb('database').$type<Record<string, unknown> | null>(),
+  databaseSecretEncrypted: text('database_secret_encrypted'),
+  updatedBy: text('updated_by').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Every upload of a workspace, whatever its destination. Kept after the file is deleted. */
+export const uploadLedger = pgTable(
+  'upload_ledger',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    fileId: text('file_id'),
+    userId: text('user_id').notNull(),
+    target: text('target').notNull(),
+    location: text('location'),
+    displayName: text('display_name').notNull(),
+    mime: text('mime'),
+    size: bigint('size', { mode: 'number' }).notNull(),
+    sha256: text('sha256'),
+    sourceAppId: text('source_app_id').notNull(),
+    status: text('status').notNull(),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('upload_ledger_workspace_created_idx').on(table.workspaceId, table.createdAt),
+    index('upload_ledger_workspace_target_status_idx').on(table.workspaceId, table.target, table.status),
+    index('upload_ledger_file_idx').on(table.fileId),
   ],
 );

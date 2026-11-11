@@ -11,9 +11,11 @@ import {
 } from './relay-storage';
 import { RelayActivity } from './relay-activity';
 import { RelayConfigure } from './relay-config';
+import { OwnStorage } from './own-storage';
+import { TranslatedText } from '@sorye/platform/react';
 import './styles.css';
 
-type Panel = 'activity' | 'configure';
+type Panel = 'activity' | 'configure' | 'storage';
 
 export default function App() {
   const [config, setConfig] = useState(loadConfig);
@@ -111,13 +113,24 @@ export default function App() {
             >
               Configure
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panel === 'storage' ? 'true' : 'false'}
+              className={panel === 'storage' ? 'active' : undefined}
+              onClick={() => setPanel('storage')}
+            >
+              <TranslatedText message="os.tab" />
+            </button>
           </div>
         </div>
       </header>
 
       {syncError ? <p className="relay-banner warn">{syncError}</p> : null}
 
-      {panel === 'activity' ? (
+      {panel === 'storage' ? (
+        <div className="relay-scroll"><OwnStorage /></div>
+      ) : panel === 'activity' ? (
         <RelayActivity
           handler={handler}
           onTest={onTest}

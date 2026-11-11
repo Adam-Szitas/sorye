@@ -518,6 +518,21 @@ export async function assignWorkspacePlan(
   return trimmed;
 }
 
+/** Set the tier that applies to a workspace without removing anything; see the JSON store. */
+export async function setWorkspaceTier(
+  workspaceId: string,
+  subscriptionId: SubscriptionTierId,
+): Promise<Workspace | null> {
+  const updated = await getDb()
+    .update(schema.workspaces)
+    .set({ subscriptionId, updatedAt: new Date() })
+    .where(eq(schema.workspaces.id, workspaceId))
+    .returning({ id: schema.workspaces.id });
+  if (updated.length === 0) return null;
+  const memberIds = await loadMemberIds(workspaceId);
+  return loadWorkspaceRow(workspaceId, memberIds);
+}
+
 export async function operatorWorkspaceExists(workspaceId: string): Promise<boolean> {
   const [row] = await getDb()
     .select({ id: schema.workspaces.id })

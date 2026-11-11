@@ -102,8 +102,12 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
       { key: 'relay.routes', label: 'Source-to-channel routes', status: 'owner-app', scope: 'workspace', store: 'Hub relay.json / Postgres', changedBy: member, sensitivity: 'internal', applies: 'next-request', source: 'apps/hub/app/api/relay/route.ts' },
       { key: 'relay.quietHours', label: 'Quiet hours (default off, 22:00–07:00)', status: 'owner-app', scope: 'workspace', store: 'Hub relay.json / Postgres', changedBy: member, sensitivity: 'internal', applies: 'next-request', source: 'apps/hub/lib/relay.ts' },
       { key: 'relay.storages', label: 'Cloud storage connections (credentials encrypted)', status: 'owner-app', scope: 'workspace', store: 'Hub relay-storages.json (STORAGE_SECRET_KEY)', changedBy: 'Platform administrator (in Relay)', sensitivity: 'secret', applies: 'next-request', source: 'apps/hub/app/api/relay/storages/route.ts' },
+      { key: 'ownStorage.target', label: 'Where new uploads go (Sorye storage, own drive, own database); Pro and Enterprise', status: 'owner-app', scope: 'workspace', store: 'Hub workspace_upload_storage / own-storage.json', changedBy: 'Workspace owner (in Relay)', sensitivity: 'internal', applies: 'next-request', source: 'apps/hub/app/api/own-storage/target/route.ts' },
+      { key: 'ownStorage.drive', label: 'Own S3-compatible drive: bucket, region, endpoint, folder, limit; credentials encrypted and write-only', status: 'owner-app', scope: 'workspace', store: 'Hub workspace_upload_storage (STORAGE_SECRET_KEY, workspace-bound)', changedBy: 'Workspace owner (in Relay)', sensitivity: 'secret', applies: 'next-request', source: 'apps/hub/lib/upload-storage/service.ts' },
+      { key: 'ownStorage.database', label: 'Own PostgreSQL: host, port, database, user, schema, TLS mode, limit; password and CA encrypted and write-only', status: 'owner-app', scope: 'workspace', store: 'Hub workspace_upload_storage (STORAGE_SECRET_KEY, workspace-bound)', changedBy: 'Workspace owner (in Relay)', sensitivity: 'secret', applies: 'next-request', source: 'apps/hub/lib/upload-storage/service.ts' },
+      { key: 'OWN_STORAGE_DEV_INSECURE', label: 'Own storage may reach private hosts and skip TLS (local/test only; refused in production)', status: 'deployment', scope: 'deployment', store: 'Environment', changedBy: 'Deployer (environment, redeploy)', sensitivity: 'internal', applies: 'restart', source: 'apps/hub/lib/upload-storage/mode.ts' },
     ],
-    gaps: ['Email and WhatsApp channels queue messages but do not deliver.', 'Rodrigo relay.config exists in the contract but the Relay UI still writes relay.json.'],
+    gaps: ['Email and WhatsApp channels queue messages but do not deliver.', 'Rodrigo relay.config exists in the contract but the Relay UI still writes relay.json.', 'Own storage supports S3-compatible drives and PostgreSQL only; Google Drive and OneDrive need an OAuth app registration.', 'Existing files are not moved when the upload destination changes.'],
   },
   {
     id: 'storefront', kind: 'app', title: 'Storefront', summary: 'Products and order requests.',
@@ -117,6 +121,15 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
     id: 'site', kind: 'app', title: 'Site', summary: 'Public workspace page at /s/<slug>.',
     settings: [rodrigoFamily('site.page', 'Page slug, title, published flag, blocks (≤100)', 'site.page', owner)],
     gaps: ['No custom domains.'],
+  },
+  {
+    id: 'forms', kind: 'app', title: 'Forms', summary: 'Form builder with a public page at /f/<slug>.',
+    settings: [
+      rodrigoFamily('forms.form', 'Form slug, title, fields (≤50), published and accepting flags', 'forms.form'),
+      rodrigoFamily('forms.submission', 'Submission handling status (answers are immutable)', 'forms.submission'),
+      { key: 'forms.publicRateLimit', label: 'Anonymous read and submit limits per client and per form', status: 'constant', scope: 'deployment', store: 'apps/hub/lib/forms/public-rate-limit.ts', changedBy: release, sensitivity: 'internal', applies: 'release', source: 'apps/hub/lib/forms/public-rate-limit.ts' },
+    ],
+    gaps: ['No notification when a submission arrives.', 'No file-upload fields, close dates or submission quotas.', 'The anonymous rate limit is per Hub process.'],
   },
   {
     id: 'devtools', kind: 'app', title: 'DevKit', summary: 'Embed widgets and developer tooling.',
@@ -171,14 +184,14 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
     gaps: ['No per-folder permissions.'],
   },
   {
-    id: 'susm', kind: 'app', title: 'SUSM', summary: 'External site embedded by URL.',
-    settings: [{ key: 'susm.url', label: 'External URL', status: 'constant', scope: 'platform', store: 'packages/types/src/apps.ts', changedBy: release, sensitivity: 'public', applies: 'release', consoleHref: '/admin/releases', source: 'packages/types/src/apps.ts' }],
-    gaps: ['No Hub-side settings; sign-in happens on the external site.'],
+    id: 'susm', kind: 'retired', title: 'SUSM (removed)', summary: 'Embedded app removed; optional service integration is not configured.',
+    settings: [],
+    gaps: ['Requires a service API, authentication contract and explicit per-user opt-in before integration.'],
   },
   {
-    id: 'espm', kind: 'app', title: 'ESPM', summary: 'External site embedded by URL.',
-    settings: [{ key: 'espm.url', label: 'External URL', status: 'constant', scope: 'platform', store: 'packages/types/src/apps.ts', changedBy: release, sensitivity: 'public', applies: 'release', consoleHref: '/admin/releases', source: 'packages/types/src/apps.ts' }],
-    gaps: ['No Hub-side settings.'],
+    id: 'espm', kind: 'retired', title: 'ESPM (removed)', summary: 'Embedded app removed; optional service integration is not configured.',
+    settings: [],
+    gaps: ['Requires a service API, authentication contract and explicit per-user opt-in before integration.'],
   },
   {
     id: 'ocr', kind: 'app', title: 'OCR', summary: 'Document analysis on the shared AI engine or the browser GPU.',
@@ -226,9 +239,10 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
     settings: [
       { key: 'workspace.selectedAppIds', label: 'Selected apps and connected apps (plan-capped)', status: 'owner-app', scope: 'workspace', store: 'Hub store.json / Postgres', changedBy: member, sensitivity: 'internal', applies: 'next-request', source: 'apps/hub/app/api/workspace/route.ts' },
       rodrigoFamily('workspace.settings', 'Name, locale, timezone', 'workspace.settings', owner),
-      { key: 'plans', label: 'Plan limits (free 2/1, starter 5/3, pro 12/10, enterprise 999/999)', status: 'constant', scope: 'platform', store: 'packages/types/src/subscription.ts', changedBy: release, sensitivity: 'public', applies: 'release', consoleHref: '/admin/workspaces', source: 'packages/types/src/subscription.ts' },
+      { key: 'plans', label: 'Plan limits and EUR prices (free 2/1, starter 5/3, pro 12/10, enterprise 999/999; yearly = 10 months)', status: 'constant', scope: 'platform', store: 'packages/types/src/subscription.ts', changedBy: release, sensitivity: 'public', applies: 'release', consoleHref: '/admin/workspaces', source: 'packages/types/src/subscription.ts' },
+      { key: 'BILLING_SIMULATOR', label: 'Billing simulator: plan changes and payment events without a provider (local/test only; refused in production)', status: 'deployment', scope: 'deployment', store: 'Environment; state in Hub .data/billing-simulator.json', changedBy: deployer, sensitivity: 'internal', applies: 'restart', source: 'apps/hub/lib/billing/service.ts' },
     ],
-    gaps: ['No self-service billing.'],
+    gaps: ['No payment provider: /billing shows plans and sends people to sales unless the local billing simulator is on.', 'Locked apps and connections over a plan limit are reported on /billing but not yet hidden in the launcher.', 'Administrator plan changes still trim apps and connections instead of locking them.'],
   },
   {
     id: 'platform.infrastructure', kind: 'platform', title: 'Persistence, delivery and telemetry', summary: 'Stores, remotes, workers, telemetry, MCP.',
