@@ -28,7 +28,9 @@ test('a complete single-server production configuration has no errors', () => {
 });
 
 test('development-only switches are flagged in production', () => {
-  const findings = configFindings({ ...base, AUTH_DEV_BYPASS: 'true', AUTH_URL: 'https://x' });
+  const findings = configFindings({ ...base, AUTH_DEV_BYPASS: 'true', AUTH_URL: 'https://x', NEXTAUTH_URL: 'https://x', AUTH_TRUST_HOST: 'false' });
   assert.ok(findings.some((f) => f.setting === 'AUTH_DEV_BYPASS' && f.level === 'error'));
   assert.ok(findings.some((f) => f.setting === 'AUTH_URL' && f.level === 'error'));
+  assert.ok(findings.some((f) => f.setting === 'NEXTAUTH_URL' && f.level === 'error'));
+  assert.ok(findings.some((f) => f.setting === 'AUTH_TRUST_HOST' && f.level === 'error'));
 });

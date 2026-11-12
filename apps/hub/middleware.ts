@@ -3,6 +3,7 @@ import { unavailablePageHtml } from '@/lib/unavailable-page';
 import { landingSlugForHost } from '@/lib/app-landings';
 import { auth } from '@/auth';
 import { isAuthDevBypass } from '@/lib/auth-dev-bypass';
+import { InvalidAuthOrigin, withPublicAuthOrigin } from '@/lib/auth-origin';
 import {
   adminOrigin,
   classifyHost,
@@ -198,8 +199,18 @@ const hubMiddleware = auth((req) => {
  */
 export default async function middleware(req: NextRequest, event: NextFetchEvent) {
   try {
-    return await (hubMiddleware as unknown as (r: NextRequest, e: NextFetchEvent) => Promise<Response | undefined>)(req, event);
+    const publicRequest = withPublicAuthOrigin(req);
+    const response = await (hubMiddleware as unknown as (r: NextRequest, e: NextFetchEvent) => Promise<Response | undefined>)(publicRequest, event);
+    if (response?.headers.get('x-middleware-next') === '1') {
+      // Server actions/auth() derive URLs from headers rather than request.url.
+      const overrides = NextResponse.next({ request: { headers: publicRequest.headers } });
+      overrides.headers.forEach((value, name) => {
+        if (name.startsWith('x-middleware-request-') || name === 'x-middleware-override-headers') response.headers.set(name, value);
+      });
+    }
+    return response;
   } catch (error) {
+    if (error instanceof InvalidAuthOrigin) return plain(421, 'Invalid public origin configuration');
     const name = error instanceof Error ? error.name : 'Error';
     const message = error instanceof Error ? error.message.split('\n')[0]!.slice(0, 300) : String(error).slice(0, 300);
     console.error(`[sorye] request failed before reaching the page: ${req.method} ${req.nextUrl.pathname} — ${name}: ${message}`);

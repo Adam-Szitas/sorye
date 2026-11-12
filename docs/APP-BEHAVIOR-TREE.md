@@ -11,6 +11,8 @@ For a self-contained local page with handler-by-handler node details, open [APP-
 
 ## Open an app and keep its state
 
+Hub validates the browser origin before Auth.js. Production forwarding requires `AUTH_TRUST_HOST=true`, exact approved HTTPS hosts and a private Hub behind an ingress that overwrites forwarding headers. Hub reconstructs the public request URL and passes normalized headers to server actions: Google authorization and token exchange share the same host's `/api/auth/callback/google`, successful sign-in returns to a same-origin destination, and errors return to that origin's `/login`. Customer, admin and app sessions remain host-only. `AUTH_URL` and `NEXTAUTH_URL` must be unset in production; Docker's bind hostname is not a public origin. Local development preserves its host and port. See [OAuth proxy verification](OAUTH-PROXY.md).
+
 The standalone navbar Hub link uses the configured `VITE_HUB_ORIGIN` for remote apps and otherwise the current origin's `/`. The current host and port are preserved unless an explicit Hub origin is configured.
 
 ```mermaid

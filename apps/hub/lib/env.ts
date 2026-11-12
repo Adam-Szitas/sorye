@@ -21,6 +21,7 @@ const envSchema = z
 
     AUTH_SECRET: z.string().min(16),
     AUTH_URL: z.string().url().optional(),
+    NEXTAUTH_URL: z.string().url().optional(),
     AUTH_GOOGLE_ID: z.string().min(1).optional(),
     AUTH_GOOGLE_SECRET: z.string().min(1).optional(),
     /** Local only. Must be the string "true". Ignored (and rejected) in production. */
@@ -135,12 +136,12 @@ const envSchema = z
       });
     }
 
-    if (productionRuntime && env.AUTH_URL) {
+    if (productionRuntime && (env.AUTH_URL || env.NEXTAUTH_URL)) {
       ctx.addIssue({
         code: 'custom',
         message:
-          'AUTH_URL pins Auth.js to one origin, which breaks sign-in on the admin hostname. Leave it unset; the ingress sets the forwarded host.',
-        path: ['AUTH_URL'],
+          'AUTH_URL/NEXTAUTH_URL pin Auth.js to one origin. Leave both unset; the trusted ingress sets the forwarded host.',
+        path: [env.AUTH_URL ? 'AUTH_URL' : 'NEXTAUTH_URL'],
       });
     }
 

@@ -113,7 +113,7 @@ A Vite app on its own port may call Hub `/api/*` with `credentials: 'include'` w
 1. Set strong `AUTH_SECRET`, `ADMIN_SECRET` (not dev defaults)
 2. Do **not** set `AUTH_DEV_BYPASS` (Hub will refuse to boot if it is `true`)
 3. `STORE_DRIVER=postgres` + managed Postgres
-4. Restrict `ADMIN_EMAILS` to platform administrators (empty means nobody); leave `AUTH_URL` unset; make every proxy in front of Hub overwrite `X-Forwarded-Host`
+4. Restrict `ADMIN_EMAILS` to platform administrators (empty means nobody); leave `AUTH_URL` and `NEXTAUTH_URL` unset; set `AUTH_TRUST_HOST=true` only with private Hub access and proxies that overwrite `Host`, `X-Forwarded-Host` and `X-Forwarded-Proto`. See [OAuth proxy verification](OAUTH-PROXY.md).
 5. Review Relay webhook destinations (HTTPS public URLs only)
 6. Rotate embed API keys when offboarding customers
 7. Enable Fly.io/private networking awareness for any internal services
@@ -139,7 +139,7 @@ The console lives at `admin.sorye.app` and is separated from the customer Hub by
 - **Host classification** (`apps/hub/lib/admin/hosts.ts`, used by middleware and route handlers): the effective host is the first `X-Forwarded-Host` value, else `Host`. Production accepts only the public host, the admin host, `<slug>.<public host>` app hosts, `SORYE_EXTRA_HOSTS`, and loopback without `X-Forwarded-Host` (container healthchecks); anything else gets 421. Every proxy in front of Hub must overwrite `X-Forwarded-Host`.
 - **Admin host allowlist**: only console pages and APIs, Auth.js, `/login`, `/_next` and two backend discovery routes. Everything else is 404; customer pages, app mounts, embeds and public sites are unreachable there. The admin gateway repeats the allowlist.
 - **Customer hosts**: `/admin*` and `/apps/operator` redirect to the admin origin; admin-only APIs answer 404 `admin_host_required`.
-- **Sessions**: Auth.js cookies are host-only, so an admin session never reaches `sorye.app` and a customer session never reaches the console. `AUTH_URL` is refused in production because it would pin both hosts to one origin.
+- **Sessions**: Auth.js cookies are host-only, so an admin session never reaches `sorye.app` and a customer session never reaches the console. `AUTH_URL` and `NEXTAUTH_URL` are refused in production because they pin both hosts to one origin. Hub validates and reconstructs the public request URL before Auth.js handles callbacks and redirects; production forwarding requires explicit proxy trust and exact approved HTTPS hosts. The private network/loopback binding is the proxy identity boundary; headers alone cannot authenticate a proxy.
 - **Authorization**: `adminAccess()` on every page and API: admin host, `auth()` session (embed sessions refused), `ensureHubUser()`, `isPlatformAdmin`. Production with an empty `ADMIN_EMAILS` has no administrators. `AUTH_DEV_BYPASS` is refused in production.
 - **Responses**: `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `nosniff` on the admin host.
 - **Secrets**: integration status shows configured flags and hostnames only. Platform configuration namespaces are non-secret by contract. Audit rows contain field values for configuration and counts/ids for Hub actions (no notice text, plan notes or prompts).

@@ -15,6 +15,7 @@
     "test:billing": "tsx --test test/billing.test.ts",
     "test:own-storage": "tsx --test test/own-storage.test.ts",
     "test:admin": "tsx --test test/admin-hosts.test.ts test/admin-settings-inventory.test.ts",
+    "test:auth": "tsx --test test/auth-origin.test.ts test/config-report.test.ts test/admin-hosts.test.ts",
     "docs:settings-matrix": "tsx lib/tools/settings-matrix.ts",
     "documents:migrate-rodrigo": "tsx lib/tools/migrate-rodrigo-document.ts",
     "prebuild": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",

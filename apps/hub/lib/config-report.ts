@@ -25,7 +25,7 @@ export function configFindings(env: NodeJS.ProcessEnv = process.env): Finding[] 
     findings.push({ level: 'error', setting: 'STORE_DRIVER', effect: 'production requires STORE_DRIVER=postgres' });
   }
   if (production) {
-    need('AUTH_TRUST_HOST', 'behind a reverse proxy Auth.js does not trust the host: set AUTH_TRUST_HOST=true (leave AUTH_URL unset)', 'warn');
+    if (env.AUTH_TRUST_HOST !== 'true') findings.push({ level: 'error', setting: 'AUTH_TRUST_HOST', effect: 'forwarded requests require AUTH_TRUST_HOST=true and a private Hub behind an ingress that overwrites forwarding headers' });
     need('SORYE_PUBLIC_HOST', 'public host defaults to sorye.app; other domains get 421 Misdirected request', 'warn');
     need('ADMIN_EMAILS', 'no platform administrators: the administration console is closed', 'warn');
     if ((env.FILE_STORE_DRIVER ?? 'local') !== 's3') {
@@ -33,7 +33,7 @@ export function configFindings(env: NodeJS.ProcessEnv = process.env): Finding[] 
     } else {
       need('FILE_S3_BUCKET', 'file uploads and downloads fail');
     }
-    for (const forbidden of ['AUTH_URL', 'AUTH_DEV_BYPASS', 'BILLING_SIMULATOR', 'OWN_STORAGE_DEV_INSECURE']) {
+    for (const forbidden of ['AUTH_URL', 'NEXTAUTH_URL', 'AUTH_DEV_BYPASS', 'BILLING_SIMULATOR', 'OWN_STORAGE_DEV_INSECURE']) {
       if (has(forbidden) && env[forbidden] !== 'false') {
         findings.push({ level: 'error', setting: forbidden, effect: 'must not be set in production: settings validation fails' });
       }

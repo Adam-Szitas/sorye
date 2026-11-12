@@ -41,6 +41,7 @@ if (googleId && googleSecret) {
 
 export const authConfig = {
   secret: process.env.AUTH_SECRET,
+  // Ingress trust and exact public origins are checked before middleware/handlers.
   trustHost: true,
   providers,
   pages: {

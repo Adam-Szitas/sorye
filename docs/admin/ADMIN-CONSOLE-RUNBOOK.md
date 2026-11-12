@@ -39,7 +39,8 @@ Hub (both hosts are served by the same Hub deployment):
 | `SORYE_ADMIN_HOST` | `admin.sorye.app` | Default `admin.<public host>`. Must differ from the public host (startup refuses otherwise). |
 | `SORYE_EXTRA_HOSTS` | optional | Extra customer aliases such as `www.sorye.app`. Catalog app subdomains (`<slug>.sorye.app`) are recognised automatically. Any other host, including the retired `operator.sorye.app`, gets 421 in production. |
 | `ADMIN_EMAILS` | comma-separated | Required for anyone to administer. |
-| `AUTH_URL` | **unset** | Production refuses it. Auth.js derives the origin per host so each host gets its own callback and host-only cookie. |
+| `AUTH_URL`, `NEXTAUTH_URL` | **unset** | Production refuses both. Hub reconstructs the public origin per host so each host gets its own callback and host-only cookie. |
+| `AUTH_TRUST_HOST` | `true` | Requires private Hub access through an ingress that overwrites forwarding headers. See [OAuth proxy verification](../OAUTH-PROXY.md). |
 | `AUTH_DEV_BYPASS` | unset | Rejected in production. |
 | `RODRIGO_BASE_URL`, `RODRIGO_KEY_ID`, `RODRIGO_PRIVATE_KEY_FILE` | as for v2 | Without them the console shows configuration and history as unavailable; nothing else breaks. |
 | `PLATFORM_CONFIG_POLL_MS` | optional | 2000–300000, default 15000. Same variable for the OCR worker. |

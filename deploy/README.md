@@ -37,6 +37,8 @@ On each target, provision DNS/TLS and route each exact app hostname to its corre
 
 Keep `/learn/...` available for public introductions. Do not configure root app hosts to reach Hub directly, which retains the older introduction redirect. Gateway `/` redirects to the app route; login callbacks and subsequent reloads retain that route.
 
+Set runtime `AUTH_TRUST_HOST=true` only with private Hub access through that trusted ingress. Leave legacy `NEXTAUTH_URL` unset as well as `AUTH_URL`. Hub validates approved HTTPS hosts and reconstructs callback request URLs independently of Docker's `HOSTNAME=0.0.0.0` bind address. See [OAuth proxy verification](../docs/OAUTH-PROXY.md) for Traefik header trust, fresh-login checks, evidence and remaining deployment verification.
+
 Authenticate the Dockyard service account to the private registry. Set `SORYE_APP_IMAGE` to the initial digest, `SORYE_APP_PORT` if overriding its default, and `HUB_UPSTREAM` in the administrator/service environment. Keep these values stable after registration. Register separately:
 
 ```sh
