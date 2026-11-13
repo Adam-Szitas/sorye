@@ -99,7 +99,9 @@ test('locale negotiation honours quality weights, regions and the esp alias', ()
 test('the reviewed contract snapshot matches the SDK (and Rodrigo when checked out next to Sorye)', () => {
   const generated = siteComponentContractJson();
   const snapshot = resolve(import.meta.dirname, '../../types/contracts/site-components.json');
-  assert.equal(readFileSync(snapshot, 'utf8'), generated, 'run pnpm --filter @sorye/site-sdk contract:export');
+  // Git may check the snapshots out with CRLF line endings; compare content only.
+  const lf = (text: string) => text.replace(/\r\n/g, '\n');
+  assert.equal(lf(readFileSync(snapshot, 'utf8')), generated, 'run pnpm --filter @sorye/site-sdk contract:export');
   const rodrigo = process.env.RODRIGO_CONTRACTS_DIR ? resolve(process.env.RODRIGO_CONTRACTS_DIR, 'site-components.json') : '';
-  if (rodrigo && existsSync(rodrigo)) assert.equal(readFileSync(rodrigo, 'utf8'), generated, 'Rodrigo contract snapshot differs');
+  if (rodrigo && existsSync(rodrigo)) assert.equal(lf(readFileSync(rodrigo, 'utf8')), generated, 'Rodrigo contract snapshot differs');
 });

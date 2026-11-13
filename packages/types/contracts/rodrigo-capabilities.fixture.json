@@ -22,7 +22,10 @@
       "storefront.order.create", "storefront.order.update", "ocr.analysis.create", "ocr.analysis.update", "ocr.pattern.create", "ocr.pattern.update",
       "studio.project.create", "studio.project.update", "notifications.notification.create", "notifications.notification.update", "events.event.create",
       "embed.widget.create", "embed.widget.update", "protocolio.artifact.create", "protocolio.artifact.update",
-      "forms.form.create", "forms.form.update", "forms.form.delete", "forms.submission.update", "forms.submission.delete"
+      "forms.form.create", "forms.form.update", "forms.form.delete", "forms.submission.update", "forms.submission.delete",
+      "site.settings.create", "site.settings.update", "site.cmsPage.create", "site.cmsPage.update", "site.cmsPage.delete",
+      "site.collection.create", "site.collection.update", "site.collection.delete", "site.item.create", "site.item.update", "site.item.delete",
+      "site.publish.create", "site.submission.update", "site.submission.delete"
     ]
   },
   "platform": {
