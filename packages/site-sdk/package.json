@@ -1,0 +1,32 @@
+{
+  "name": "@sorye/site-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./render": "./src/render.tsx",
+    "./contract": "./src/contract.ts"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts test/*.test.tsx",
+    "contract:export": "tsx scripts/export-contract.ts",
+    "docs:catalog": "tsx scripts/catalog.tsx"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

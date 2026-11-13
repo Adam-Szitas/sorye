@@ -1,0 +1,697 @@
+{
+  "version": 1,
+  "locales": [
+    "en",
+    "de",
+    "sk",
+    "hu",
+    "es"
+  ],
+  "limits": {
+    "pages": 50,
+    "sectionsPerPage": 40,
+    "collections": 20,
+    "collectionFields": 30,
+    "itemsPerCollection": 500,
+    "slugMax": 64,
+    "nameMax": 120,
+    "seoTitleMax": 120,
+    "seoDescriptionMax": 300,
+    "itemTextMax": 2000,
+    "itemRichTextMax": 20000,
+    "linkMax": 500,
+    "idMax": 40,
+    "keyMax": 64,
+    "formFieldsMax": 30,
+    "formOptionsMax": 30,
+    "optionValueMax": 80,
+    "formLabelMax": 200,
+    "formHelpMax": 300
+  },
+  "reservedSlugs": [
+    "sitemap",
+    "sitemap-xml",
+    "robots",
+    "_form",
+    "media",
+    "en",
+    "de",
+    "sk",
+    "hu",
+    "es",
+    "esp"
+  ],
+  "collectionFieldKinds": [
+    "text",
+    "richtext",
+    "number",
+    "date",
+    "boolean",
+    "link",
+    "media",
+    "select"
+  ],
+  "formFieldKinds": [
+    "text",
+    "textarea",
+    "email",
+    "phone",
+    "number",
+    "date",
+    "select",
+    "multiselect",
+    "checkbox",
+    "consent"
+  ],
+  "theme": {
+    "colorTokens": [
+      "background",
+      "surface",
+      "text",
+      "muted",
+      "primary",
+      "onPrimary"
+    ],
+    "fonts": [
+      "sans",
+      "serif",
+      "humanist",
+      "mono"
+    ],
+    "scales": [
+      "compact",
+      "normal",
+      "large"
+    ],
+    "radii": [
+      "none",
+      "small",
+      "medium",
+      "large"
+    ],
+    "spacing": [
+      "compact",
+      "normal",
+      "airy"
+    ],
+    "presets": {
+      "paper": {
+        "background": "#ffffff",
+        "surface": "#f4f5f7",
+        "text": "#16181d",
+        "muted": "#4b5260",
+        "primary": "#1d4ed8",
+        "onPrimary": "#ffffff"
+      },
+      "midnight": {
+        "background": "#0f1218",
+        "surface": "#1a1f29",
+        "text": "#eef1f6",
+        "muted": "#aab3c2",
+        "primary": "#8ab4ff",
+        "onPrimary": "#0b1020"
+      },
+      "forest": {
+        "background": "#f6f8f4",
+        "surface": "#e7eee2",
+        "text": "#1b2a1f",
+        "muted": "#465a4b",
+        "primary": "#1f6b3a",
+        "onPrimary": "#ffffff"
+      },
+      "sunset": {
+        "background": "#fffaf5",
+        "surface": "#fbeee2",
+        "text": "#2b1d14",
+        "muted": "#5f4a3c",
+        "primary": "#b4410c",
+        "onPrimary": "#ffffff"
+      },
+      "slate": {
+        "background": "#f8fafc",
+        "surface": "#e2e8f0",
+        "text": "#0f172a",
+        "muted": "#475569",
+        "primary": "#0f172a",
+        "onPrimary": "#f8fafc"
+      }
+    },
+    "contrast": [
+      {
+        "fg": "text",
+        "bg": "background",
+        "min": 4.5
+      },
+      {
+        "fg": "text",
+        "bg": "surface",
+        "min": 4.5
+      },
+      {
+        "fg": "muted",
+        "bg": "background",
+        "min": 4.5
+      },
+      {
+        "fg": "onPrimary",
+        "bg": "primary",
+        "min": 4.5
+      },
+      {
+        "fg": "primary",
+        "bg": "background",
+        "min": 3
+      }
+    ]
+  },
+  "components": {
+    "header": {
+      "version": 1,
+      "props": {
+        "brand": {
+          "kind": "text",
+          "max": 80
+        },
+        "ctaLabel": {
+          "kind": "text",
+          "max": 40
+        },
+        "ctaHref": {
+          "kind": "link",
+          "required": false
+        }
+      }
+    },
+    "hero": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120,
+          "required": true
+        },
+        "subheading": {
+          "kind": "text",
+          "max": 300,
+          "multiline": true
+        },
+        "ctaLabel": {
+          "kind": "text",
+          "max": 40
+        },
+        "ctaHref": {
+          "kind": "link",
+          "required": false
+        },
+        "secondaryLabel": {
+          "kind": "text",
+          "max": 40
+        },
+        "secondaryHref": {
+          "kind": "link",
+          "required": false
+        },
+        "image": {
+          "kind": "media",
+          "accept": "image",
+          "required": false
+        },
+        "align": {
+          "kind": "select",
+          "options": [
+            "start",
+            "center"
+          ]
+        }
+      }
+    },
+    "richText": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "body": {
+          "kind": "richtext",
+          "max": 20000,
+          "required": true
+        }
+      }
+    },
+    "features": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "intro": {
+          "kind": "text",
+          "max": 500,
+          "multiline": true
+        },
+        "columns": {
+          "kind": "select",
+          "options": [
+            "2",
+            "3",
+            "4"
+          ]
+        },
+        "items": {
+          "kind": "list",
+          "max": 12,
+          "item": {
+            "title": {
+              "kind": "text",
+              "max": 80,
+              "required": true
+            },
+            "body": {
+              "kind": "text",
+              "max": 500,
+              "multiline": true
+            },
+            "href": {
+              "kind": "link",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "imageText": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "body": {
+          "kind": "richtext",
+          "max": 5000,
+          "required": false
+        },
+        "image": {
+          "kind": "media",
+          "accept": "image",
+          "required": true
+        },
+        "imageSide": {
+          "kind": "select",
+          "options": [
+            "start",
+            "end"
+          ]
+        },
+        "ctaLabel": {
+          "kind": "text",
+          "max": 40
+        },
+        "ctaHref": {
+          "kind": "link",
+          "required": false
+        }
+      }
+    },
+    "gallery": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "images": {
+          "kind": "list",
+          "max": 24,
+          "item": {
+            "image": {
+              "kind": "media",
+              "accept": "image",
+              "required": true
+            },
+            "caption": {
+              "kind": "text",
+              "max": 200
+            }
+          }
+        }
+      }
+    },
+    "team": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "intro": {
+          "kind": "text",
+          "max": 500,
+          "multiline": true
+        },
+        "members": {
+          "kind": "list",
+          "max": 24,
+          "item": {
+            "name": {
+              "kind": "text",
+              "max": 80,
+              "required": true
+            },
+            "role": {
+              "kind": "text",
+              "max": 80
+            },
+            "bio": {
+              "kind": "text",
+              "max": 500,
+              "multiline": true
+            },
+            "photo": {
+              "kind": "media",
+              "accept": "image",
+              "required": false
+            },
+            "href": {
+              "kind": "link",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "testimonials": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "items": {
+          "kind": "list",
+          "max": 12,
+          "item": {
+            "quote": {
+              "kind": "text",
+              "max": 600,
+              "required": true,
+              "multiline": true
+            },
+            "author": {
+              "kind": "text",
+              "max": 80,
+              "required": true
+            },
+            "role": {
+              "kind": "text",
+              "max": 80
+            },
+            "photo": {
+              "kind": "media",
+              "accept": "image",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "faq": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "items": {
+          "kind": "list",
+          "max": 30,
+          "item": {
+            "question": {
+              "kind": "text",
+              "max": 200,
+              "required": true
+            },
+            "answer": {
+              "kind": "richtext",
+              "max": 3000,
+              "required": true
+            }
+          }
+        }
+      }
+    },
+    "pricing": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "intro": {
+          "kind": "text",
+          "max": 500,
+          "multiline": true
+        },
+        "plans": {
+          "kind": "list",
+          "max": 6,
+          "item": {
+            "name": {
+              "kind": "text",
+              "max": 60,
+              "required": true
+            },
+            "price": {
+              "kind": "text",
+              "max": 40,
+              "required": true
+            },
+            "period": {
+              "kind": "text",
+              "max": 40
+            },
+            "features": {
+              "kind": "list",
+              "max": 12,
+              "item": {
+                "text": {
+                  "kind": "text",
+                  "max": 120,
+                  "required": true
+                }
+              }
+            },
+            "highlighted": {
+              "kind": "boolean"
+            },
+            "ctaLabel": {
+              "kind": "text",
+              "max": 40
+            },
+            "ctaHref": {
+              "kind": "link",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "cta": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120,
+          "required": true
+        },
+        "body": {
+          "kind": "text",
+          "max": 500,
+          "multiline": true
+        },
+        "ctaLabel": {
+          "kind": "text",
+          "max": 40
+        },
+        "ctaHref": {
+          "kind": "link",
+          "required": false
+        },
+        "tone": {
+          "kind": "select",
+          "options": [
+            "accent",
+            "subtle"
+          ]
+        }
+      }
+    },
+    "contactForm": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "intro": {
+          "kind": "text",
+          "max": 500,
+          "multiline": true
+        },
+        "fields": {
+          "kind": "formFields"
+        },
+        "submitLabel": {
+          "kind": "text",
+          "max": 40
+        },
+        "successMessage": {
+          "kind": "text",
+          "max": 300
+        },
+        "notifyChannelId": {
+          "kind": "channel"
+        },
+        "notifyRelay": {
+          "kind": "boolean"
+        }
+      }
+    },
+    "collectionList": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "collection": {
+          "kind": "collection",
+          "required": true
+        },
+        "layout": {
+          "kind": "select",
+          "options": [
+            "cards",
+            "list"
+          ]
+        },
+        "limit": {
+          "kind": "number",
+          "min": 1,
+          "max": 50,
+          "integer": true
+        },
+        "summaryField": {
+          "kind": "key"
+        },
+        "imageField": {
+          "kind": "key"
+        },
+        "dateField": {
+          "kind": "key"
+        }
+      }
+    },
+    "collectionItem": {
+      "version": 1,
+      "props": {
+        "collection": {
+          "kind": "collection",
+          "required": true
+        },
+        "itemSlug": {
+          "kind": "text",
+          "max": 64
+        }
+      }
+    },
+    "logoStrip": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "logos": {
+          "kind": "list",
+          "max": 16,
+          "item": {
+            "image": {
+              "kind": "media",
+              "accept": "image",
+              "required": true
+            },
+            "href": {
+              "kind": "link",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "footer": {
+      "version": 1,
+      "props": {
+        "text": {
+          "kind": "text",
+          "max": 500,
+          "multiline": true
+        },
+        "links": {
+          "kind": "list",
+          "max": 12,
+          "item": {
+            "label": {
+              "kind": "text",
+              "max": 60,
+              "required": true
+            },
+            "href": {
+              "kind": "link",
+              "required": true
+            }
+          }
+        },
+        "copyright": {
+          "kind": "text",
+          "max": 120
+        }
+      }
+    },
+    "linkList": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        },
+        "links": {
+          "kind": "list",
+          "max": 12,
+          "item": {
+            "label": {
+              "kind": "text",
+              "max": 60,
+              "required": true
+            },
+            "href": {
+              "kind": "link",
+              "required": true
+            }
+          }
+        }
+      }
+    },
+    "productShowcase": {
+      "version": 1,
+      "props": {
+        "heading": {
+          "kind": "text",
+          "max": 120
+        }
+      }
+    }
+  }
+}
