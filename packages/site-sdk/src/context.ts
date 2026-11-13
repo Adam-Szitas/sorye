@@ -40,7 +40,7 @@ export function t(ctx: RenderContext, value: LText | undefined | null): string {
 
 /** Internal links are site-relative: `/about` → `{basePath}/about`. */
 export function resolveHref(ctx: RenderContext, link: string): string {
-  if (link.startsWith('/')) return link === '/' ? `${ctx.basePath}/` : `${ctx.basePath}${link}`;
+  if (link.startsWith('/')) return link === '/' ? ctx.basePath : `${ctx.basePath}${link}`;
   return link;
 }
 

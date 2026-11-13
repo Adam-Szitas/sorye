@@ -75,12 +75,26 @@ export interface EnqueueResult {
   speed: SpeedEstimate;
 }
 
+/**
+ * Where a queued file goes. Drive is the default; other Hub-native apps (Site media)
+ * reuse the same queue, hashing, retries and top-bar progress with their own endpoint.
+ * The endpoint accepts the same multipart fields as `/api/files`.
+ */
+export interface UploadTarget {
+  endpoint: string;
+  sourceAppId: string;
+  /** Window event dispatched with the server's JSON body after a successful upload. */
+  doneEvent: string;
+}
+const DRIVE_TARGET: UploadTarget = { endpoint: '/api/files', sourceAppId: 'files', doneEvent: DRIVE_FILES_CHANGED_EVENT };
+
 interface Entry {
   item: UploadItem;
   file: File | null;
   xhr: XMLHttpRequest | null;
   busyRetries: number;
   notBefore: number;
+  target: UploadTarget;
 }
 
 const ACTIVE: readonly UploadStatus[] = ['hashing', 'uploading', 'processing'];
@@ -182,7 +196,7 @@ export function currentUploadSpeed(): SpeedEstimate {
  * the connection estimate (see `planUploadBatch`). The server enforces all
  * limits again on every request.
  */
-export function enqueueUploads(files: File[], context: { workspaceId: string; quota: FileQuota }): EnqueueResult {
+export function enqueueUploads(files: File[], context: { workspaceId: string; quota: FileQuota }, target: UploadTarget = DRIVE_TARGET): EnqueueResult {
   const { quota } = context;
   concurrency = Math.max(1, Math.min(4, quota.maxConcurrentUploads));
   throttleBytesPerSecond = quota.throttleBytesPerSecond;
@@ -221,7 +235,7 @@ export function enqueueUploads(files: File[], context: { workspaceId: string; qu
         error: null, code: null, workspaceId: context.workspaceId, canRetry: true, checksummed: false,
         queuedAt: now, finishedAt: null,
       },
-      file, xhr: null, busyRetries: 0, notBefore: 0,
+      file, xhr: null, busyRetries: 0, notBefore: 0, target,
     });
   }
   if (reselect && candidates.slice(0, accepted).some((file) => file.name === reselect?.fileName)) reselect = null;
@@ -290,7 +304,7 @@ function send(entry: Entry, form: FormData): Promise<SendResult> {
     const xhr = new XMLHttpRequest();
     entry.xhr = xhr;
     let startedAt = 0;
-    xhr.open('POST', '/api/files');
+    xhr.open('POST', entry.target.endpoint);
     xhr.withCredentials = true;
     xhr.responseType = 'text';
     xhr.upload.onloadstart = () => { startedAt = performance.now(); };
@@ -333,7 +347,7 @@ async function run(entry: Entry) {
 
   const form = new FormData();
   form.append('file', file, file.name);
-  form.append('sourceAppId', 'files');
+  form.append('sourceAppId', entry.target.sourceAppId);
   form.append('uploadId', entry.item.id);
   form.append('batchId', entry.item.batchId);
   form.append('expectedWorkspaceId', entry.item.workspaceId);
@@ -348,7 +362,7 @@ async function run(entry: Entry) {
   }
   if (result.network) {
     finishFailed(entry, 'The connection dropped during the upload.', 'network', true);
-    reportClientFailure(entry, 'network');
+    if (entry.target === DRIVE_TARGET) reportClientFailure(entry, 'network');
     return;
   }
   if (result.status === 429 && entry.busyRetries < MAX_BUSY_RETRIES) {
@@ -363,6 +377,9 @@ async function run(entry: Entry) {
     if (result.requestMs) writeMeasuredSpeed(addSpeedSample(readMeasuredSpeed(), file.size, result.requestMs));
     entry.file = null; // Release the bytes; nothing left to retry.
     update(entry, { status: 'done', loaded: entry.item.size, canRetry: false, finishedAt: Date.now() });
+    if (entry.target !== DRIVE_TARGET) {
+      try { window.dispatchEvent(new CustomEvent(entry.target.doneEvent, { detail: result.body })); } catch { /* ignore */ }
+    }
     afterServerOutcome();
     schedulePump(0);
     return;
@@ -371,7 +388,7 @@ async function run(entry: Entry) {
   const message = result.body?.error ?? `Upload failed (${result.status})`;
   finishFailed(entry, message, code, true, result.body?.corrupted || isCorruptUploadCode(code));
   // The server already recorded a notice for failures it saw, except a workspace change.
-  if (code === 'workspace_changed') reportClientFailure(entry, 'workspace_changed');
+  if (code === 'workspace_changed' && entry.target === DRIVE_TARGET) reportClientFailure(entry, 'workspace_changed');
   else afterServerOutcome();
 }
 

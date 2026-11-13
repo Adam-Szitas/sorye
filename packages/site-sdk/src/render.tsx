@@ -1,10 +1,9 @@
-// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
-import React from 'react';
-void React;
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
+import { Fragment, h, renderToString } from './html';
 /** Server rendering to a complete static HTML document. No client JavaScript is emitted. */
 import { createHash } from 'node:crypto';
-import { Fragment } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { t, ui, type RenderContext } from './context';
 import type { SiteLocale } from './locales';
 import { getComponent } from './registry';
@@ -62,15 +61,15 @@ export function renderSections(sections: SiteSection[], ctx: RenderContext, lead
   };
   const tree = (
     <>
-      {valid.slice(0, start).map((s) => <Fragment key={s.id}>{render(s, 2)}</Fragment>)}
+      {valid.slice(0, start).map((s) => <>{render(s, 2)}</>)}
       <main id="main" tabIndex={-1}>
         {leadsWithHeading ? null : <h1 className="s-sr">{leadingTitle}</h1>}
-        {valid.slice(start, end).map((s, i) => <Fragment key={s.id}>{render(s, leadsWithHeading && i === 0 ? 1 : 2)}</Fragment>)}
+        {valid.slice(start, end).map((s, i) => <>{render(s, leadsWithHeading && i === 0 ? 1 : 2)}</>)}
       </main>
-      {valid.slice(end).map((s) => <Fragment key={s.id}>{render(s, 2)}</Fragment>)}
+      {valid.slice(end).map((s) => <>{render(s, 2)}</>)}
     </>
   );
-  return { markup: renderToStaticMarkup(tree), skipped };
+  return { markup: renderToString(tree), skipped };
 }
 
 export function renderDocument(ctx: RenderContext, sections: SiteSection[], meta: DocumentMeta): RenderedDocument {
@@ -78,7 +77,7 @@ export function renderDocument(ctx: RenderContext, sections: SiteSection[], meta
   const styles = [theme, SITE_CSS];
   const { markup, skipped } = renderSections(sections, ctx, meta.title);
   const langs = ctx.settings.locales.length > 1
-    ? renderToStaticMarkup(
+    ? renderToString(
       <nav className="s-langs" aria-label={ui(ctx.locale, 'language')}>
         {meta.alternates.filter((a) => a.locale !== 'x-default').map((a) => (
           <a key={a.locale} href={a.href} lang={a.locale} hrefLang={a.locale} {...(a.locale === ctx.locale ? { 'aria-current': 'true' as const } : {})}>{a.locale.toUpperCase()}</a>

@@ -1,5 +1,6 @@
+import { bestLocale, localeBase } from './routing';
 import {
-  isSiteLocale, markdownToText, negotiateLocale, textFor,
+  isSiteLocale, markdownToText, textFor,
   type CmsPage, type FormState, type MediaInfo, type NavLink, type PublicProduct, type RenderContext,
   type SiteCollection, type SiteCollectionItem, type SiteLocale, type SiteSection, type SiteSettings,
 } from '@sorye/site-sdk';
@@ -43,15 +44,13 @@ export function resolveRoute(source: SiteSource, segments: string[]): Route {
   return collection ? { kind: 'item', locale, collection, itemSlug: third } : { kind: 'notFound', locale };
 }
 
-export function localeBase(slug: string, locale: SiteLocale) {
-  return `/s/${slug}/${locale}`;
-}
+export { bestLocale, localeBase };
 
 export function pagePath(source: SiteSource, locale: SiteLocale, pageId: string): string {
   const base = localeBase(source.slug, locale);
-  if (pageId === source.settings.homePageId) return `${base}/`;
+  if (pageId === source.settings.homePageId) return base;
   const page = source.pages.find((p) => p.id === pageId);
-  return page ? `${base}/${page.slug}` : `${base}/`;
+  return page ? `${base}/${page.slug}` : base;
 }
 
 function nav(source: SiteSource, locale: SiteLocale, currentId: string | null): RenderContext['nav'] {
@@ -138,7 +137,7 @@ export async function renderRoute(input: RenderInput): Promise<RenderResult> {
   };
   const path = (l: SiteLocale) => route.kind === 'item' && current
     ? `${localeBase(source.slug, l)}/${route.collection.slug}/${current.item.slug}`
-    : route.kind === 'page' && !notFound ? pagePath(source, l, route.pageId) : `${localeBase(source.slug, l)}/`;
+    : route.kind === 'page' && !notFound ? pagePath(source, l, route.pageId) : localeBase(source.slug, l);
   const title = notFound
     ? `404 · ${settings.name}`
     : current
@@ -180,6 +179,3 @@ export async function renderSitemap(source: SiteSource, origin: string): Promise
   return `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">${urls.join('')}</urlset>`;
 }
 
-export function bestLocale(settings: SiteSettings, acceptLanguage: string | null): SiteLocale {
-  return negotiateLocale(acceptLanguage, settings.locales, settings.defaultLocale);
-}

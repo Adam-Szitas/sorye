@@ -1,12 +1,12 @@
-// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
-import React from 'react';
-void React;
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
+import { h, type Child } from './html';
 /**
  * Component definitions: one typed definition per section type.
  * `props` is the shared validation schema, `defaults` the starting props, `render`
  * the server renderer. Renderers only ever receive validated props.
  */
-import type { ReactElement } from 'react';
 import { itemHref, resolveHref, t, ui, type RenderContext } from './context';
 import type { LText } from './locales';
 import { externalRel, markdownToText } from './markdown';
@@ -36,7 +36,7 @@ export interface ComponentDefinition<P = Record<string, unknown>> {
   leadsPage: boolean;
   props: PropsSpec;
   defaults: () => P;
-  render: (args: RenderArgs<P>) => ReactElement | null;
+  render: (args: RenderArgs<P>) => Child;
 }
 
 // ---- field spec helpers -------------------------------------------------------
@@ -81,7 +81,7 @@ const header = def({
     return (
       <header className="s-header">
         <div className="s-wrap s-header-row">
-          <a className="s-brand" href={`${ctx.basePath}/`}>
+          <a className="s-brand" href={ctx.basePath}>
             {ctx.settings.logo ? <Img ctx={ctx} media={ctx.settings.logo} sizes="160px" className="s-logo" priority /> : brand}
             {ctx.settings.logo ? <span className="s-sr">{brand}</span> : null}
           </a>
@@ -527,7 +527,7 @@ function FormFieldInput({ ctx, field, sectionId }: { ctx: RenderContext; field: 
     case 'textarea':
       return <div className="s-field">{labelNode}<textarea {...common} rows={5} maxLength={5000} />{helpNode}</div>;
     case 'select':
-      return <div className="s-field">{labelNode}<select {...common} defaultValue=""><option value="" disabled={field.required}>—</option>{field.options.map((o) => <option key={o.value} value={o.value}>{t(ctx, o.label) || o.value}</option>)}</select>{helpNode}</div>;
+      return <div className="s-field">{labelNode}<select {...common}><option value="" selected disabled={field.required}>—</option>{field.options.map((o) => <option key={o.value} value={o.value}>{t(ctx, o.label) || o.value}</option>)}</select>{helpNode}</div>;
     case 'multiselect':
       return (
         <fieldset className="s-field" {...(helpId ? { 'aria-describedby': helpId } : {})}>

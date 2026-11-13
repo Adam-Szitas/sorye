@@ -4,7 +4,7 @@ import { publicRequestOrigin } from '@/lib/auth-origin';
 import { answersFromForm, checkFormToken, issueFormToken, rateLimit, SITE_FORM_LIMITS } from '@/lib/site-cms/form-guard';
 import { openSiteMedia, submitSiteForm } from '@/lib/site-cms/public-client';
 import { withPublishedSource } from '@/lib/site-cms/published';
-import { localeBase, pagePath, renderRoute, renderSitemap, resolveRoute } from '@/lib/site-cms/render';
+import { pagePath, renderRoute, renderSitemap, resolveRoute } from '@/lib/site-cms/render';
 
 /**
  * Public Site renderer for CMS sites: `/s/{slug}/{locale}/[page | collection/item]`,
@@ -53,10 +53,6 @@ export async function GET(req: Request, { params }: Params): Promise<Response> {
           headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' },
         });
       }
-      // `/s/{slug}/{locale}` without a trailing slash → canonical home URL.
-      if (path.length === 1 && isSiteLocale(path[0]) && !url.pathname.endsWith('/')) {
-        return Response.redirect(new URL(`${localeBase(slug, path[0])}/`, origin(req)), 308);
-      }
       const route = resolveRoute(source, path);
       const sent = url.searchParams.get('sent');
       const failed = url.searchParams.get('form_error');
@@ -78,7 +74,8 @@ export async function GET(req: Request, { params }: Params): Promise<Response> {
     });
     return response ?? notFound();
   } catch (error) {
-    if (process.env.SITE_DEBUG) console.error('site render failed', error);
+    // No visitor data in the log: only the error kind and message.
+    console.error('[site] public render failed', error instanceof Error ? `${error.name}: ${error.message}` : 'unknown error');
     return unavailable();
   }
 }
@@ -113,7 +110,7 @@ export async function POST(req: Request, { params }: Params): Promise<Response> 
   const length = Number(req.headers.get('content-length'));
   const type = req.headers.get('content-type') ?? '';
   const back = (locale: string, params: Record<string, string>, pathname?: string) => {
-    const target = new URL(pathname ?? `/s/${slug}/${locale}/`, site);
+    const target = new URL(pathname ?? `/s/${slug}/${locale}`, site);
     for (const [k, v] of Object.entries(params)) target.searchParams.set(k, v);
     target.hash = sectionId!;
     return new Response(null, { status: 303, headers: { Location: target.toString(), 'Cache-Control': 'no-store' } });

@@ -1,7 +1,7 @@
-// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
-import React from 'react';
-void React;
-import type { ReactNode } from 'react';
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
+import { h, type Child } from '../html';
 import { resolveHref, t, type RenderContext } from '../context';
 import type { LText } from '../locales';
 import { externalRel, Markdown } from '../markdown';
@@ -59,6 +59,6 @@ export function Img({ ctx, media, sizes, priority, className }: { ctx: RenderCon
   );
 }
 
-export function Section({ id, className, children, labelledBy }: { id: string; className: string; children: ReactNode; labelledBy?: string }) {
+export function Section({ id, className, children, labelledBy }: { id: string; className: string; children: Child; labelledBy?: string }) {
   return <section id={id} className={`s-section ${className}`} {...(labelledBy ? { 'aria-labelledby': labelledBy } : {})}><div className="s-wrap">{children}</div></section>;
 }

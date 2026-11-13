@@ -207,7 +207,7 @@ describe('Site CMS against real Rodrigo', { skip: !harnessConfigured, concurrenc
   test('public renderer: locale URLs, hreflang, CSP, sitemap, detail pages and form POST', async () => {
     const route = await import('../app/s/[slug]/[...path]/route');
     const call = async (path: string[], init: RequestInit = {}) => route[init.method === 'POST' ? 'POST' : 'GET'](
-      new Request(`http://localhost:3301/s/${slug}/${path.join('/')}${path.length === 1 && path[0] !== 'sitemap.xml' ? '/' : ''}`, { headers: { host: 'localhost:3301', ...(init.headers as Record<string, string> ?? {}) }, ...init }),
+      new Request(`http://localhost:3301/s/${slug}/${path.join('/')}`, { headers: { host: 'localhost:3301', ...(init.headers as Record<string, string> ?? {}) }, ...init }),
       { params: Promise.resolve({ slug, path }) },
     );
     const de = await call(['de']);
@@ -215,8 +215,8 @@ describe('Site CMS against real Rodrigo', { skip: !harnessConfigured, concurrenc
     const html = await de.text();
     assert.match(html, /<html lang="de">/);
     assert.match(html, /Start|Bänke/);
-    assert.match(html, /hreflang="en" href="http:\/\/localhost:3301\/s\/[^"]+\/en\/"/);
-    assert.match(html, /<link rel="canonical" href="http:\/\/localhost:3301\/s\/[^"]+\/de\/"/);
+    assert.match(html, /hreflang="en" href="http:\/\/localhost:3301\/s\/[^"]+\/en"/);
+    assert.match(html, /<link rel="canonical" href="http:\/\/localhost:3301\/s\/[^"]+\/de"/);
     assert.ok(!/<script/i.test(html));
     const csp = de.headers.get('content-security-policy')!;
     assert.match(csp, /script-src 'none'/);
@@ -256,7 +256,7 @@ describe('Site CMS against real Rodrigo', { skip: !harnessConfigured, concurrenc
     await rodrigo.stop();
     await assert.rejects(site.readSiteManifest(`down-${run}`));
     const route = await import('../app/s/[slug]/[...path]/route');
-    const response = await route.GET(new Request(`http://localhost:3301/s/down-${run}/en/`, { headers: { host: 'localhost:3301' } }), { params: Promise.resolve({ slug: `down-${run}`, path: ['en'] }) });
+    const response = await route.GET(new Request(`http://localhost:3301/s/down-${run}/en`, { headers: { host: 'localhost:3301' } }), { params: Promise.resolve({ slug: `down-${run}`, path: ['en'] }) });
     assert.equal(response.status, 503);
     rodrigo = await startRodrigo();
   });

@@ -97,7 +97,10 @@ test('contact form has a honeypot, signed time token and no JavaScript', () => {
   assert.match(html, /<form [^>]*action="\/s\/acme\/_form\/contact"/);
   assert.match(html, /<form [^>]*method="post"/);
   assert.match(html, /name="_t" value="tok"/);
-  assert.match(html, /<input id="contact-website"[^>]*tabindex="-1"[^>]*name="website"/);
+  const honeypot = /<input id="contact-website"[^>]*>/.exec(html)?.[0] ?? "";
+  assert.match(honeypot, / tabindex="-1"/);
+  assert.match(honeypot, / name="website"/);
+  assert.match(honeypot, / autocomplete="off"/);
   assert.match(html, /type="email"[^>]*autoComplete="email"|autocomplete="email"/i);
   const sent = renderDocument(ctx({ form: { action: () => '/x', token: 't', state: { sectionId: 'contact', kind: 'sent' } } }), all.filter((s) => s.id === 'contact'), meta).html;
   assert.match(sent, /Thank you/);

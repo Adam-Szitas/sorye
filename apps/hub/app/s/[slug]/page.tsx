@@ -6,7 +6,7 @@ import { SitePublicView } from '@/components/site-public-view';
 import { projectPublishedSite } from '@/lib/site';
 import { readPublishedSite } from '@/lib/rodrigo/service-client';
 import { loadManifest } from '@/lib/site-cms/published';
-import { bestLocale, localeBase } from '@/lib/site-cms/render';
+import { bestLocale, localeBase } from '@/lib/site-cms/routing';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +47,7 @@ export default async function PublicSitePage({ params }: PageProps) {
   const loaded = await loadPublicSite(slug);
   if (loaded.kind === 'cms') {
     const locale = bestLocale(loaded.manifest.settings, (await headers()).get('accept-language'));
-    redirect(`${localeBase(slug, locale)}/`);
+    redirect(localeBase(slug, locale));
   }
   if (loaded.kind === 'unavailable') {
     return (

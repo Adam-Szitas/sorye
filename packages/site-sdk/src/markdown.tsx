@@ -1,6 +1,7 @@
-// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
-import React from 'react';
-void React;
+/** @jsxRuntime classic */
+/** @jsx h */
+/** @jsxFrag Fragment */
+import { Fragment, h, type Child } from './html';
 /**
  * Safe Markdown subset. No HTML: everything that is not one of the constructs
  * below is rendered as literal (escaped) text.
@@ -10,15 +11,14 @@ void React;
  * Inline: `**bold**`, `*italic*` / `_italic_`, `[label](link)` where link
  * passes `isSafeLink`; unsafe links render as their label only.
  */
-import { Fragment, type ReactNode } from 'react';
 import { isSafeLink } from './schema';
 
 export type HrefResolver = (link: string) => string;
 
 const INLINE = /\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|_([^_\n]+)_|\[([^\]\n]{1,200})\]\(([^)\s]{1,500})\)/g;
 
-function inline(text: string, href: HrefResolver, keyBase: string): ReactNode[] {
-  const out: ReactNode[] = [];
+function inline(text: string, href: HrefResolver, keyBase: string): Child[] {
+  const out: Child[] = [];
   let last = 0;
   let index = 0;
   for (const match of text.matchAll(INLINE)) {
@@ -31,7 +31,7 @@ function inline(text: string, href: HrefResolver, keyBase: string): ReactNode[] 
     else {
       const label = match[4] ?? '';
       const link = match[5] ?? '';
-      out.push(isSafeLink(link) ? <a key={key} href={href(link)} {...externalRel(link)}>{label}</a> : <Fragment key={key}>{label}</Fragment>);
+      out.push(isSafeLink(link) ? <a key={key} href={href(link)} {...externalRel(link)}>{label}</a> : <>{label}</>);
     }
     last = start + match[0].length;
   }
@@ -43,8 +43,8 @@ export function externalRel(link: string): { rel?: string } {
   return link.startsWith('https://') ? { rel: 'noopener noreferrer' } : {};
 }
 
-function withBreaks(lines: string[], href: HrefResolver, keyBase: string): ReactNode[] {
-  const out: ReactNode[] = [];
+function withBreaks(lines: string[], href: HrefResolver, keyBase: string): Child[] {
+  const out: Child[] = [];
   lines.forEach((line, i) => {
     if (i > 0) out.push(<br key={`${keyBase}-br${i}`} />);
     out.push(...inline(line, href, `${keyBase}-${i}`));
@@ -54,7 +54,7 @@ function withBreaks(lines: string[], href: HrefResolver, keyBase: string): React
 
 export function Markdown({ source, href }: { source: string; href: HrefResolver }) {
   const blocks = source.replace(/\r\n?/g, '\n').split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
-  const out: ReactNode[] = [];
+  const out: Child[] = [];
   blocks.forEach((block, bi) => {
     const lines = block.split('\n');
     const key = `b${bi}`;
