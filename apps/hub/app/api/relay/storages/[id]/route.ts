@@ -11,7 +11,7 @@ export async function DELETE(_req: Request, context: { params: Promise<{ id: str
   try {
     assertRateLimit(mailRateKey(session.workspace.id, session.user.id, 'storage-remove'), 5, 10 * 60_000, 'Too many storage changes. Try again in a few minutes.');
     const { id } = await context.params;
-    await deleteCloudStorage(session.workspace.id, id);
+    await deleteCloudStorage({ userId: session.user.id, workspaceId: session.workspace.id }, id);
     return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store, private' } });
   } catch (error) {
     const limited = error instanceof Error && error.message.startsWith('Too many');
@@ -29,7 +29,7 @@ export async function PATCH(req: Request, context: { params: Promise<{ id: strin
     const body = await req.json().catch(() => ({}));
     assertJsonPayloadSize(body, 8_000, 'Storage credentials');
     assertRateLimit(mailRateKey(session.workspace.id, session.user.id, 'storage-rotate'), 5, 10 * 60_000, 'Too many credential changes. Try again in a few minutes.');
-    await rotateCloudStorageCredentials(session.workspace.id, id, body.accessKeyId, body.secretAccessKey);
+    await rotateCloudStorageCredentials({ userId: session.user.id, workspaceId: session.workspace.id }, id, body.accessKeyId, body.secretAccessKey);
     return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store, private' } });
   } catch (error) {
     const safe = error instanceof CloudStorageError ? error : new CloudStorageError(error instanceof Error && error.message.startsWith('Too many') ? error.message : 'Could not rotate credentials.', error instanceof Error && error.message.startsWith('Too many') ? 429 : 400);

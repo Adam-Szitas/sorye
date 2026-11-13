@@ -15,6 +15,8 @@ flowchart LR
     Download[Download] -->|bytes + SHA-256 check| Files
 ```
 
+> **Owner since alignment slice 2: Rodrigo.** Settings, sealed credentials (AES-256-GCM under Rodrigo's `RODRIGO_SECRET_KEY_FILE`), probes, the upload ledger and the bytes' routing live in Rodrigo; Hub keeps the Relay screens and input validation at the edge. `STORAGE_SECRET_KEY` is no longer used for own storage. See [HUB-RODRIGO-ALIGNMENT.md](HUB-RODRIGO-ALIGNMENT.md#slice-2-storage).
+
 ## What the owner sees
 
 Relay has a **Your storage** tab with four parts:

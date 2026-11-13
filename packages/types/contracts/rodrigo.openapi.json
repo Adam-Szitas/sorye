@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rodrigo service contract",
-    "version": "2.3.0",
-    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status. Alignment slice 1 (identity): Rodrigo owns users, workspaces, membership, plan and enabled apps in PostgreSQL (migration 009_identity.sql). Hub verifies the browser login and signs its subject on the reserved rodrigo-identity grant; Rodrigo resolves the session and enforces plan limits. Identity writes append change rows (workspaceId rodrigo-identity, app identity, resourceType session, resourceId = user) so Hub can invalidate cached sessions. With the provider option enforce_membership, every workspace-scoped request is re-verified: the signed subject must be a member of the signed workspace (403 not_member), using a 30-second per-replica cache; reserved grants and service:* actors are exempt."
+    "version": "2.4.0",
+    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status. Alignment slice 1 (identity): Rodrigo owns users, workspaces, membership, plan and enabled apps in PostgreSQL (migration 009_identity.sql). Hub verifies the browser login and signs its subject on the reserved rodrigo-identity grant; Rodrigo resolves the session and enforces plan limits. Identity writes append change rows (workspaceId rodrigo-identity, app identity, resourceType session, resourceId = user) so Hub can invalidate cached sessions. With the provider option enforce_membership, every workspace-scoped request is re-verified: the signed subject must be a member of the signed workspace (403 not_member), using a 30-second per-replica cache; reserved grants and service:* actors are exempt. Alignment slice 2 (storage): Rodrigo owns Drive metadata, quota and the upload ledger (rodrigo_files, kept after deletion), each workspace's storage target (Sorye storage, the customer's S3-compatible bucket or the customer's PostgreSQL table) with AES-256-GCM sealed credentials (RODRIGO_SECRET_KEY_FILE, bound to workspace and purpose), and Relay cloud folders (AWS S3 / Cloudflare R2). Customer hosts must resolve to public addresses; object stores check this on every connection. Upload sessions may give size and SHA-256 at completion (streamed multipart bodies); every upload is still verified per part and by read-back before it becomes visible. Hub holds no stored third-party secret and no encryption key. Migration 011_storage.sql."
   },
   "paths": {
     "/v2/resources/{app}/{resourceType}/{resourceId}": {
@@ -6648,6 +6648,3566 @@
           }
         }
       }
+    },
+    "/v2/files": {
+      "get": {
+        "operationId": "listFiles",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Ready Drive files, newest first. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files/uploads": {
+      "post": {
+        "operationId": "openFileUpload",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_upload"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_eligible"
+          ],
+          "409": [
+            "too_many_files",
+            "object_id_reused"
+          ],
+          "412": [
+            "object_exists"
+          ],
+          "413": [
+            "too_large",
+            "quota_exceeded"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "target_not_ready",
+            "storage_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Reserve and open (201) or resume (200) a Drive upload; then PUT parts with /v2/objects/uploads/{uploadId}/parts/{n} (app:files). The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectUploadSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: too_many_files, object_id_reused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Error envelope; codes: object_exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: too_large, quota_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, target_not_ready, storage_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DriveFileOpen"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files/uploads/{fileId}/complete": {
+      "post": {
+        "operationId": "completeFileUpload",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "upload_not_found"
+          ],
+          "409": [
+            "parts_missing",
+            "upload_closed"
+          ],
+          "422": [
+            "checksum_mismatch",
+            "integrity_failed"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Completes the object (read-back SHA-256 check) and makes the file visible in one transaction (201). The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: upload_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: parts_missing, upload_closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error envelope; codes: checksum_mismatch, integrity_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjectUploadComplete"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files/uploads/{fileId}": {
+      "delete": {
+        "operationId": "abortFileUpload",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "upload_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Aborts an unfinished Drive upload (204). The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: upload_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files/{fileId}": {
+      "get": {
+        "operationId": "getFile",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "One ready file. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "renameFile",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_name"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Rename. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "displayName"
+                ],
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "maxLength": 255
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFile",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Customer storage is cleared first (503 when unreachable, record kept); then the tombstone. The ledger row stays. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files/{fileId}/content": {
+      "get": {
+        "operationId": "fileContent",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "416": [
+            "invalid_range"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Streamed bytes with a single Range, ETag = SHA-256. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Error envelope; codes: invalid_range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files-ledger/{limit}": {
+      "get": {
+        "operationId": "fileLedger",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_limit"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Upload ledger, newest first (1-200), any status. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files-usage": {
+      "get": {
+        "operationId": "fileUsage",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "{target, limitBytes, usedBytes, fileCount, maxFiles, maxFileBytes}. The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/files-rejections": {
+      "post": {
+        "operationId": "rejectFile",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "files:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_upload"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "files_provider_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Ledger row for an upload Hub refused at the edge (204). The assertion must carry app:files (Drive sections such as Tasks or OCR are Drive files with sourceAppId).",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, files_provider_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fileId",
+                  "displayName",
+                  "sourceAppId",
+                  "code"
+                ],
+                "properties": {
+                  "fileId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "sourceAppId": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[a-z_]{1,40}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/settings": {
+      "get": {
+        "operationId": "ownStorageSettings",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Safe snapshot of the workspace storage target.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/drive": {
+      "put": {
+        "operationId": "connectOwnDrive",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_input"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_owner",
+            "not_eligible"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "502": [
+            "host_not_allowed",
+            "host_unresolved",
+            "unreachable",
+            "not_found",
+            "integrity_failed"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Workspace owner on pro/enterprise. Validates (400 invalid_input with field), resolves the host to public addresses, probes write/read/delete, seals the keys and saves.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_owner, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error envelope; codes: host_not_allowed, host_unresolved, unreachable, not_found, integrity_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "config",
+                  "secret"
+                ],
+                "properties": {
+                  "config": {
+                    "type": "object"
+                  },
+                  "secret": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/database": {
+      "put": {
+        "operationId": "connectOwnDatabase",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_input"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_owner",
+            "not_eligible"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "502": [
+            "host_not_allowed",
+            "host_unresolved",
+            "unreachable",
+            "tls_failed",
+            "auth_failed",
+            "not_found",
+            "permission_denied",
+            "timeout",
+            "storage_unavailable"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Workspace owner on pro/enterprise. Validates, resolves to public addresses, creates <schema>.files when allowed, checks privileges, round-trips a probe row, seals and saves.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_owner, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error envelope; codes: host_not_allowed, host_unresolved, unreachable, tls_failed, auth_failed, not_found, permission_denied, timeout, storage_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "config",
+                  "secret"
+                ],
+                "properties": {
+                  "config": {
+                    "type": "object"
+                  },
+                  "secret": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/target": {
+      "put": {
+        "operationId": "setUploadTarget",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_owner",
+            "not_eligible"
+          ],
+          "409": [
+            "target_not_ready"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Where new uploads go; own targets must be connected (409 target_not_ready).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_owner, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: target_not_ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target"
+                ],
+                "properties": {
+                  "target": {
+                    "enum": [
+                      "sorye",
+                      "drive",
+                      "database"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/{kind}/limit": {
+      "put": {
+        "operationId": "setOwnStorageLimit",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_owner",
+            "not_eligible"
+          ],
+          "409": [
+            "target_not_ready"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Byte limit (1 GiB - 100 TiB).",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "drive",
+                "database"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_owner, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: target_not_ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "limitBytes"
+                ],
+                "properties": {
+                  "limitBytes": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/{kind}/check": {
+      "post": {
+        "operationId": "checkOwnStorage",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_owner",
+            "not_eligible"
+          ],
+          "409": [
+            "target_not_ready"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Probes the saved connection and records status and last error code.",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "drive",
+                "database"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_owner, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: target_not_ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/storage/{kind}/connection": {
+      "delete": {
+        "operationId": "disconnectOwnStorage",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "storage:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "not_owner",
+            "not_eligible"
+          ],
+          "409": [
+            "in_use"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Refused while it is the target or holds files (409 in_use).",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "drive",
+                "database"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnStorageSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, not_owner, not_eligible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: in_use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages": {
+      "get": {
+        "operationId": "listCloudStorages",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Relay cloud folders (app:relay or app:files).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "connectCloudStorage",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_input",
+            "invalid_provider",
+            "bucket_unreachable",
+            "too_many_storages"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "409": [
+            "name_taken"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "encryption_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "At most ten per workspace, unique names; the bucket must be reachable with the keys (400 bucket_unreachable).",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_input, invalid_provider, bucket_unreachable, too_many_storages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: name_taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, encryption_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages/{storage}": {
+      "delete": {
+        "operationId": "deleteCloudStorage",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Forgets the connection (204); the bucket is untouched.",
+        "parameters": [
+          {
+            "name": "storage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages/{storage}/credentials": {
+      "put": {
+        "operationId": "rotateCloudStorage",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_input",
+            "bucket_unreachable"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Verifies the new keys against the bucket, then seals them (204).",
+        "parameters": [
+          {
+            "name": "storage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_input, bucket_unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages/{storage}/objects/{prefix}": {
+      "get": {
+        "operationId": "listCloudObjects",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_path"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "502": [
+            "provider_failed"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded",
+            "provider_timeout"
+          ]
+        },
+        "description": "Folders then files under a hex-encoded prefix (- for the root), at most 5,000.",
+        "parameters": [
+          {
+            "name": "storage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "prefix",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error envelope; codes: provider_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded, provider_timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages/{storage}/object/{key}": {
+      "get": {
+        "operationId": "getCloudObject",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_path"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "413": [
+            "too_large"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "502": [
+            "provider_failed"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Streamed download (hex-encoded key), at most 64 MiB.",
+        "parameters": [
+          {
+            "name": "storage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error envelope; codes: provider_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages/{storage}/imports": {
+      "post": {
+        "operationId": "importCloudObject",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_input",
+            "invalid_path"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "404": [
+            "not_found",
+            "upload_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "502": [
+            "provider_failed"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Copies a ready relay object (uploaded and verified through /v2/objects) to key in the bucket, then deletes the staging object (201).",
+        "parameters": [
+          {
+            "name": "storage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_input, invalid_path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found, upload_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Error envelope; codes: provider_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "objectId",
+                  "key"
+                ],
+                "properties": {
+                  "objectId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "key": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cloud-storages/{storage}/reveal": {
+      "post": {
+        "operationId": "revealCloudCredentials",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "cloud:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "admin_required"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Platform administrators only (Rodrigo identity), audited as cloudstorage.reveal (403 admin_required).",
+        "parameters": [
+          {
+            "name": "storage",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, admin_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11253,6 +14813,222 @@
               "stripe",
               "billing"
             ]
+          }
+        }
+      },
+      "DriveFile": {
+        "type": "object",
+        "required": [
+          "id",
+          "displayName",
+          "mime",
+          "sourceAppId",
+          "storedIn",
+          "status",
+          "size",
+          "createdByUserId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "mime": {
+            "type": "string"
+          },
+          "sourceAppId": {
+            "type": "string"
+          },
+          "storedIn": {
+            "enum": [
+              "sorye",
+              "drive",
+              "database"
+            ]
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "ready",
+              "failed",
+              "deleted"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DriveFileOpen": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fileId",
+          "displayName",
+          "mime",
+          "sourceAppId"
+        ],
+        "description": "Reserves the file (count at most 200 per workspace; own-storage limit counts ready bytes plus reservations) and opens a byte session in the workspace target. size or maxBytes (at most 64 MiB) is required.",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "mime": {
+            "type": "string",
+            "maxLength": 127
+          },
+          "sourceAppId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 67108864
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "ObjectUploadComplete": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Final size and/or SHA-256 when not given at creation; must agree with any declared value (422 checksum_mismatch).",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      },
+      "OwnStorageSnapshot": {
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "target",
+          "drive",
+          "database",
+          "encryptionReady",
+          "devInsecure"
+        ],
+        "description": "Safe projection: never contains credentials. drive/database carry the non-secret configuration, status, last error code and space {usedBytes, limitBytes, freeBytes, fileCount}.",
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "target": {
+            "enum": [
+              "sorye",
+              "drive",
+              "database"
+            ]
+          },
+          "drive": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "database": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "encryptionReady": {
+            "type": "boolean"
+          },
+          "devInsecure": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CloudStorage": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "bucket",
+          "region",
+          "accessKeyHint",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "provider": {
+            "enum": [
+              "aws-s3",
+              "cloudflare-r2"
+            ]
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "accessKeyHint": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

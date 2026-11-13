@@ -1,8 +1,9 @@
-import { readBoundedFormData, withUploadSlot, UploadLimitError } from '@/lib/bounded-upload';
+import { boundedBodyStream, withUploadSlot, UploadLimitError } from '@/lib/bounded-upload';
+import { MultipartError, parseMultipartUpload } from '@/lib/multipart-stream';
 import { ensureHubUser } from '@/lib/ensure-user';
 import { publishWorkspaceEvent } from '@/lib/events';
 import {
-  createWorkspaceFile,
+  createWorkspaceFileFromStream,
   FileAccessError,
   getFileQuota,
   listWorkspaceFiles,
@@ -58,16 +59,17 @@ export async function GET() {
   }
 
   try {
-    const files = await listWorkspaceFiles(session.workspace.id);
+    const actor = { userId: session.user.id, workspaceId: session.workspace.id };
+    const files = await listWorkspaceFiles(actor);
     const [load, quota] = await Promise.all([
       readPartitionedLoad(session, async (scope) => {
-        const rows = await listWorkspaceFiles(scope.id);
+        const rows = await listWorkspaceFiles({ userId: session.user.id, workspaceId: scope.id });
         return rows.map((file) => ({ workspaceId: scope.id, value: file }));
       }, {
         itemAppId: (file) => (file.sourceAppId === 'studio' ? 'studio' : 'files'),
         personalApps: ['files', 'studio'],
       }),
-      getFileQuota(session.workspace.id, quotaLimits(readUploadThrottleConfig())),
+      getFileQuota(actor, quotaLimits(readUploadThrottleConfig())),
     ]);
     return NextResponse.json({
       files,
@@ -105,19 +107,25 @@ export async function POST(req: Request) {
 async function uploadFile(req: Request, session: Session, config: UploadThrottleConfig) {
   const scope = { userId: session.user.id, workspaceId: session.workspace.id };
   const declared = Number(req.headers.get('content-length')) || FILE_MAX_BYTES;
-  let form: FormData;
+  // Streamed: the multipart body is parsed as it arrives and the file part flows through
+  // to Rodrigo in 8 MiB parts. Hub never holds the whole file.
+  let upload;
   try {
-    form = await readBoundedFormData(req, FILE_MAX_BYTES + 1_000_000, {
+    const body = boundedBodyStream(req, FILE_MAX_BYTES + 1_000_000, {
       buckets: uploadBuckets(scope, config),
       timeoutMs: uploadTimeoutMs(declared, effectiveBytesPerSecond(config)),
     });
+    upload = await parseMultipartUpload(body, req.headers.get('content-type'));
   } catch (err) {
     if (err instanceof UploadLimitError) throw err;
+    if (err instanceof MultipartError && err.reason === 'no_file') return NextResponse.json({ error: 'file is required' }, { status: 400 });
     return NextResponse.json({ error: 'Expected multipart form data' }, { status: 400 });
   }
+  const form = { get: (name: string) => upload.fields.get(name) ?? null };
 
   const sourceAppId = typeof form.get('sourceAppId') === 'string' ? String(form.get('sourceAppId')) : 'files';
   if (sourceAppId === 'tasks' && (!session.workspace.memberIds.includes(session.user.id) || !session.workspace.selectedAppIds.includes('tasks'))) {
+    await upload.cancel();
     return NextResponse.json({ error: 'Tasks is not enabled for this workspace' }, { status: 403 });
   }
 
@@ -127,19 +135,20 @@ async function uploadFile(req: Request, session: Session, config: UploadThrottle
   const expectedWorkspaceId = form.get('expectedWorkspaceId');
   const expectedSha256 = parseClientSha256(form.get('sha256'));
   if (expectedSha256 === null) {
+    await upload.cancel();
     return NextResponse.json({ error: 'sha256 must be 64 hexadecimal characters' }, { status: 400 });
   }
   // A guard only: the workspace always comes from the session. It stops a queued
   // file from landing in a workspace the member switched to after queueing it.
   if (typeof expectedWorkspaceId === 'string' && expectedWorkspaceId && expectedWorkspaceId !== session.workspace.id) {
+    await upload.cancel();
     return uploadError(409, 'The active workspace changed after this file was queued. Switch back and retry.', 'workspace_changed');
   }
-
-  const upload = form.get('file');
-  if (!(upload instanceof File)) {
+  if (upload.fileField !== 'file') {
+    await upload.cancel();
     return NextResponse.json({ error: 'file is required' }, { status: 400 });
   }
-  const displayName = sanitizeDisplayName(upload.name);
+  const displayName = sanitizeDisplayName(upload.fileName);
 
   const fail = async (response: NextResponse, reason: string, code?: FileUploadErrorCode) => {
     if (uploadId) {
@@ -151,30 +160,24 @@ async function uploadFile(req: Request, session: Session, config: UploadThrottle
     return response;
   };
 
-  if (sourceAppId === 'tasks' && upload.size > TASK_PHOTO_MAX_BYTES) {
-    return NextResponse.json(
-      { error: `Tasks photos must be under ${Math.floor(TASK_PHOTO_MAX_BYTES / (1024 * 1024))} MB` },
-      { status: 400 },
-    );
-  }
-
-  const tooLarge = `File is too large (max ${Math.floor(FILE_MAX_BYTES / (1024 * 1024))} MB)`;
-  if (upload.size > FILE_MAX_BYTES) return fail(uploadError(400, tooLarge, 'too_large'), tooLarge, 'too_large');
-
-  const bytes = Buffer.from(await upload.arrayBuffer());
-  if (bytes.length > FILE_MAX_BYTES) return fail(uploadError(400, tooLarge, 'too_large'), tooLarge, 'too_large');
-
+  // Upper bound for the session; the exact size is known once the stream ends.
+  const maxBytes = sourceAppId === 'tasks' ? TASK_PHOTO_MAX_BYTES : FILE_MAX_BYTES;
   let file;
   try {
-    file = await createWorkspaceFile({
+    file = await createWorkspaceFileFromStream({
       workspaceId: session.workspace.id,
-      displayName: upload.name,
+      displayName: upload.fileName,
       sourceAppId,
-      bytes,
+      source: upload.file,
+      maxBytes: Math.min(maxBytes, declared),
       expectedSha256,
-      uploader: { userId: session.user.id, tier: session.workspace.subscriptionId },
+      // The browser digest may follow the file in the form.
+      finalSha256: async () => parseClientSha256((await upload.fieldsAfterFile()).get('sha256')) ?? undefined,
+      uploader: { userId: session.user.id },
     });
   } catch (err) {
+    await upload.cancel();
+    if (err instanceof UploadLimitError) throw err;
     const code = err instanceof FileAccessError ? err.code ?? (err.status >= 500 ? 'storage_unavailable' : 'rejected') : 'storage_unavailable';
     const reason = err instanceof FileAccessError ? err.message : 'Could not process files';
     return fail(errorResponse(err), reason, code);

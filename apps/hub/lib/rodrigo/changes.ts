@@ -31,8 +31,9 @@ function state(): State {
 }
 
 export function onRodrigoChange(listener: Listener): () => void {
+  // The stream itself is started once at Hub startup (instrumentation.ts) or by tests;
+  // until it is healthy, caches are bypassed.
   state().listeners.add(listener);
-  ensureRodrigoChangeStream();
   return () => state().listeners.delete(listener);
 }
 /** Called when continuity is lost (cursor expired, reconnect gap): drop every cache. */

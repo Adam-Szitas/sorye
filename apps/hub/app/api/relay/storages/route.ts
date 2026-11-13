@@ -11,7 +11,7 @@ export async function GET() {
   const session = await ensureHubUser();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: noStore });
   return NextResponse.json({
-    storages: await listCloudStorages(session.workspace.id),
+    storages: await listCloudStorages({ userId: session.user.id, workspaceId: session.workspace.id }),
     canManage: session.user.isAdmin === true,
     available: Boolean(process.env.STORAGE_SECRET_KEY && process.env.STORAGE_SECRET_KEY.trim().length >= 32),
   }, { headers: noStore });
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     assertRateLimit(mailRateKey(session.workspace.id, session.user.id, 'storage-connect'), 5, 10 * 60_000, 'Too many storage connection attempts. Try again in a few minutes.');
     const body = await req.json();
     assertJsonPayloadSize(body, 8_000, 'Storage connection');
-    const storage = await connectCloudStorage({ ...body, workspaceId: session.workspace.id });
+    const storage = await connectCloudStorage({ ...body, actor: { userId: session.user.id, workspaceId: session.workspace.id } });
     return NextResponse.json({ storage }, { status: 201, headers: noStore });
   } catch (error) {
     const limited = error instanceof Error && error.message.startsWith('Too many');

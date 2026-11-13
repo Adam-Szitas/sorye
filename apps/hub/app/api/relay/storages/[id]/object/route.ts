@@ -16,11 +16,12 @@ export async function GET(req: Request, context: { params: Promise<{ id: string 
     assertRateLimit(mailRateKey(session.workspace.id, session.user.id, 'storage-download'), 20, 10 * 60_000, 'Too many cloud downloads. Try again in a few minutes.');
     const { id } = await context.params;
     const key = new URL(req.url).searchParams.get('key') ?? '';
-    const object = await getCloudStorageObject(session.workspace.id, id, key);
+    const object = await getCloudStorageObject({ userId: session.user.id, workspaceId: session.workspace.id }, id, key);
     const name = key.split('/').pop() ?? 'download';
     const safeName = name.replace(/[\r\n"\\]/g, '_');
-    return new NextResponse(object.bytes, { headers: {
+    return new NextResponse(object.body, { headers: {
       ...noStore,
+      ...(object.length ? { 'Content-Length': object.length } : {}),
       'Content-Type': /^[\w.+-]+\/[\w.+-]+$/.test(object.contentType) ? object.contentType : 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(name)}`,
     } });

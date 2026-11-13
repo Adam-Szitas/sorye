@@ -35,7 +35,7 @@ Rodrigo reports each slice in `capabilities.alignment.slices` (`not_implemented`
 |---|---|---|---|
 | 0. Contract and plumbing | Done | OpenAPI 2.2.0 | Streamed objects, service tokens, service change stream, Hub read cache |
 | 1. Workspace identity | Done | OpenAPI 2.3.0 | Users, workspaces, membership, plan and enabled apps in Rodrigo; membership re-verified per request |
-| 2. Storage | Pending | | |
+| 2. Storage | Done | OpenAPI 2.4.0 | Drive records, quota and ledger; own storage with sealed credentials; Relay cloud folders; streamed uploads |
 | 3. Events, handoffs, Relay delivery, notifications | Pending | | |
 | 4. Jobs | Pending | | |
 | 5. Mail | Pending | | |
@@ -89,6 +89,26 @@ Rodrigo owns users, workspaces, membership, plan and enabled apps (`009_identity
 | 12 concurrent first sign-ins | one user, one workspace |
 
 Tests: `apps/hub/test/rodrigo-identity.test.ts`, Rodrigo `identity` unit tests.
+
+## Slice 2: storage
+
+Rodrigo owns Drive metadata, quota and the upload ledger (`rodrigo_files`, kept after deletion), each workspace's storage target and its credentials, and Relay cloud folders (`011_storage.sql`). Credentials are sealed with AES-256-GCM under `RODRIGO_SECRET_KEY_FILE`, bound to workspace and purpose; Hub has no stored secret and no key for these.
+
+- **Uploads.** `POST /api/files` parses the multipart body as it arrives (`lib/multipart-stream.ts`), sniffs the first 8 KiB (blocked types, content kind: edge policy in `lib/files-policy.ts`), then streams the file to Rodrigo in 8 MiB parts (`lib/rodrigo/drive-client.ts`). The browser's SHA-256 may arrive before or after the file; Hub hashes what it received (`checksum_mismatch` on disagreement) and Rodrigo reads the stored object back (`integrity_failed`). Upload slots, per-member concurrency and the optional throughput limits stay in Hub. Task images and OCR PDFs are Drive files with a `sourceAppId`.
+- **Quota.** Rodrigo reserves each upload under a per-workspace lock: at most 200 files, 64 MiB each, and the owner's limit for own storage (ready bytes plus reservations).
+- **Own storage.** The owner's bucket (S3-compatible, AWS S3, Cloudflare R2) or PostgreSQL table. Rodrigo validates, resolves hosts to public addresses only (object stores re-check on every connection), probes write/read/delete, and refuses to move a connection that still holds files (`in_use`). A customer database stores one row per file; Rodrigo stages parts in its own PostgreSQL and assembles at completion (64 MiB maximum). When the plan no longer includes own storage, uploads are refused (`not_eligible`), never sent elsewhere.
+- **Relay cloud folders.** Connections and sealed keys in Rodrigo; listing and downloads stream from the bucket; uploads are streamed into Rodrigo as verified `relay` objects and copied into the bucket. The existing credential reveal for platform administrators is now authorized by Rodrigo's identity record and audited (`cloudstorage.reveal`).
+- **Not moved.** The workspace "app-data database" setting (`lib/store/workspace-storage*`) feeds only legacy Hub stores that later slices remove; whether to retire it or offer customer-owned record storage in Rodrigo is a product decision recorded as open.
+- **No migration.** Existing Hub Drive files (`files-meta.json`, `.data/files`, Hub S3 bucket) and Relay connections are not read any more (decision B); they stay on disk until slice 8.
+
+| Measure (slice 2, same local setup) | Result |
+|---|---|
+| 64 MiB Drive upload through the streamed multipart path | 2.85 s (22.5 MiB/s); sampled Buffer growth during the upload about 0 MiB |
+| Storage stopped | Drive upload 503; nothing visible; recovers after restart |
+| Damaged bytes | browser digest mismatch 422 `checksum_mismatch`; nothing stored |
+| Customer bucket and database targets | upload, verified read and delete pass against the local S3 and PostgreSQL |
+
+Tests: `apps/hub/test/rodrigo-storage.test.ts`; Rodrigo `vault`, `net_guard`, `storage`, `objects`, `cloud` unit tests and `tests/alignment.rs`.
 
 ### Measurements (slice 0, local: debug Rodrigo build, PostgreSQL 16 and RustFS in Docker on the same Windows host)
 

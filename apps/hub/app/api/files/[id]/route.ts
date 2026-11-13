@@ -33,19 +33,23 @@ export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
   const wantInline = new URL(req.url).searchParams.get('inline') === '1';
   try {
-    const { file, body } = await streamWorkspaceFile(
-      session.workspace.id,
+    const { file, body, status, contentRange, length } = await streamWorkspaceFile(
+      { userId: session.user.id, workspaceId: session.workspace.id },
       id,
+      req.headers.get('range') ?? undefined,
     );
     const inline = wantInline && isInlinePreviewMime(file.mime);
     return new NextResponse(body, {
+      status,
       headers: {
+        'Accept-Ranges': 'bytes',
+        ...(contentRange ? { 'Content-Range': contentRange } : {}),
         'Content-Type': file.mime,
         'Content-Disposition': contentDisposition(
           file.displayName,
           inline ? 'inline' : 'attachment',
         ),
-        'Content-Length': String(file.size),
+        'Content-Length': length ?? String(file.size),
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store',
       },
@@ -72,7 +76,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
   try {
     const file = await renameWorkspaceFile(
-      session.workspace.id,
+      { userId: session.user.id, workspaceId: session.workspace.id },
       id,
       body.displayName,
     );
@@ -90,7 +94,7 @@ export async function DELETE(_req: Request, { params }: Params) {
 
   const { id } = await params;
   try {
-    await deleteWorkspaceFile(session.workspace.id, id);
+    await deleteWorkspaceFile({ userId: session.user.id, workspaceId: session.workspace.id }, id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return errorResponse(err);

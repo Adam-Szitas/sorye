@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const session = await ensureHubUser();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // Fast refusal here; Rodrigo checks the administrator flag again and audits the reveal.
   if (!session.user.isAdmin) return NextResponse.json({ error: 'Only Sorye admins can reveal storage credentials.' }, { status: 403 });
   const headers = {
     'Cache-Control': 'no-store, private', Pragma: 'no-cache',
@@ -14,7 +15,7 @@ export async function GET(_req: Request, context: { params: Promise<{ id: string
   try {
     assertRateLimit(mailRateKey(session.workspace.id, session.user.id, 'storage-secret-reveal'), 5, 10 * 60_000, 'Too many credential reveal attempts. Try again in a few minutes.');
     const { id } = await context.params;
-    const secrets = await getCloudStorageSecrets(session.workspace.id, id);
+    const secrets = await getCloudStorageSecrets({ userId: session.user.id, workspaceId: session.workspace.id }, id);
     return NextResponse.json(secrets, { headers });
   } catch (error) {
     const limited = error instanceof Error && error.message.startsWith('Too many');

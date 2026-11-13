@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -36,6 +36,7 @@ export async function startRodrigo(options: { extraProviders?: Record<string, un
   await writeFile(join(directory, 'service-tokens.json'), JSON.stringify({
     keyId: 'svc-test', privateKeyPem: serviceKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), publicKeyPem: serviceTokenPublicKeyPem,
   }));
+  await writeFile(join(directory, 'secret.key'), randomBytes(32).toString('base64'));
   await writeFile(join(directory, 'providers.json'), JSON.stringify({
     allow_insecure_local: true,
     postgresql: process.env.RODRIGO_TEST_POSTGRES_URL,
@@ -52,7 +53,7 @@ export async function startRodrigo(options: { extraProviders?: Record<string, un
       windowsHide: true,
       env: {
         ...env, RODRIGO_PUBLIC_KEYS_FILE: join(directory, 'public.json'), RODRIGO_PROVIDERS_FILE: join(directory, 'providers.json'),
-        RODRIGO_SERVICE_TOKEN_KEYS_FILE: join(directory, 'service-tokens.json'),
+        RODRIGO_SERVICE_TOKEN_KEYS_FILE: join(directory, 'service-tokens.json'), RODRIGO_SECRET_KEY_FILE: join(directory, 'secret.key'),
         RODRIGO_LISTEN: `127.0.0.1:${port}`, RODRIGO_METRICS_LISTEN: '127.0.0.1:0', RODRIGO_MAX_IN_FLIGHT: '64',
       },
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -33,9 +33,11 @@ export interface RodrigoAlignmentCapabilities {
 export interface RodrigoCreateUpload {
   objectId: string;
   purpose: RodrigoObjectPurpose;
-  size: number;
-  /** Lower-case hex SHA-256 of the whole object, as computed by the browser. */
-  sha256: string;
+  /** Exact size when known; otherwise maxBytes bounds it and the size is sent at completion. */
+  size?: number;
+  maxBytes?: number;
+  /** Lower-case hex SHA-256 of the whole object (browser digest) when known up front. */
+  sha256?: string;
   contentType: string;
 }
 

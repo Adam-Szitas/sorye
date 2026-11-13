@@ -36,8 +36,9 @@ export interface UploadProgress { bytesSent: number; partsSent: number; partCoun
 
 function base(meta: RodrigoCreateUpload) {
   if (!RODRIGO_OBJECT_PURPOSES.includes(meta.purpose)) throw new ObjectUploadError('invalid_purpose', 400);
-  if (!Number.isSafeInteger(meta.size) || meta.size < 0 || meta.size > RODRIGO_OBJECT_MAX_BYTES) throw new ObjectUploadError('object_too_large', 413);
-  if (!sha.safeParse(meta.sha256).success) throw new ObjectUploadError('invalid_sha256', 400);
+  const bound = meta.size ?? meta.maxBytes;
+  if (bound === undefined || !Number.isSafeInteger(bound) || bound < 0 || bound > RODRIGO_OBJECT_MAX_BYTES) throw new ObjectUploadError('object_too_large', 413);
+  if (meta.sha256 !== undefined && !sha.safeParse(meta.sha256).success) throw new ObjectUploadError('invalid_sha256', 400);
 }
 
 export async function createObjectUpload(context: RodrigoContext, meta: RodrigoCreateUpload): Promise<RodrigoUploadSession> {
@@ -74,6 +75,8 @@ export async function uploadObject(
   let bytesSent = 0;
   let pending: Buffer[] = [];
   let pendingSize = 0;
+  let finalSize = 0;
+  let finalSha = '';
   const fail = async (code: string): Promise<never> => {
     await abortObjectUpload(context, meta.purpose, session.uploadId).catch(() => undefined);
     throw new ObjectUploadError(code);
@@ -113,7 +116,7 @@ export async function uploadObject(
       if (options.signal?.aborted) throw new ObjectUploadError('aborted', 499);
       let chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
       received += chunk.length;
-      if (received > meta.size) await fail('checksum_mismatch');
+      if (received > (meta.size ?? meta.maxBytes ?? 0)) await fail(meta.size === undefined ? 'object_too_large' : 'checksum_mismatch');
       whole.update(chunk);
       while (chunk.length > 0) {
         const room = session.partBytes - pendingSize;
@@ -122,11 +125,14 @@ export async function uploadObject(
         pending.push(Buffer.from(take));
         pendingSize += take.length;
         chunk = chunk.subarray(take.length);
-        if (pendingSize === session.partBytes && received < meta.size) await flush();
+        if (pendingSize === session.partBytes && (meta.size === undefined || received < meta.size)) await flush();
       }
     }
-    if (received !== meta.size || whole.digest('hex') !== meta.sha256) await fail('checksum_mismatch');
-    await flush();
+    const digest = whole.digest('hex');
+    if ((meta.size !== undefined && received !== meta.size) || (meta.sha256 !== undefined && digest !== meta.sha256)) await fail('checksum_mismatch');
+    if (pendingSize > 0 || partNumber === 1) await flush();
+    finalSize = received;
+    finalSha = digest;
   } catch (error) {
     if (error instanceof ObjectUploadError || error instanceof RodrigoResponseError) throw error;
     // Unknown outcome (network, Rodrigo down): the session stays open for a resume.
@@ -134,7 +140,7 @@ export async function uploadObject(
   }
   const response = await signedFetch({
     context, method: 'POST', path: `/v2/objects/uploads/${session.uploadId}/complete`, scope: 'objects:write',
-    appScopes: [meta.purpose], body: '', timeoutMs: 300_000,
+    appScopes: [meta.purpose], body: JSON.stringify({ size: finalSize, sha256: finalSha }), timeoutMs: 300_000,
   });
   try {
     return await readJson(response, metaSchema);

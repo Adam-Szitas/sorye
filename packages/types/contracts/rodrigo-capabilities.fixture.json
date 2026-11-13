@@ -37,7 +37,7 @@
   "alignment": {
     "version": "1",
     "slices": {
-      "plumbing": "not_configured", "identity": "not_configured", "storage": "not_implemented",
+      "plumbing": "not_configured", "identity": "not_configured", "storage": "not_configured",
       "events": "not_implemented", "jobs": "not_implemented", "mail": "not_implemented",
       "domains": "not_implemented", "compute": "not_implemented"
     },
@@ -45,7 +45,8 @@
       "purposes": ["files", "tasks", "messenger", "ocr", "mail", "site", "forms", "protocolio", "relay"] },
     "serviceTokens": { "provider": "not_configured", "maxTtlSeconds": 300, "services": ["ocr", "protocolio", "ai"] },
     "changes": { "provider": "not_configured", "retentionHours": 72, "pageSize": 256 },
-    "identity": { "provider": "not_configured", "enforceMembership": false }
+    "identity": { "provider": "not_configured", "enforceMembership": false },
+    "storage": { "files": "not_configured", "ownStorage": "not_configured", "maxFileBytes": 67108864, "maxFiles": 200 }
   },
   "adapters": {
     "postgresql": "not_configured",

@@ -60,26 +60,8 @@ const text = (value: string) => Buffer.from(value, 'utf8');
 
 // ── Quota ────────────────────────────────────────────────────────────────────
 
-test('quota reports server limits and usage of the workspace', async () => {
-  const limits = { maxBatchFiles: 25, maxConcurrentUploads: 2, throttleBytesPerSecond: null };
-  const empty = await m.files.getFileQuota('ws-quota', limits);
-  assert.equal(empty.fileCount, 0);
-  assert.equal(empty.usedBytes, 0);
-  assert.equal(empty.limitBytes, null);
-  assert.equal(empty.target, 'sorye');
-  assert.equal(empty.maxFileBytes, 64 * 1024 * 1024);
-  assert.equal(empty.maxFiles, 200);
-
-  await m.files.createWorkspaceFile({ workspaceId: 'ws-quota', displayName: 'a.txt', bytes: text('hello world'), uploader });
-  await m.files.createWorkspaceFile({ workspaceId: 'ws-quota', displayName: 'b.txt', bytes: text('second file!'), uploader });
-  const used = await m.files.getFileQuota('ws-quota', { ...limits, throttleBytesPerSecond: 1000 });
-  assert.equal(used.fileCount, 2);
-  assert.equal(used.usedBytes, 11 + 12);
-  assert.equal(used.throttleBytesPerSecond, 1000);
-  // Another workspace's files never count.
-  assert.equal((await m.files.getFileQuota('ws-other', limits)).fileCount, 0);
-});
-
+// Quota usage, stored-checksum and storage-integrity behaviour moved to Rodrigo with the
+// storage slice; see test/rodrigo-storage.test.ts (real binary, PostgreSQL and S3).
 test('quota limits come from the same config that enforces them', () => {
   const config = m.throttle.readUploadThrottleConfig({ FILE_UPLOAD_MAX_INFLIGHT_PER_USER: '5', FILE_UPLOAD_THROTTLE_USER_BPS: '4000', FILE_UPLOAD_THROTTLE_GLOBAL_BPS: '3000' } as unknown as NodeJS.ProcessEnv);
   const limits = m.throttle.quotaLimits(config);
@@ -203,74 +185,12 @@ test('one member cannot hold more upload slots than allowed', async () => {
 
 // ── Checksums ───────────────────────────────────────────────────────────────
 
-test('a matching browser checksum is accepted and stored', async () => {
-  const bytes = text('checksum me');
-  const file = await m.files.createWorkspaceFile({ workspaceId: 'ws-sum', displayName: 'ok.txt', bytes, uploader, expectedSha256: sha(bytes) });
-  assert.equal(file.sha256, sha(bytes));
-  assert.equal(await m.blobs.hashFileBlob('ws-sum', file.id), sha(bytes));
-});
-
-test('a checksum mismatch is refused as damaged and nothing is stored', async () => {
-  const bytes = text('these bytes changed on the way');
-  await assert.rejects(
-    m.files.createWorkspaceFile({ workspaceId: 'ws-bad', displayName: 'bad.txt', bytes, uploader, expectedSha256: sha(text('original')) }),
-    (error: unknown) => error instanceof m.files.FileAccessError && error.status === 422 && error.code === 'checksum_mismatch',
-  );
-  assert.equal((await m.files.listWorkspaceFiles('ws-bad')).length, 0);
-  const ledger = await m.ledger.recentUploads('ws-bad');
-  assert.equal(ledger[0]?.status, 'rejected');
-  assert.equal(ledger[0]?.errorCode, 'integrity_failed');
-});
-
 test('browser checksums must be 64 hex characters', () => {
   assert.equal(m.files.parseClientSha256(undefined), undefined);
   assert.equal(m.files.parseClientSha256(''), undefined);
   assert.equal(m.files.parseClientSha256('xyz'), null);
   assert.equal(m.files.parseClientSha256('A'.repeat(64)), 'a'.repeat(64));
 });
-
-test('S3 writes carry SHA-256; a refused or mismatched write marks the upload damaged', async (t) => {
-  process.env.FILE_STORE_DRIVER = 's3';
-  process.env.FILE_S3_BUCKET = 'test-bucket';
-  t.after(() => {
-    process.env.FILE_STORE_DRIVER = 'local';
-    delete process.env.FILE_S3_BUCKET;
-    m.blobs.setFileBlobClientForTests(undefined);
-  });
-  const sent: { name: string; input: Record<string, unknown> }[] = [];
-  let mode: 'ok' | 'echo-wrong' | 'bad-digest' = 'ok';
-  m.blobs.setFileBlobClientForTests({
-    send: (async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
-      sent.push({ name: command.constructor.name, input: command.input });
-      if (command.constructor.name !== 'PutObjectCommand') return {};
-      if (mode === 'bad-digest') throw Object.assign(new Error('digest'), { name: 'BadDigest' });
-      return { ChecksumSHA256: mode === 'echo-wrong' ? Buffer.alloc(32).toString('base64') : command.input.ChecksumSHA256 };
-    }) as never,
-  });
-
-  const bytes = text('stored in s3');
-  await m.files.createWorkspaceFile({ workspaceId: 'ws-s3', displayName: 's3.txt', bytes, uploader, expectedSha256: sha(bytes) });
-  const put = sent.find((call) => call.name === 'PutObjectCommand')!;
-  assert.equal(put.input.ChecksumAlgorithm, 'SHA256');
-  assert.equal(put.input.ChecksumSHA256, Buffer.from(sha(bytes), 'hex').toString('base64'));
-
-  for (const next of ['echo-wrong', 'bad-digest'] as const) {
-    mode = next;
-    sent.length = 0;
-    await assert.rejects(
-      m.files.createWorkspaceFile({ workspaceId: 'ws-s3', displayName: `${next}.txt`, bytes, uploader, expectedSha256: sha(bytes) }),
-      (error: unknown) => error instanceof m.files.FileAccessError && error.status === 422 && error.code === 'integrity_failed',
-    );
-    if (next === 'echo-wrong') assert.ok(sent.some((call) => call.name === 'DeleteObjectCommand'), 'mismatched object is deleted');
-  }
-  const files = await m.files.listWorkspaceFiles('ws-s3');
-  assert.deepEqual(files.map((file) => file.displayName), ['s3.txt']);
-  const failed = (await m.ledger.recentUploads('ws-s3')).filter((row) => row.status === 'failed');
-  assert.equal(failed.length, 2);
-  assert.ok(failed.every((row) => row.errorCode === 'integrity_failed'));
-});
-
-// ── Notices ─────────────────────────────────────────────────────────────────
 
 test('success notices merge per batch; failure notices carry the file to retry', async () => {
   const batchId = '11111111-2222-4333-8444-555555555555';

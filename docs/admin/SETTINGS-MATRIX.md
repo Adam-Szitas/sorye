@@ -91,10 +91,10 @@ Routes app events to channels.
 | Channels (webhook URLs are SSRF-checked) (`relay.channels`) | In the owning app | workspace | Hub relay.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/lib/relay.ts` |
 | Source-to-channel routes (`relay.routes`) | In the owning app | workspace | Hub relay.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/app/api/relay/route.ts` |
 | Quiet hours (default off, 22:00–07:00) (`relay.quietHours`) | In the owning app | workspace | Hub relay.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/lib/relay.ts` |
-| Cloud storage connections (credentials encrypted) (`relay.storages`) | In the owning app | workspace | Hub relay-storages.json (STORAGE_SECRET_KEY) | Platform administrator (in Relay) | secret | next-request | `apps/hub/app/api/relay/storages/route.ts` |
-| Where new uploads go (Sorye storage, own drive, own database); Pro and Enterprise (`ownStorage.target`) | In the owning app | workspace | Hub workspace_upload_storage / own-storage.json | Workspace owner (in Relay) | internal | next-request | `apps/hub/app/api/own-storage/target/route.ts` |
-| Own S3-compatible drive: bucket, region, endpoint, folder, limit; credentials encrypted and write-only (`ownStorage.drive`) | In the owning app | workspace | Hub workspace_upload_storage (STORAGE_SECRET_KEY, workspace-bound) | Workspace owner (in Relay) | secret | next-request | `apps/hub/lib/upload-storage/service.ts` |
-| Own PostgreSQL: host, port, database, user, schema, TLS mode, limit; password and CA encrypted and write-only (`ownStorage.database`) | In the owning app | workspace | Hub workspace_upload_storage (STORAGE_SECRET_KEY, workspace-bound) | Workspace owner (in Relay) | secret | next-request | `apps/hub/lib/upload-storage/service.ts` |
+| Cloud storage connections (credentials encrypted) (`relay.storages`) | In the owning app | workspace | Rodrigo rodrigo_cloud_storages (sealed with RODRIGO_SECRET_KEY_FILE) | Platform administrator (in Relay) | secret | next-request | `apps/hub/app/api/relay/storages/route.ts` |
+| Where new uploads go (Sorye storage, own drive, own database); Pro and Enterprise (`ownStorage.target`) | In the owning app | workspace | Rodrigo rodrigo_storage_settings | Workspace owner (in Relay) | internal | next-request | `apps/hub/app/api/own-storage/target/route.ts` |
+| Own S3-compatible drive: bucket, region, endpoint, folder, limit; credentials encrypted and write-only (`ownStorage.drive`) | In the owning app | workspace | Rodrigo rodrigo_storage_settings (sealed with RODRIGO_SECRET_KEY_FILE, workspace-bound) | Workspace owner (in Relay) | secret | next-request | `apps/hub/lib/upload-storage/service.ts` |
+| Own PostgreSQL: host, port, database, user, schema, TLS mode, limit; password and CA encrypted and write-only (`ownStorage.database`) | In the owning app | workspace | Rodrigo rodrigo_storage_settings (sealed with RODRIGO_SECRET_KEY_FILE, workspace-bound) | Workspace owner (in Relay) | secret | next-request | `apps/hub/lib/upload-storage/service.ts` |
 | Own storage may reach private hosts and skip TLS (local/test only; refused in production) (`OWN_STORAGE_DEV_INSECURE`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-storage/mode.ts` |
 
 Gaps:
@@ -230,14 +230,14 @@ Workspace files; blobs local or S3-compatible.
 | Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Upload limits (64 MB per file, 200 per workspace) (`files.limits`) | Code constant | platform | packages/types/src/files.ts | Code release | public | release | `packages/types/src/files.ts` |
-| Blob driver and S3 settings (`FILE_STORE_DRIVER`) | Deployment input | deployment | Environment (FILE_S3_*) | Deployer (environment, redeploy) | secret | restart | `apps/hub/lib/file-blobs.ts` |
+| Retired: Drive bytes are stored by Rodrigo (provider file key objects); removed in slice 8 (`FILE_STORE_DRIVER`) | Deployment input | deployment | Environment (FILE_S3_*), unused | Deployer (environment, redeploy) | secret | restart | `apps/hub/lib/file-blobs.ts` |
 | Optional workspace Postgres connection (`workspace.storage`) | In the owning app | workspace | Hub workspace-storage.json (encrypted, hints only) | Workspace member (in the app) | secret | next-request | `apps/hub/app/api/workspace/storage/route.ts` |
 | Browser upload batch ceiling (25 files) and 5-minute batch target (`files.uploadBatch`) | Code constant | platform | packages/types/src/files.ts | Code release | public | release | `packages/types/src/files.ts` |
 | Upload throughput limit per member (bytes/s, off when unset) (`FILE_UPLOAD_THROTTLE_USER_BPS`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
 | Upload throughput limit per workspace (bytes/s, off when unset) (`FILE_UPLOAD_THROTTLE_WORKSPACE_BPS`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
 | Upload throughput limit per Hub process (bytes/s, off when unset) (`FILE_UPLOAD_THROTTLE_GLOBAL_BPS`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
 | Concurrent uploads per member (default 2, process slots cap it) (`FILE_UPLOAD_MAX_INFLIGHT_PER_USER`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
-| Full read-back SHA-256 check after S3 and own-storage writes (off by default) (`FILE_UPLOAD_VERIFY_READBACK`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/file-blobs.ts` |
+| Retired: Rodrigo reads every stored object back and checks SHA-256 before it becomes visible (`FILE_UPLOAD_VERIFY_READBACK`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/file-blobs.ts` |
 
 Gaps:
 

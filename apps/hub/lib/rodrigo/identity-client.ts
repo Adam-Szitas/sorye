@@ -199,7 +199,10 @@ const platformWorkspace = z.object({ contractVersion: z.literal('2'), workspace:
 
 export async function adminAssignSubscription(email: string, subscriptionId: SubscriptionTierId): Promise<Workspace | null> {
   try {
-    return (await call(asHub, 'POST', '/v2/platform/identity/users/plan', 'platform:identity:write', platformWorkspace, { email, subscriptionId })).workspace as unknown as Workspace;
+    const workspace = (await call(asHub, 'POST', '/v2/platform/identity/users/plan', 'platform:identity:write', platformWorkspace, { email, subscriptionId })).workspace;
+    // This replica sees its own write at once; others follow the change stream.
+    workspace.memberIds.forEach(forgetUser);
+    return workspace as unknown as Workspace;
   } catch (error) {
     if (refused(error, 'user_not_found')) return null;
     throw error;
@@ -208,7 +211,9 @@ export async function adminAssignSubscription(email: string, subscriptionId: Sub
 
 async function setPlan(workspaceId: string, subscriptionId: SubscriptionTierId, mode: 'assign' | 'tier'): Promise<Workspace | null> {
   try {
-    return (await call(asHub, 'PUT', `/v2/platform/identity/workspaces/${encodeURIComponent(workspaceId)}/plan`, 'platform:identity:write', platformWorkspace, { subscriptionId, mode })).workspace as unknown as Workspace;
+    const workspace = (await call(asHub, 'PUT', `/v2/platform/identity/workspaces/${encodeURIComponent(workspaceId)}/plan`, 'platform:identity:write', platformWorkspace, { subscriptionId, mode })).workspace;
+    workspace.memberIds.forEach(forgetUser);
+    return workspace as unknown as Workspace;
   } catch (error) {
     if (refused(error, 'workspace_not_found', 'invalid_plan')) return null;
     throw error;
