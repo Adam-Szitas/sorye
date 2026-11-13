@@ -16,6 +16,10 @@ flowchart LR
 
 **Current ownership:** Apps reach Rodrigo only through authenticated Hub routes. The migrated resource slices are Rodrigo-owned. Most unmigrated app stores, events, identity, jobs, notifications and handoffs still use Hub stores. Protocolio's independent MongoDB is unchanged. Publishing/configuring Rodrigo does not move remaining data or events. See [the behavior map](APP-BEHAVIOR-TREE.md) and [ownership boundary](HUB-RODRIGO-BOUNDARY.md).
 
+## Alignment
+
+Hub is moving to a buffer role and Rodrigo to the owner of all data, credentials, events and jobs, one slice at a time. See [HUB-RODRIGO-ALIGNMENT.md](HUB-RODRIGO-ALIGNMENT.md) for status, the object, service-token and change-stream contracts, and measurements.
+
 ## Available Rodrigo contracts
 
 Additive v2 provides `POST /v2/actions/batch`, scoped reads from `/v2/resources/{app}/{resourceType}/{resourceId}`, bounded keyset pages from `/v2/collections/{app}/{resourceType}/{limit}/{cursor}`, a channel-authorized Messenger timeline, and `GET /v2/public/sites/{slug}` for a reserved public-site grant. PostgreSQL commits each typed resource and idempotency receipt atomically. Site page writes also reserve the public slug in that transaction. Verified actor attribution is stored separately from app payloads. Receipts are retained for at least ten years; collection pages are individually statement-consistent but pagination is not a frozen multi-page snapshot. Durable external jobs and blob bytes still need separate scoped APIs.

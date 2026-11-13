@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rodrigo service contract",
-    "version": "2.1.0",
-    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract."
+    "version": "2.2.0",
+    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status."
   },
   "paths": {
     "/v2/resources/{app}/{resourceType}/{resourceId}": {
@@ -3428,6 +3428,1506 @@
           }
         }
       }
+    },
+    "/v2/objects/uploads": {
+      "post": {
+        "operationId": "createObjectUpload",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_upload",
+            "invalid_purpose",
+            "invalid_sha256",
+            "invalid_content_type"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "409": [
+            "object_id_reused"
+          ],
+          "412": [
+            "object_exists"
+          ],
+          "413": [
+            "object_too_large"
+          ],
+          "428": [
+            "precondition_required"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Opens or resumes an upload session (see ObjectUploadCreate).",
+        "parameters": [
+          {
+            "name": "If-None-Match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "const": "*"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectUploadSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_upload, invalid_purpose, invalid_sha256, invalid_content_type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: object_id_reused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Error envelope; codes: object_exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Error envelope; codes: object_too_large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Error envelope; codes: precondition_required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjectUploadCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/objects/uploads/{uploadId}/parts/{partNumber}": {
+      "put": {
+        "operationId": "putObjectPart",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_part",
+            "part_size_mismatch",
+            "body_interrupted"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "upload_not_found"
+          ],
+          "409": [
+            "upload_closed"
+          ],
+          "422": [
+            "checksum_mismatch"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Streams one part (raw bytes). Every part except the last is exactly partBytes. The assertion bodySha256 is the SHA-256 of this part; Rodrigo hashes while receiving and rejects a mismatch with 422 checksum_mismatch (nothing is stored). Re-sending a part replaces it. At most eight parts are buffered per replica (429 overloaded). Deadline 30 s.",
+        "parameters": [
+          {
+            "name": "uploadId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "partNumber",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectPartResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_part, part_size_mismatch, body_interrupted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: upload_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: upload_closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error envelope; codes: checksum_mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/objects/uploads/{uploadId}/complete": {
+      "post": {
+        "operationId": "completeObjectUpload",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "upload_not_found"
+          ],
+          "409": [
+            "upload_closed",
+            "parts_missing"
+          ],
+          "422": [
+            "integrity_failed"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Assembles all parts, reads the stored object back and compares size and SHA-256 with the session. A mismatch deletes the bytes, marks the upload failed and returns 422 integrity_failed. Success marks the object ready and appends a change row in one transaction (201). Repeating after success returns 200 with the same metadata. Deadline 300 s.",
+        "parameters": [
+          {
+            "name": "uploadId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectMeta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: upload_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: upload_closed, parts_missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error envelope; codes: integrity_failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/objects/uploads/{uploadId}": {
+      "delete": {
+        "operationId": "abortObjectUpload",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "upload_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Aborts an unfinished upload (204). The object id cannot be reused.",
+        "parameters": [
+          {
+            "name": "uploadId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: upload_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/objects/{objectId}": {
+      "get": {
+        "operationId": "readObject",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "416": [
+            "invalid_range"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Streams a ready object. Headers: Content-Type, Content-Length, ETag (quoted SHA-256), x-object-sha256, Accept-Ranges. A single Range: bytes=a-b returns 206 with Content-Range; an unsatisfiable range returns 416 invalid_range.",
+        "parameters": [
+          {
+            "name": "objectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Error envelope; codes: invalid_range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteObject",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Tombstones a ready object and appends a change row in one transaction, then removes the bytes (204). The id is never reused.",
+        "parameters": [
+          {
+            "name": "objectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful operation"
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/objects/{objectId}/meta": {
+      "get": {
+        "operationId": "readObjectMeta",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "objects:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope"
+          ],
+          "404": [
+            "not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "objects_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Metadata of a ready object.",
+        "parameters": [
+          {
+            "name": "objectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObjectMeta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, objects_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/service-tokens": {
+      "post": {
+        "operationId": "issueServiceToken",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "service-tokens:issue",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_token_request",
+            "unknown_service"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "insufficient_action_scope",
+            "service_actor_forbidden"
+          ],
+          "429": [
+            "overloaded",
+            "workspace_rate_limited"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "service_tokens_not_configured"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Issues a scoped token for one compute call (201). At most 240 per workspace per minute per replica (429 workspace_rate_limited).",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_token_request, unknown_service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, insufficient_action_scope, service_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded, workspace_rate_limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, service_tokens_not_configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceTokenRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/service-tokens/keys": {
+      "get": {
+        "operationId": "serviceTokenKeys",
+        "security": [],
+        "x-required-scope": "none",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Public verification keys for service tokens. No authentication; contains no secrets.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTokenKeys"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/service/changes/head": {
+      "get": {
+        "operationId": "changeHead",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "changes:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "service_grant_route_mismatch",
+            "service_actor_forbidden"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "changes_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Cursor a fresh subscriber starts from. Requires workspaceId rodrigo-service and sub service:hub (403 service_grant_route_mismatch / service_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeHead"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, service_grant_route_mismatch, service_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, changes_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/service/changes/{after}": {
+      "get": {
+        "operationId": "subscribeChanges",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "changes:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_cursor",
+            "cursor_must_be_signed"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "service_grant_route_mismatch",
+            "service_actor_forbidden"
+          ],
+          "410": [
+            "cursor_expired"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "changes_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Resumable SSE of committed changes after the signed cursor: event change, id = cursor, data = Change. Ordered by committing transaction; a change is served only once every older transaction has finished, so a cursor never skips a later commit. At-least-once within retention (72 hours); a cursor older than retention returns 410 cursor_expired or stream.error cursor_expired: restart from head and drop caches. Streams last at most 25 seconds and the assertion lifetime, with 5-second keepalives; Last-Event-ID is rejected.",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,20}\\.\\d{1,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_cursor, cursor_must_be_signed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, service_grant_route_mismatch, service_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Error envelope; codes: cursor_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, changes_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3483,6 +4983,184 @@
               },
               "maxAuditPageSize": {
                 "const": 100
+              }
+            }
+          },
+          "alignment": {
+            "type": "object",
+            "required": [
+              "version",
+              "slices",
+              "objects",
+              "serviceTokens",
+              "changes"
+            ],
+            "description": "Per-slice migration status. Hub fails closed for a slice that is not ready; it never falls back to its own stores.",
+            "properties": {
+              "version": {
+                "const": "1"
+              },
+              "slices": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "plumbing",
+                  "identity",
+                  "storage",
+                  "events",
+                  "jobs",
+                  "mail",
+                  "domains",
+                  "compute"
+                ],
+                "properties": {
+                  "plumbing": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "identity": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "storage": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "events": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "jobs": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "mail": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "domains": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "compute": {
+                    "enum": [
+                      "not_implemented",
+                      "not_configured",
+                      "ready"
+                    ]
+                  }
+                }
+              },
+              "objects": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "maxObjectBytes",
+                  "partBytes",
+                  "purposes"
+                ],
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "maxObjectBytes": {
+                    "const": 2147483648
+                  },
+                  "partBytes": {
+                    "const": 8388608
+                  },
+                  "purposes": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "files",
+                        "tasks",
+                        "messenger",
+                        "ocr",
+                        "mail",
+                        "site",
+                        "forms",
+                        "protocolio",
+                        "relay"
+                      ]
+                    }
+                  }
+                }
+              },
+              "serviceTokens": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "maxTtlSeconds",
+                  "services"
+                ],
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "maxTtlSeconds": {
+                    "const": 300
+                  },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "ocr",
+                        "protocolio",
+                        "ai"
+                      ]
+                    }
+                  }
+                }
+              },
+              "changes": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "retentionHours",
+                  "pageSize"
+                ],
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "not_configured",
+                      "ready"
+                    ]
+                  },
+                  "retentionHours": {
+                    "type": "integer"
+                  },
+                  "pageSize": {
+                    "type": "integer"
+                  }
+                }
               }
             }
           },
@@ -7201,6 +8879,359 @@
             ],
             "maxLength": 256,
             "description": "Hex-encoded UTF-8 \"<occurredAt>|<auditId>\" of the last event when another page exists."
+          }
+        }
+      },
+      "ObjectUploadCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "objectId",
+          "purpose",
+          "size",
+          "sha256",
+          "contentType"
+        ],
+        "description": "Opens an upload session. The request must carry If-None-Match: * (428 precondition_required otherwise). The assertion must carry app:<purpose>. Repeating the same objectId with identical metadata while the session is open resumes it (200) and lists parts already stored; a ready object returns 412 object_exists; different metadata or a failed/deleted id returns 409 object_id_reused. Ids are never reused.",
+        "properties": {
+          "objectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "enum": [
+              "files",
+              "tasks",
+              "messenger",
+              "ocr",
+              "mail",
+              "site",
+              "forms",
+              "protocolio",
+              "relay"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483648
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Whole-object SHA-256 computed by the browser."
+          },
+          "contentType": {
+            "type": "string",
+            "maxLength": 127,
+            "description": "type/subtype with an IANA top-level type and no parameters."
+          }
+        }
+      },
+      "ObjectUploadSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "uploadId",
+          "objectId",
+          "partBytes",
+          "partCount",
+          "expiresAt",
+          "uploadedParts"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "uploadId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "objectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partBytes": {
+            "const": 8388608
+          },
+          "partCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "uploadedParts": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "partNumber",
+                "sha256"
+              ],
+              "properties": {
+                "partNumber": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ObjectPartResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "partNumber",
+          "sha256",
+          "size"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "partNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ObjectMeta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "objectId",
+          "purpose",
+          "size",
+          "sha256",
+          "contentType",
+          "status",
+          "createdAt"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "objectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "enum": [
+              "files",
+              "tasks",
+              "messenger",
+              "ocr",
+              "mail",
+              "site",
+              "forms",
+              "protocolio",
+              "relay"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "status": {
+            "const": "ready"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ServiceTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "service",
+          "operation",
+          "appId",
+          "ttlSeconds"
+        ],
+        "description": "appId must be among the signed appScopes (and allowed for the service: ocr -> ocr|files, protocolio -> protocolio, ai -> any). Service actors and reserved workspaces cannot request tokens.",
+        "properties": {
+          "service": {
+            "enum": [
+              "ocr",
+              "protocolio",
+              "ai"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "pattern": "^[a-z0-9._-]{1,64}$"
+          },
+          "appId": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "ttlSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        }
+      },
+      "ServiceToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "token",
+          "audience",
+          "keyId",
+          "expiresAt"
+        ],
+        "description": "EdDSA JWT: iss rodrigo, aud sorye-<service>, sub, workspaceId, service, operation, appId, iat, exp (iat + ttlSeconds), jti. Bearer credential for one compute call; never sent to a browser.",
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "audience": {
+            "enum": [
+              "sorye-ocr",
+              "sorye-protocolio",
+              "sorye-ai"
+            ]
+          },
+          "keyId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "Unix seconds."
+          }
+        }
+      },
+      "ServiceTokenKeys": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "keys"
+        ],
+        "properties": {
+          "issuer": {
+            "const": "rodrigo"
+          },
+          "keys": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "keyId",
+                "algorithm",
+                "publicKeyPem"
+              ],
+              "properties": {
+                "keyId": {
+                  "type": "string"
+                },
+                "algorithm": {
+                  "const": "EdDSA"
+                },
+                "publicKeyPem": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Change": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cursor",
+          "workspaceId",
+          "appId",
+          "resourceType",
+          "resourceId",
+          "revision",
+          "deleted",
+          "occurredAt"
+        ],
+        "description": "One committed change: identifiers and revision only, never a payload. appId objects/resourceType object for streamed objects.",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "pattern": "^\\d{1,20}\\.\\d{1,20}$"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "resourceType": {
+            "type": "string"
+          },
+          "resourceId": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChangeHead": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "cursor"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^\\d{1,20}\\.\\d{1,20}$"
           }
         }
       }

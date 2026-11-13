@@ -2,6 +2,10 @@
 
 **Status: partially implemented.** Rodrigo implements signed v2 actions, PostgreSQL-backed atomic receipts, typed app/resource families, single-resource reads, bounded collection pages, actor attribution, a channel-authorized Messenger timeline, and a reserved-grant published Site read. Tasks, Notes, Calendar, Canvas, Site editing and published public reads, Storefront products and enquiry orders, workspace profile name/read paths, and Messenger text/channels now use Hub v2 routes; browser mutations persist in app-owned IndexedDB queues. Legacy Hub writers are disabled for these slices. Most remaining catalog apps, workspace app-access/team policy, Hub-native state, blobs, external jobs, event delivery, Messenger attachments/read receipts, and Storefront order status transitions remain uncovered. Do not describe the global boundary as complete until each persisted action is migrated and verified.
 
+### Alignment plumbing (OpenAPI 2.2.0)
+
+Streamed immutable objects (`/v2/objects/`, up to 2 GiB in 8 MiB parts, per-part signed SHA-256 and read-back verification), scoped service tokens (`/v2/service-tokens`, at most 300 seconds) and the service change stream (`/v2/service/changes/`, reserved workspace `rodrigo-service`, actor `service:hub`) are specified in [HUB-RODRIGO-ALIGNMENT.md](HUB-RODRIGO-ALIGNMENT.md). Every v2 action commit now also appends a change row in its transaction.
+
 ### Implemented app and resource slices
 
 | App | Resource / operations | Authorization | Payload / storage | Read and concurrency | Side effects / completion |

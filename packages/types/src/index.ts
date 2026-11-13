@@ -4,6 +4,7 @@ export * from './upload-storage';
 export * from './running-cost';
 export * from './rodrigo';
 export * from './platform-config';
+export * from './rodrigo-alignment';
 export * from './workspace';
 export * from './apps';
 export * from './canvas';

@@ -17,7 +17,7 @@ const committed = (id = actionId) => ({ actionId: id, status: 'committed', commi
 
 test('reviewed Sorye OpenAPI snapshot stays byte-equivalent to Rodrigo authority for v2', async () => {
   const root = resolve(process.cwd(), '../..');
-  const authoritative = JSON.parse(await readFile(resolve(root, '../rodrigo/contracts/rodrigo.openapi.json'), 'utf8'));
+  const authoritative = JSON.parse(await readFile(resolve(process.env.RODRIGO_REPO ?? resolve(root, '../rodrigo'), 'contracts/rodrigo.openapi.json'), 'utf8'));
   const reviewed = JSON.parse(await readFile(join(root, 'packages/types/contracts/rodrigo.openapi.json'), 'utf8'));
   assert.deepEqual(reviewed, authoritative);
   assert.deepEqual(authoritative.paths['/v2/actions/batch'].post.responses['200'].content['application/json'].schema, { $ref: '#/components/schemas/ActionBatchResult' });

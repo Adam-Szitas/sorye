@@ -31,6 +31,18 @@
     "namespaces": ["shared-ai"],
     "maxAuditPageSize": 100
   },
+  "alignment": {
+    "version": "1",
+    "slices": {
+      "plumbing": "not_configured", "identity": "not_implemented", "storage": "not_implemented",
+      "events": "not_implemented", "jobs": "not_implemented", "mail": "not_implemented",
+      "domains": "not_implemented", "compute": "not_implemented"
+    },
+    "objects": { "provider": "not_configured", "maxObjectBytes": 2147483648, "partBytes": 8388608,
+      "purposes": ["files", "tasks", "messenger", "ocr", "mail", "site", "forms", "protocolio", "relay"] },
+    "serviceTokens": { "provider": "not_configured", "maxTtlSeconds": 300, "services": ["ocr", "protocolio", "ai"] },
+    "changes": { "provider": "not_configured", "retentionHours": 72, "pageSize": 256 }
+  },
   "adapters": {
     "postgresql": "not_configured",
     "mongodb": "not_configured",

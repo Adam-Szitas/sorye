@@ -426,6 +426,8 @@ flowchart LR
     Rodrigo <--> Dependencies[Databases, storage and external services]
 ```
 
+The alignment target makes Hub a buffer (session, edge limits, streaming, read cache, live fan-out, compute calls with Rodrigo-issued tokens) and Rodrigo the owner of every record, credential, event and job. Plumbing is live: Hub streams objects to Rodrigo in 8 MiB parts, subscribes once per replica to the Rodrigo change stream (reserved `rodrigo-service` grant) to invalidate a short read cache, and obtains scoped service tokens from Rodrigo. Status per slice: [HUB-RODRIGO-ALIGNMENT.md](HUB-RODRIGO-ALIGNMENT.md).
+
 Hub remains the browser-facing authentication and API gateway. Apps never bypass Hub to call Rodrigo or databases. Rodrigo v2 action/read routes are live only for the slices listed at the top of this document; other stores, general events, and jobs still run in Hub. Rodrigo readiness depends on configured providers and does not prove migration. The no-migration cutover may make Hub-owned records unavailable. See [ownership, migration and release contracts](HUB-RODRIGO-BOUNDARY.md).
 
 ### Deployed OCR worker

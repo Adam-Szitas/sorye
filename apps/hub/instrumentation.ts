@@ -18,6 +18,8 @@ export async function register() {
       const { startPlatformConfigWatcher } = await import('./lib/platform-config/watcher');
       void startPlatformConfigWatcher('hub').catch(() => undefined);
     });
+    // One Rodrigo change subscription per replica: read-cache invalidation and live fan-out.
+    await step('rodrigo-changes', async () => (await import('./lib/rodrigo/changes')).ensureRodrigoChangeStream());
     await step('operator-persistence', async () => (await import('./lib/operator/persist')).installOperatorPersistence());
   }
   if (process.env.NEXT_RUNTIME === 'nodejs' && process.env.SENTRY_DSN) {
