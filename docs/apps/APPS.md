@@ -518,7 +518,7 @@ Image messages validated server-side (`data:image/*;base64` only). Rendered as `
 **Path:** Hub-native (`apps/hub/components/app-mail.tsx`) — not a Vite remote  
 **Catalog id:** `mail`  
 **Status:** `available`  
-**Plan slot:** optional (not `alwaysAvailable`) — enable from App Library, then open from the launcher.
+**Plan slot:** optional (not `alwaysAvailable`) — enable from App Library, then open from the launcher. L/R opens Drive in a Hub shell pane (the only Hub-native app that does, so uploads keep the shell mounted); the plain launcher click opens the full-page `/apps/files`.
 
 ## Purpose
 
@@ -569,6 +569,8 @@ Default **Sorye Mail** address (`{user-slug}@{workspace-slug}.mail.sorye`) is an
 
 Workspace file locker. Members upload, search, preview, list, rename, download, and delete files for **this workspace only**. JSON/Postgres stores metadata; bytes use local `.data` storage in development or the configured S3-compatible object store in production (id, workspaceId, displayName, relative path, mime, size, timestamps). Rename updates `displayName` only — the generated uuid object key never changes. Search is a client-side filter of the fetched list (plain, `/regex/`, `type:pdf` / `type:image`). Open/preview is limited to raster images, PDF, and text — Office stays download-only.
 
+Drive shows the server-reported quota above the list: bytes used (against the owner's limit when uploads go to own storage), files used of the 200 maximum, and the 64 MB per-file maximum. Uploads go to the **Hub-shell upload manager** (`apps/hub/lib/upload-queue.ts`), so they keep running while the member opens other apps; the top bar shows a compact progress ring with a per-file list, and Drive shows a batch bar and a bar per file. The browser queues only as many files as fit in about five minutes at the measured upload speed (at most 25; 10 until the speed is known) and says why the rest were not queued. Each file is SHA-256-checked by Hub on the received and the stored bytes; a damaged file is marked, not stored, and offered for Retry in the progress list and in its Hub notice. Optional server throughput limits are set by environment (`FILE_UPLOAD_THROTTLE_*_BPS`, off by default).
+
 Connected cloud storage appears as named virtual folders here. Browsing, uploads, and downloads are proxied through Hub so provider credentials stay server-side; cloud objects remain in the provider bucket and are not copied into local Drive. Current providers are AWS S3 and Cloudflare R2.
 
 ## Storage
@@ -588,7 +590,14 @@ Connected cloud storage appears as named virtual folders here. Browsing, uploads
 | `apps/hub/lib/file-search.ts` | Client-side name / regex / type-token filter |
 | `apps/hub/lib/file-preview.ts` | Inline-preview mime allowlist |
 | `apps/hub/lib/files.ts` | Disk + metadata store + disposition helper |
-| `apps/hub/app/api/files/route.ts` | `GET/POST /api/files` |
+| `apps/hub/app/api/files/route.ts` | `GET/POST /api/files` (quota in GET; checksum, slots and throttle on POST) |
+| `apps/hub/app/api/files/quota/route.ts` | `GET /api/files/quota` |
+| `apps/hub/app/api/files/upload-failures/route.ts` | `POST /api/files/upload-failures` — notice for an upload that never reached Hub |
+| `apps/hub/lib/upload-queue.ts` | Hub-shell upload manager (queue, SHA-256, XHR progress, retry) |
+| `apps/hub/lib/upload-speed.ts` | Upload speed estimate for the batch cap |
+| `apps/hub/lib/upload-throttle.ts` | Per-member slots and optional throughput buckets |
+| `apps/hub/lib/upload-notices.ts` | Upload success and failure notices |
+| `apps/hub/components/upload-progress.tsx` | Top-bar indicator and progress lists |
 | `apps/hub/app/api/files/[id]/route.ts` | `GET/PATCH/DELETE /api/files/[id]` |
 | `apps/hub/lib/cloud-storage.ts` | Provider adapter, workspace-isolated connection vault, and object operations |
 | `apps/hub/app/api/relay/storages/**` | Admin connection management and authenticated Drive object proxy |
@@ -596,7 +605,9 @@ Connected cloud storage appears as named virtual folders here. Browsing, uploads
 ## Communications
 
 - `GET /api/files` — list this workspace’s files
-- `POST /api/files` — multipart upload; emits `sorye.files.uploaded`
+- `POST /api/files` — multipart upload; emits `sorye.files.uploaded`. Optional fields from the upload manager: `sha256` (422 `checksum_mismatch` / `integrity_failed` with `corrupted: true`), `uploadId` and `batchId` (Hub notices), `expectedWorkspaceId` (409 `workspace_changed`). 429 `busy` with `Retry-After` when upload slots are full.
+- `GET /api/files/quota` — `FileQuota` of the session workspace
+- `POST /api/files/upload-failures` — `{ uploadId, batchId?, fileName, reason: network | aborted | workspace_changed }`, rate limited
 - `PATCH /api/files/[id]` — rename (`displayName` only)
 - `GET /api/files/[id]` — download (`Content-Disposition: attachment`). `?inline=1` uses `inline` only for raster images, PDF, and text/csv/markdown/json — never HTML/SVG/script. Office binaries stay attachment.
 - `DELETE /api/files/[id]` — delete disk file + metadata row

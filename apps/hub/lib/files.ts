@@ -9,13 +9,15 @@ import {
   STUDIO_MESH_EXTENSIONS,
   TASK_PHOTO_MAX_BYTES,
   isTaskPhotoMime,
+  type FileQuota,
+  type FileUploadErrorCode,
   type OwnStorageErrorCode,
   type SubscriptionTierId,
   type UploadRecord,
   type WorkspaceFile,
 } from '@sorye/types';
 import { jsonDataFile } from '@/lib/store/json-file';
-import { putFileBlob, streamFileBlob, deleteFileBlob } from './file-blobs';
+import { BlobIntegrityError, putFileBlob, readbackVerificationEnabled, streamFileBlob, deleteFileBlob } from './file-blobs';
 import {
   OwnStorageError,
   deleteExternalFile,
@@ -25,7 +27,15 @@ import {
   uploadDestination,
   type UploadDestination,
 } from './upload-storage/service';
-import { QuotaExceededError, finishUpload, markFileDeleted, recordRejected, reserveUpload } from './upload-storage/store';
+import { QuotaExceededError, finishUpload, getSettings, markFileDeleted, recordRejected, reserveUpload, usage } from './upload-storage/store';
+
+/** Where new uploads go and the owner's byte limit there; null for Sorye storage. Never decrypts secrets. */
+async function ownStorageTarget(workspaceId: string): Promise<{ target: 'drive' | 'database'; limitBytes: number } | null> {
+  const settings = await getSettings(workspaceId);
+  if (!settings || settings.target === 'sorye') return null;
+  const connection = settings.target === 'drive' ? settings.drive : settings.database;
+  return connection ? { target: settings.target, limitBytes: connection.limitBytes } : null;
+}
 
 /** Bytes kept on the customer's own drive or database rather than Sorye's storage. */
 function isExternal(file: WorkspaceFile): boolean {
@@ -87,10 +97,31 @@ export class FileAccessError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: FileUploadErrorCode,
   ) {
     super(message);
     this.name = 'FileAccessError';
   }
+}
+
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+/** A browser-supplied checksum: 64 lowercase hex characters, or undefined when absent. */
+export function parseClientSha256(raw: unknown): string | undefined | null {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim().toLowerCase();
+  return SHA256_HEX_RE.test(value) ? value : null;
+}
+
+function corrupted(code: 'checksum_mismatch' | 'integrity_failed', displayName: string): FileAccessError {
+  return new FileAccessError(
+    code === 'checksum_mismatch'
+      ? `${displayName} was damaged on the way to Sorye. Upload this file again.`
+      : `${displayName} was damaged while it was stored. Upload this file again.`,
+    422,
+    code,
+  );
 }
 
 function assertSafeSegment(value: string, label: string): string {
@@ -449,6 +480,8 @@ export async function createWorkspaceFile(input: {
   bytes: Buffer;
   sourceAppId?: string;
   uploader: FileUploader;
+  /** SHA-256 the browser computed before sending. A mismatch means the bytes changed in transit. */
+  expectedSha256?: string;
 }): Promise<WorkspaceFile> {
   const sourceAppId = input.sourceAppId ?? 'files';
   if (!APP_CATALOG.some((app) => app.id === sourceAppId)) {
@@ -494,6 +527,9 @@ export async function createWorkspaceFile(input: {
   const target = destination?.target ?? 'sorye';
   const id = randomUUID();
   const sha256 = sha256Hex(input.bytes);
+  if (input.expectedSha256 && input.expectedSha256 !== sha256) {
+    throw await reject(corrupted('checksum_mismatch', displayName), 'integrity_failed');
+  }
   const relativePath = relativeStoragePath(workspaceId, id);
   storedAbsolutePath(workspaceId, id);
   const now = new Date().toISOString();
@@ -517,11 +553,27 @@ export async function createWorkspaceFile(input: {
   try {
     if (destination) {
       location = await destination.put(id, input.bytes, mime, sha256, displayName);
+      if (readbackVerificationEnabled()) {
+        // Own storage: read the object back through the same size and SHA-256 check used for serving.
+        try {
+          await readExternalFile(workspaceId, row);
+        } catch (error) {
+          if (error instanceof OwnStorageError && error.code === 'integrity_failed') {
+            await deleteExternalFile(workspaceId, row).catch(() => undefined);
+            throw new BlobIntegrityError('readback');
+          }
+          throw error;
+        }
+      }
     } else {
-      await putFileBlob(workspaceId, id, input.bytes, mime);
+      await putFileBlob(workspaceId, id, input.bytes, mime, sha256);
       location = `files/${workspaceId}/${id}`;
     }
   } catch (error) {
+    if (error instanceof BlobIntegrityError) {
+      await finishUpload(workspaceId, ledger.id, { status: 'failed', errorCode: 'integrity_failed' }).catch(() => undefined);
+      throw corrupted('integrity_failed', displayName);
+    }
     const code: OwnStorageErrorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string'
       ? (error as { code: OwnStorageErrorCode }).code : 'storage_unavailable';
     await finishUpload(workspaceId, ledger.id, { status: 'failed', errorCode: destination ? code : 'storage_unavailable' }).catch(() => undefined);
@@ -624,4 +676,27 @@ export async function streamWorkspaceFile(workspaceId: string, fileId: string) {
   } catch {
     throw new FileAccessError('File storage is temporarily unavailable', 503);
   }
+}
+
+/** Upload limits and usage for one workspace. Read on every Drive load; the server is the source of truth. */
+export async function getFileQuota(
+  workspaceId: string,
+  limits: { maxConcurrentUploads: number; throttleBytesPerSecond: number | null; maxBatchFiles: number },
+): Promise<FileQuota> {
+  const files = await listWorkspaceFiles(workspaceId);
+  const usedBytes = files.reduce((sum, file) => sum + (Number.isFinite(file.size) ? file.size : 0), 0);
+  const own = await ownStorageTarget(workspaceId).catch(() => null);
+  // Own storage: report the same ledger usage the upload reservation checks against the owner's limit.
+  const ownUsed = own ? await usage(workspaceId, own.target).catch(() => null) : null;
+  return {
+    maxFileBytes: FILE_MAX_BYTES,
+    maxFiles: FILE_MAX_PER_WORKSPACE,
+    fileCount: files.length,
+    usedBytes: ownUsed?.usedBytes ?? usedBytes,
+    limitBytes: own?.limitBytes ?? null,
+    target: own?.target ?? 'sorye',
+    maxBatchFiles: limits.maxBatchFiles,
+    maxConcurrentUploads: limits.maxConcurrentUploads,
+    throttleBytesPerSecond: limits.throttleBytesPerSecond,
+  };
 }

@@ -21,6 +21,22 @@ export interface WorkspaceNotification {
   /** Messenger channel to open for a ping in this workspace. */
   channelId?: string;
   outcome?: 'success' | 'failure';
+  /** Drive upload this notice reports. Failure notices carry the queue item to retry. */
+  upload?: WorkspaceUploadNotice;
+}
+
+export interface WorkspaceUploadNotice {
+  /** Browser upload queue batch; success notices for one batch are merged into one row. */
+  batchId?: string;
+  /** Browser upload queue item, for a retry from the notice. */
+  uploadId?: string;
+  fileName?: string;
+  /** Files of the batch stored so far. */
+  stored?: number;
+  /** Bytes of the batch stored so far. */
+  bytes?: number;
+  /** The file arrived or was stored damaged and must be uploaded again. */
+  corrupted?: boolean;
 }
 
 /** Notification row returned to the Hub UI (includes read state). */
@@ -65,6 +81,7 @@ export const NOTIFIABLE_APP_IDS = [
   'dashboard',
   'studio',
   'mail',
+  'files',
 ] as const;
 
 export function createDefaultNotificationSettings(

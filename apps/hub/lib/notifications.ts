@@ -262,3 +262,30 @@ export async function markNotificationsRead(input: {
     userId: input.userId,
   });
 }
+
+/**
+ * Create or replace one notification by id, moving it to the top of the feed.
+ * `build` receives the current row with that id (if any) inside the workspace
+ * lock, so concurrent updates of one row do not lose counts.
+ */
+export async function upsertWorkspaceNotification(input: {
+  workspaceId: string;
+  id: string;
+  build: (existing: WorkspaceNotification | undefined) => Omit<WorkspaceNotification, 'id' | 'workspaceId' | 'createdAt'>;
+}): Promise<WorkspaceNotification> {
+  return notificationsFile.update((store) => {
+    const list = store[input.workspaceId] ?? [];
+    const existing = list.find((row) => row.id === input.id);
+    const fields = input.build(existing);
+    const notification: WorkspaceNotification = {
+      ...fields,
+      id: input.id,
+      workspaceId: input.workspaceId,
+      title: fields.title.trim(),
+      body: fields.body?.trim() ?? '',
+      createdAt: new Date().toISOString(),
+    };
+    store[input.workspaceId] = [notification, ...list.filter((row) => row.id !== input.id)].slice(0, MAX_NOTIFICATIONS);
+    return notification;
+  }, input.workspaceId);
+}

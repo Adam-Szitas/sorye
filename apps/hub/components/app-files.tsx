@@ -8,6 +8,11 @@ import {
   fileOpenAppIds,
   FILE_DISPLAY_NAME_MAX,
   FILE_MAX_BYTES,
+  FILE_MAX_PER_WORKSPACE,
+  FILE_UPLOAD_BATCH_MAX,
+  FILE_UPLOAD_BATCH_TARGET_SECONDS,
+  FILE_UPLOAD_BATCH_UNKNOWN_SPEED,
+  type FileQuota,
   type CloudStorageConnection,
   type CloudStorageObject,
   type FileListResponse,
@@ -18,6 +23,14 @@ import {
 import { isInlinePreviewMime } from '@/lib/file-preview';
 import { AppIcon } from './app-icon';
 import { filterWorkspaceFiles } from '@/lib/file-search';
+import {
+  DRIVE_FILES_CHANGED_EVENT,
+  clearReselect,
+  currentUploadSpeed,
+  enqueueUploads,
+} from '@/lib/upload-queue';
+import { formatRate, type SpeedEstimate } from '@/lib/upload-speed';
+import { BatchProgress, UploadProgressList, useUploads } from './upload-progress';
 import {
   useCallback,
   useEffect,
@@ -380,6 +393,61 @@ function FilePreviewDialog({
   );
 }
 
+function fallbackQuota(maxBytes: number, fileCount: number, usedBytes: number): FileQuota {
+  return {
+    maxFileBytes: maxBytes, maxFiles: FILE_MAX_PER_WORKSPACE, fileCount, usedBytes, limitBytes: null, target: 'sorye',
+    maxBatchFiles: FILE_UPLOAD_BATCH_MAX, maxConcurrentUploads: 1, throttleBytesPerSecond: null,
+  };
+}
+
+/** Why the browser queues at most this many files: the measured or reported connection speed. */
+function batchExplanation(speed: SpeedEstimate, quota: FileQuota): string {
+  const minutes = Math.round(FILE_UPLOAD_BATCH_TARGET_SECONDS / 60);
+  const cap = `at most ${quota.maxBatchFiles} at once`;
+  if (speed.bytesPerSecond === null) {
+    return `Drive queues up to ${Math.min(FILE_UPLOAD_BATCH_UNKNOWN_SPEED, quota.maxBatchFiles)} files at a time until it has measured your upload speed.`;
+  }
+  const rate = formatRate(speed.bytesPerSecond);
+  const serverBound = speed.limitedByServer || (speed.source !== 'measured' && quota.throttleBytesPerSecond === speed.bytesPerSecond);
+  const basis = serverBound
+    ? `This server limits uploads to about ${rate}`
+    : speed.source === 'measured'
+      ? `Your recent uploads ran at about ${rate}`
+      : `Your browser reports a connection that should upload about ${rate}`;
+  return `${basis}, so Drive queues as many files as fit in about ${minutes} minutes (${cap}). Select the rest after these finish.`;
+}
+
+function DriveQuota({ quota, speed }: { quota: FileQuota; speed: SpeedEstimate }) {
+  const maxMb = Math.floor(quota.maxFileBytes / (1024 * 1024));
+  const byteShare = quota.limitBytes ? Math.min(100, Math.round((quota.usedBytes / quota.limitBytes) * 100)) : null;
+  const countShare = Math.min(100, Math.round((quota.fileCount / quota.maxFiles) * 100));
+  const share = byteShare ?? countShare;
+  const where = quota.target === 'drive' ? 'your connected drive' : quota.target === 'database' ? 'your connected database' : 'Sorye storage';
+  return (
+    <section aria-label="Drive storage" className="mx-4 mt-3 shrink-0 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-xs sm:mx-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p>
+          <span className="font-semibold">{formatSize(quota.usedBytes)}</span>
+          {quota.limitBytes ? <> of {formatSize(quota.limitBytes)}</> : null} used in {where}
+          <span className="text-[var(--color-text-muted)]"> · {quota.fileCount} of {quota.maxFiles} files</span>
+        </p>
+        <p className="text-[var(--color-text-muted)]">Up to {maxMb} MB per file</p>
+      </div>
+      <div
+        className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10"
+        role="meter"
+        aria-label={quota.limitBytes ? 'Storage used' : 'Files used'}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={share}
+      >
+        <div className={`h-full rounded-full ${share >= 90 ? 'bg-red-400' : share >= 75 ? 'bg-amber-400' : 'bg-[var(--color-accent)]'}`} style={{ width: `${share}%` }} />
+      </div>
+      <p className="mt-2 text-[11px] text-[var(--color-text-muted)]">{batchExplanation(speed, quota)}</p>
+    </section>
+  );
+}
+
 export function AppFiles() {
   const uid = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -387,6 +455,9 @@ export function AppFiles() {
   const [fileLoad, setFileLoad] = useState<UserLoadPartition<WorkspaceFile> | null>(null);
   const [driveWorkspace, setDriveWorkspace] = useState<UserLoadWorkspace | null>(null);
   const [maxBytes, setMaxBytes] = useState(FILE_MAX_BYTES);
+  const [quota, setQuota] = useState<FileQuota | null>(null);
+  const uploads = useUploads();
+  const reselectRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -415,6 +486,8 @@ export function AppFiles() {
     setFileLoad(data.load ?? null);
     setDriveWorkspace(data.workspace ?? null);
     setMaxBytes(data.maxBytes ?? FILE_MAX_BYTES);
+    setQuota(data.quota ?? fallbackQuota(data.maxBytes ?? FILE_MAX_BYTES, data.files.length,
+      data.files.reduce((sum, file) => sum + file.size, 0)));
     return data.files;
   }, []);
 
@@ -432,6 +505,17 @@ export function AppFiles() {
     return () => {
       cancelled = true;
     };
+  }, [load]);
+
+  // The Hub upload manager stores files while Drive may be hidden; refresh the list when it does.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onChanged = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; void load().catch(() => undefined); }, 400);
+    };
+    window.addEventListener(DRIVE_FILES_CHANGED_EVENT, onChanged);
+    return () => { window.removeEventListener(DRIVE_FILES_CHANGED_EVENT, onChanged); if (timer) clearTimeout(timer); };
   }, [load]);
 
   const loadCloudObjects = useCallback(async (storageId: string, prefix: string) => {
@@ -488,6 +572,10 @@ export function AppFiles() {
   async function uploadList(list: FileList | File[]) {
     const incoming = Array.from(list);
     if (incoming.length === 0) return;
+    if (!cloudStorageId) {
+      queueDriveUploads(incoming);
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -530,6 +618,26 @@ export function AppFiles() {
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  /** Hand files to the Hub upload manager, which keeps uploading while other apps are open. */
+  function queueDriveUploads(incoming: File[]) {
+    setError(null);
+    setNotice(null);
+    if (inputRef.current) inputRef.current.value = '';
+    if (!driveWorkspace || !quota) { setError('Drive is still loading. Try again in a moment.'); return; }
+    const result = enqueueUploads(incoming, { workspaceId: driveWorkspace.id, quota });
+    const parts: string[] = [];
+    if (result.queued > 0) parts.push(`Uploading ${result.queued} file${result.queued === 1 ? '' : 's'}.`);
+    const capped = result.skipped.filter((item) => item.reason === 'Batch limit for your connection');
+    const other = result.skipped.filter((item) => item.reason !== 'Batch limit for your connection');
+    if (capped.length > 0) {
+      parts.push(`${capped.length} not queued: ${batchExplanation(result.speed, quota)}`);
+    }
+    if (parts.length) setNotice(parts.join(' '));
+    if (other.length > 0) {
+      setError(other.slice(0, 4).map((item) => `${item.name}: ${item.reason}`).join(' · ') + (other.length > 4 ? ` · and ${other.length - 4} more` : ''));
     }
   }
 
@@ -651,6 +759,7 @@ export function AppFiles() {
   }
 
   const maxMb = Math.floor(maxBytes / (1024 * 1024));
+  const speed = currentUploadSpeed();
   const renameId = `${uid}-rename`;
   const dropId = `${uid}-drop`;
   const searchId = `${uid}-search`;
@@ -703,6 +812,40 @@ export function AppFiles() {
           />
         </label>
       </header>
+
+      {!cloudStorage && quota ? <DriveQuota quota={quota} speed={speed} /> : null}
+
+      {uploads.reselect ? (
+        <div className="mx-4 mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs sm:mx-5" role="status">
+          <span>Select <strong>{uploads.reselect.fileName}</strong> again to upload it. This page no longer holds the file.</span>
+          <span className="flex gap-1">
+            <label className="cursor-pointer rounded-md bg-[var(--color-accent)] px-2.5 py-1 font-medium text-[var(--color-surface)]">
+              Choose file
+              <input
+                ref={reselectRef}
+                className="sr-only"
+                type="file"
+                accept={ACCEPT}
+                onChange={(event) => {
+                  const picked = event.target.files ? Array.from(event.target.files) : [];
+                  if (reselectRef.current) reselectRef.current.value = '';
+                  if (picked.length) { clearReselect(); setCloudStorageId(null); queueDriveUploads(picked); }
+                }}
+              />
+            </label>
+            <button type="button" className="rounded-md px-2 py-1 text-[var(--color-text-muted)] hover:bg-white/10" onClick={clearReselect}>Dismiss</button>
+          </span>
+        </div>
+      ) : null}
+
+      {!cloudStorage && uploads.items.length > 0 ? (
+        <section aria-label="Upload progress" className="mx-4 mt-3 shrink-0 rounded-xl border border-white/8 px-4 py-3 sm:mx-5">
+          <BatchProgress totals={uploads.totals} />
+          <div className="mt-2 max-h-56 overflow-y-auto pr-1">
+            <UploadProgressList items={uploads.items} />
+          </div>
+        </section>
+      ) : null}
 
       {error ? (
         <p className="shrink-0 px-4 pt-3 text-xs text-red-300 sm:px-5" role="alert">

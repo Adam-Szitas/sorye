@@ -2,6 +2,7 @@ import type { HubUser, SubscriptionPlan, Workspace } from '@sorye/types';
 import Link from 'next/link';
 import { LanguageSelector } from './language-selector';
 import { SubscriptionBadge } from './subscription-badge';
+import { TopBarUploadIndicator } from './upload-progress';
 
 interface TopBarProps {
   user: HubUser;
@@ -12,6 +13,8 @@ interface TopBarProps {
   hubMenuActive?: boolean;
   onToggleAiOverlay?: () => void;
   onOpenHub: () => void;
+  /** Opens Drive from the upload indicator. */
+  onOpenDrive?: () => void;
   onOpenNotifications: () => void;
   onOpenPicker: () => void;
   onOpenConnections: () => void;
@@ -27,6 +30,7 @@ export function TopBar({
   hubMenuActive = false,
   onToggleAiOverlay,
   onOpenHub,
+  onOpenDrive,
   onOpenNotifications,
   onOpenPicker,
   onOpenConnections,
@@ -74,6 +78,7 @@ export function TopBar({
             AI · MCP
           </button>
         ) : null}
+        {onOpenDrive ? <TopBarUploadIndicator onOpenDrive={onOpenDrive} /> : null}
         <button
           type="button"
           onClick={onOpenNotifications}

@@ -312,6 +312,32 @@ Plans belong to a workspace and only its owner changes them; the workspace comes
 | Billing state in test mode (status, period, schedule, grace) | Hub `.data/billing-simulator.json` | Local/test only; deleted by hand |
 | Selected billing period on the page | `/billing` and `/pricing` component state | Until the page closes |
 
+## Drive uploads (Hub-shell queue)
+
+```mermaid
+flowchart LR
+    Pick[Member selects files in Drive] --> Quota[GET /api/files: quota from server session]
+    Quota --> Plan{Browser batch plan}
+    Plan -->|speed: recent uploads, else navigator.connection, capped by server throttle| Queue[Hub-shell upload manager]
+    Plan -->|over per-file size, file count or connection budget| Skipped[Not queued, reason shown]
+    Queue -->|SHA-256 in browser, XHR with progress| Upload[POST /api/files]
+    Upload -->|per-member slot, process slot, optional throughput buckets| Read[Bounded, throttled body read]
+    Read -->|recompute SHA-256; mismatch = damaged| Store[Sorye storage: S3 ChecksumSHA256 or local read-back; own storage]
+    Store -->|stored| Notice[Hub notice: one row per batch]
+    Store -->|damaged or refused| Fail[Hub notice per file with Retry]
+    Queue --> TopBar[Top bar indicator in every app]
+    Fail -->|Retry while the tab holds the file; else Drive asks to select it again| Queue
+```
+
+Drive is Hub-native and, unlike the other Hub-native apps, opens in a shell pane from L/R or the workspace bar (`SHELL_PANE_NATIVE_APP_IDS` in `hub-shell.tsx`), so the shell stays mounted while it uploads; the plain launcher click still opens the full-page `/apps/files`, whose standalone bar shows the same indicator. The upload queue lives in a Hub-shell module (`apps/hub/lib/upload-queue.ts`), not in Drive's component tree. Files keep uploading while the member opens other apps; the top bar (`TopBarUploadIndicator` in `apps/hub/components/upload-progress.tsx`) shows batch progress and a per-file list with Retry and Cancel. Closing or reloading the tab stops uploads; the browser warns first while any are active. `GET /api/files` and `GET /api/files/quota` return the quota from the server session: per-file maximum, file count and its maximum, bytes used, the own-storage byte limit when one applies, the batch ceiling, concurrent uploads per member and the effective throttle. The browser estimates upload speed from recent uploads (moving average in `localStorage`), else `navigator.connection.downlink` halved, capped by the server throttle, and queues only files that fit in about five minutes (at most 25; 10 while the speed is unknown). This is advisory; the server enforces the per-file size, file count, per-member and process concurrency (429 with `Retry-After`, which the queue waits out) and the optional throughput limits on every request. `expectedWorkspaceId` is a guard only: a file queued in another workspace is refused with 409, and workspace identity still comes from the session. The browser sends a SHA-256; Hub recomputes it on the received bytes and refuses a mismatch (422 `checksum_mismatch`). Sorye S3 writes carry `ChecksumSHA256`, so the object store verifies and echoes it; local writes are read back and hashed; `FILE_UPLOAD_VERIFY_READBACK=true` adds a full read-back for S3 and own storage. A damaged store is deleted, the ledger row is `failed`/`integrity_failed`, and the file is shown as damaged with Retry. Hub writes notices addressed to the uploader (`userId`, no `actorId`): one merged success row per batch and one failure row per file carrying the queue item id. A network failure that never reached the route is reported through `POST /api/files/upload-failures` (fixed reasons, rate limited). Throughput limits (`FILE_UPLOAD_THROTTLE_USER_BPS`, `_WORKSPACE_BPS`, `_GLOBAL_BPS`) are off by default and per Hub process. The Drive cloud-folder (Relay S3/R2) upload path is unchanged and not queued.
+
+| State | Owner | Lifetime |
+|-------|-------|----------|
+| Upload queue, File objects, transfer progress | Hub-shell module `upload-queue.ts` (browser memory) | Until the tab closes or reloads |
+| Measured upload speed | Browser `localStorage` (`sorye.drive.uploadSpeed.v1`) | 3 days, per browser |
+| Throughput buckets and per-member in-flight counts | Hub process memory | Process lifetime |
+| Upload notices | Hub `notifications.json` | Newest 200 per workspace |
+
 ## Own upload storage (drive or database)
 
 ```mermaid

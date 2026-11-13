@@ -38,6 +38,14 @@ import { OperatorNoticeBanner } from '@/components/operator-notice-banner';
 import { PanelSkeleton } from '@/components/panel-skeleton';
 import { StatusBar } from '@/components/status-bar';
 import { TopBar } from '@/components/top-bar';
+import { setUploadWorkspace } from '@/lib/upload-queue';
+
+/**
+ * Hub-native apps that open in a shell pane like a remote. Drive is one so the
+ * Hub shell (top bar and upload manager) stays mounted while files upload and
+ * the member opens other apps beside or instead of it.
+ */
+const SHELL_PANE_NATIVE_APP_IDS: ReadonlySet<string> = new Set(['files']);
 import { WorkspaceSwitcher } from '@/components/workspace-switcher';
 import {
   NotificationProvider,
@@ -184,7 +192,8 @@ export function HubShell({ initialSession }: HubShellProps) {
       const canMountInPane =
         Boolean(app.microFrontend) ||
         Boolean(app.external) ||
-        app.alwaysAvailable === true;
+        app.alwaysAvailable === true ||
+        SHELL_PANE_NATIVE_APP_IDS.has(app.id);
       if (!canMountInPane) {
         router.push(app.mountPath);
         return;
@@ -546,6 +555,8 @@ function HubShellLoaded({
     leftApp?.id ??
     rightApp?.id ??
     null;
+  // The upload manager does not send queued files of another workspace.
+  useEffect(() => { setUploadWorkspace(workspace.id); }, [workspace.id]);
   const kernelSession = useMemo(
     () => ({ user, workspace, workspaces }),
     [user, workspace, workspaces],
@@ -565,6 +576,7 @@ function HubShellLoaded({
         onToggleAiOverlay={() => setAiOverlayOpen((prev) => !prev)}
         hubMenuActive={panel === 'launcher'}
         onOpenHub={() => navigatePanel('launcher')}
+        onOpenDrive={() => requestHubOpenApp('files', 'left')}
         onOpenNotifications={openCenter}
         onOpenPicker={() => {
           logState('panel.open', { panel: 'picker' });
@@ -640,7 +652,7 @@ function HubShellLoaded({
                     (a) =>
                       a.id !== panes.leftId &&
                       a.id !== panes.rightId &&
-                      (a.microFrontend || a.external || a.alwaysAvailable),
+                      (a.microFrontend || a.external || a.alwaysAvailable || SHELL_PANE_NATIVE_APP_IDS.has(a.id)),
                   )
                   .slice(0, 6)
                   .map((app) => (

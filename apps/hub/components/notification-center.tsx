@@ -9,6 +9,7 @@ import {
   type WorkspaceNotificationItem,
 } from '@sorye/types';
 import { useNotifications } from '@/lib/use-notifications';
+import { retryUploadFromNotice } from '@/lib/upload-queue';
 
 function formatWhen(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -42,37 +43,55 @@ function NoticeButton({
   item: WorkspaceNotificationItem;
   onOpen: () => void;
 }) {
+  const retry = item.appId === 'files' && item.outcome === 'failure' && item.upload?.uploadId ? item.upload : null;
   return (
-    <button
-      type="button"
-      className={`mb-1 w-full rounded-xl border p-3 text-left transition hover:bg-white/6 ${
+    <div
+      className={`mb-1 w-full rounded-xl border transition hover:bg-white/6 ${
         item.read
           ? 'border-white/6 bg-white/2 opacity-80'
-          : 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5'
+          : item.upload?.corrupted
+            ? 'border-amber-400/40 bg-amber-400/5'
+            : 'border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5'
       }`}
-      onClick={onOpen}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-accent)]">
-          {appName(item.appId)}
-          {!item.read ? (
-            <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] align-middle" />
-          ) : null}
-        </span>
-        <time className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
-          {formatWhen(item.createdAt)}
-        </time>
-      </div>
-      <p className="mt-1 text-sm font-medium">{item.title}</p>
-      {item.body ? (
-        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-          {item.body}
+      <button type="button" className="w-full p-3 text-left" onClick={onOpen}>
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-accent)]">
+            {appName(item.appId)}
+            {!item.read ? (
+              <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] align-middle" />
+            ) : null}
+          </span>
+          <time className="shrink-0 text-[10px] text-[var(--color-text-muted)]">
+            {formatWhen(item.createdAt)}
+          </time>
+        </div>
+        <p className="mt-1 text-sm font-medium">{item.title}</p>
+        {item.body ? (
+          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+            {item.body}
+          </p>
+        ) : null}
+        <p className="mt-2 text-[10px] text-[var(--color-accent)]">
+          Open {appName(item.appId)} →
         </p>
+      </button>
+      {retry ? (
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            className="rounded-md bg-[var(--color-accent)]/15 px-2.5 py-1 text-xs font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25"
+            onClick={() => {
+              // The Hub upload manager retries the file it still holds; otherwise Drive asks for it again.
+              const retried = retryUploadFromNotice(retry.uploadId!, retry.fileName ?? 'the file');
+              if (!retried) onOpen();
+            }}
+          >
+            Upload {retry.fileName ?? 'file'} again
+          </button>
+        </div>
       ) : null}
-      <p className="mt-2 text-[10px] text-[var(--color-accent)]">
-        Open {appName(item.appId)} →
-      </p>
-    </button>
+    </div>
   );
 }
 

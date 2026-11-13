@@ -6,6 +6,24 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 
 let client: S3Client | undefined;
+let testClient: Pick<S3Client, 'send'> | undefined;
+
+/** Tests only: route S3 calls to a fake client. */
+export function setFileBlobClientForTests(fake: Pick<S3Client, 'send'> | undefined) { testClient = fake; }
+
+/** The stored bytes did not hash to the SHA-256 of the bytes Hub received. */
+export class BlobIntegrityError extends Error {
+  constructor(readonly stage: 'write' | 'readback') {
+    super('Stored file does not match the uploaded bytes');
+    this.name = 'BlobIntegrityError';
+  }
+}
+
+/** Optional full read-back after every store; off by default because it doubles storage reads. */
+export function readbackVerificationEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.FILE_UPLOAD_VERIFY_READBACK === 'true';
+}
+
 function config() {
   const driver = process.env.FILE_STORE_DRIVER ?? 'local';
   if (driver !== 's3' && driver !== 'local') throw new Error('Invalid FILE_STORE_DRIVER');
@@ -20,7 +38,7 @@ function config() {
     forcePathStyle: process.env.FILE_S3_PATH_STYLE === 'true',
     maxAttempts: 3,
   });
-  return { driver, bucket: bucket!, client: client! };
+  return { driver, bucket: bucket!, client: (testClient ?? client!) as S3Client };
 }
 
 function key(workspaceId: string, id: string) {
@@ -30,16 +48,65 @@ function key(workspaceId: string, id: string) {
   return `files/${workspaceId}/${id}`;
 }
 
-export async function putFileBlob(workspaceId: string, id: string, bytes: Buffer, mime: string) {
+/**
+ * Store a blob and prove the stored copy is the bytes Hub received.
+ * - S3: the request carries `ChecksumSHA256`; the object store recomputes it and
+ *   refuses the write on a mismatch (`BadDigest`), and the response echoes it.
+ *   No second transfer is needed.
+ * - Local disk: the written file is read back and hashed.
+ * - `FILE_UPLOAD_VERIFY_READBACK=true` adds a full S3 read-back as well.
+ * On a mismatch the blob is deleted and `BlobIntegrityError` is thrown.
+ */
+export async function putFileBlob(workspaceId: string, id: string, bytes: Buffer, mime: string, sha256?: string) {
   const c = config(); const objectKey = key(workspaceId, id);
+  const expected = sha256 ?? createHash('sha256').update(bytes).digest('hex');
   if (c.driver === 's3') {
-    await c.client.send(new PutObjectCommand({ Bucket: c.bucket, Key: objectKey, Body: bytes,
-      ContentType: mime, ContentLength: bytes.length }), { abortSignal: AbortSignal.timeout(120_000) });
+    const checksum = Buffer.from(expected, 'hex').toString('base64');
+    let echoed: string | undefined;
+    try {
+      const result = await c.client.send(new PutObjectCommand({ Bucket: c.bucket, Key: objectKey, Body: bytes,
+        ContentType: mime, ContentLength: bytes.length, ChecksumAlgorithm: 'SHA256', ChecksumSHA256: checksum,
+        Metadata: { sha256: expected } }), { abortSignal: AbortSignal.timeout(120_000) });
+      echoed = result?.ChecksumSHA256;
+    } catch (error) {
+      if (error && typeof error === 'object' && (error as { name?: string }).name === 'BadDigest') {
+        throw new BlobIntegrityError('write');
+      }
+      throw error;
+    }
+    if (echoed && echoed !== checksum) {
+      await deleteFileBlob(workspaceId, id).catch(() => undefined);
+      throw new BlobIntegrityError('write');
+    }
+    if (readbackVerificationEnabled() && (await hashFileBlob(workspaceId, id)) !== expected) {
+      await deleteFileBlob(workspaceId, id).catch(() => undefined);
+      throw new BlobIntegrityError('readback');
+    }
     return;
   }
   const target = path.join(process.cwd(), '.data', objectKey);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, bytes);
+  if ((await hashFileBlob(workspaceId, id)) !== expected) {
+    await deleteFileBlob(workspaceId, id).catch(() => undefined);
+    throw new BlobIntegrityError('readback');
+  }
+}
+
+/** SHA-256 of a stored blob, streamed so the file is never fully buffered. */
+export async function hashFileBlob(workspaceId: string, id: string): Promise<string> {
+  const hash = createHash('sha256');
+  const reader = (await streamFileBlob(workspaceId, id)).getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      hash.update(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return hash.digest('hex');
 }
 
 /** Stream an existing local blob during migration; never buffer the file in memory. */

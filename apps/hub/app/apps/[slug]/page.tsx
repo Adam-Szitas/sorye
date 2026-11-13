@@ -3,6 +3,7 @@
 import { ExternalAppFrame } from '@/components/external-app-frame';
 import { MicroAppLoader, preloadMicroApp } from '@/components/micro-app-loader';
 import { StandaloneAppBar } from '@/components/standalone-app-bar';
+import { TopBarUploadIndicator } from '@/components/upload-progress';
 import { HubNativeAppBody } from '@/components/hub-native-app';
 import { AppUsageGuide } from '@/components/app-usage-guide';
 import {
@@ -17,7 +18,7 @@ import {
 } from '@sorye/types';
 import { useI18n } from '@sorye/platform/react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { StatusPage } from '@/components/status-page';
 import NotFound from '@/app/not-found';
@@ -27,6 +28,9 @@ type Denied = 'not-on-workspace' | 'check-failed';
 
 export default function MicroAppPage() {
   const params = useParams<{ slug: string }>();
+  const router = useRouter();
+  // Uploads started in Drive stay visible on every standalone app page of this tab.
+  const uploadIndicator = <TopBarUploadIndicator onOpenDrive={() => router.push('/apps/files')} />;
   const { t, locale } = useI18n();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [denied, setDenied] = useState<Denied>('not-on-workspace');
@@ -121,7 +125,7 @@ export default function MicroAppPage() {
     if (isHubNativeApp(app)) {
       return (
         <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
-          <StandaloneAppBar appName={app.name} />
+          <StandaloneAppBar appName={app.name}>{uploadIndicator}</StandaloneAppBar>
           {shouldShowUsageGuide(app.id) ? (
             <AppUsageGuide app={app} variant="pane" />
           ) : null}
@@ -146,6 +150,7 @@ export default function MicroAppPage() {
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden">
       <StandaloneAppBar appName={app.name}>
+        {uploadIndicator}
         {app.external ? (
           <a
             href={app.external.url}

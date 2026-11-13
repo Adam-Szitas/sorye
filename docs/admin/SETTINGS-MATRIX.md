@@ -232,10 +232,17 @@ Workspace files; blobs local or S3-compatible.
 | Upload limits (64 MB per file, 200 per workspace) (`files.limits`) | Code constant | platform | packages/types/src/files.ts | Code release | public | release | `packages/types/src/files.ts` |
 | Blob driver and S3 settings (`FILE_STORE_DRIVER`) | Deployment input | deployment | Environment (FILE_S3_*) | Deployer (environment, redeploy) | secret | restart | `apps/hub/lib/file-blobs.ts` |
 | Optional workspace Postgres connection (`workspace.storage`) | In the owning app | workspace | Hub workspace-storage.json (encrypted, hints only) | Workspace member (in the app) | secret | next-request | `apps/hub/app/api/workspace/storage/route.ts` |
+| Browser upload batch ceiling (25 files) and 5-minute batch target (`files.uploadBatch`) | Code constant | platform | packages/types/src/files.ts | Code release | public | release | `packages/types/src/files.ts` |
+| Upload throughput limit per member (bytes/s, off when unset) (`FILE_UPLOAD_THROTTLE_USER_BPS`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
+| Upload throughput limit per workspace (bytes/s, off when unset) (`FILE_UPLOAD_THROTTLE_WORKSPACE_BPS`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
+| Upload throughput limit per Hub process (bytes/s, off when unset) (`FILE_UPLOAD_THROTTLE_GLOBAL_BPS`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
+| Concurrent uploads per member (default 2, process slots cap it) (`FILE_UPLOAD_MAX_INFLIGHT_PER_USER`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/upload-throttle.ts` |
+| Full read-back SHA-256 check after S3 and own-storage writes (off by default) (`FILE_UPLOAD_VERIFY_READBACK`) | Deployment input | deployment | Environment | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/file-blobs.ts` |
 
 Gaps:
 
 - No per-folder permissions.
+- Upload throughput limits are per Hub process and environment-only; there is no console editor.
 
 ## SUSM (removed) (`susm`)
 
