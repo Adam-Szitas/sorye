@@ -1,6 +1,6 @@
 # Sorye Apps — Index
 
-Detailed reference for every app in the catalog. For platform-wide design, see [../ARCHITECTURE.md](../ARCHITECTURE.md). The same flows are drawn at `/architecture`.
+Detailed reference for every app in the catalog. For a one-page map of who handles what, see [../APP-OVERVIEW.md](../APP-OVERVIEW.md). For platform-wide design, see [../ARCHITECTURE.md](../ARCHITECTURE.md). The same flows are drawn at `/architecture`.
 
 | App | Port | Type | Doc section |
 |-----|------|------|-------------|
