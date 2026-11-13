@@ -289,6 +289,35 @@ A member builds a form in the Hub-native Forms app. Saves are typed `forms.form`
 | Draft being edited, selected tab | Forms component state | Until the app unmounts |
 | Anonymous rate-limit windows | Hub process memory | One minute per window, per replica |
 
+## Site builder: build, publish, visit, submit
+
+```mermaid
+flowchart LR
+    Owner[Owner in the Site CMS] -->|settings, pages, collections, items, media entries, publish through the scoped queue| Batch[Hub /api/backend/actions/batch]
+    Batch -->|validated with the SDK schema, signed v2 action| Rodrigo[Rodrigo: site.* families + slug index]
+    Owner -->|upload through the Hub-shell upload queue| Media[Hub /api/site/media]
+    Media -->|type sniffed, size bounded, streamed in 8 MiB parts| Objects[Rodrigo site object]
+    Rodrigo -->|publish: copy drafts into a revision and move the live pointer in one transaction| Rev[Live revision]
+    Visitor[Visitor, no sign-in] -->|/s/slug| Bare[Hub: locale redirect, private and no-store]
+    Visitor -->|/s/slug/locale/...| Render[Hub public renderer, static HTML, no scripts]
+    Render -->|reserved public grant: manifest, page, items, media| Rev
+    Render -->|cache dropped on site.publish / settings changes| Render
+    Visitor -->|POST /s/slug/_form/page/section| Form[Hub form edge: honeypot, min fill time, rate limits]
+    Form -->|reserved public grant, site.submission.create| Rodrigo
+    Owner -->|reads submissions, sets status, exports CSV| Rodrigo
+```
+
+The Site app is a CMS. The owner composes pages from `@sorye/site-sdk` sections, keeps repeating content in collections, uploads images and PDFs to the media library, and edits text per locale. Every save is a typed `site.*` action that Hub validates with the SDK's schema and Rodrigo validates again from the same contract (`contracts/site-components.json`). Media bytes are a Rodrigo `site` object; the library entry must match a ready object of the same workspace. Publishing copies settings, pages, collections, media entries and published items into an immutable revision and moves the live pointer in one transaction; restoring moves the pointer back. Hub renders the live revision as static HTML with no client JavaScript and a CSP without `unsafe-inline`; `/s/<slug>` redirects to the visitor's best language, and each page links its language alternatives and the per-site sitemap. Contact forms post without JavaScript; Hub filters spam (hidden field, signed issue time, per-client and per-site limits) before Rodrigo validates the answers against the live section and stores a `site.submission` with its Messenger/Relay delivery targets as *pending*. **Delivery is not performed yet**: it waits for Rodrigo's durable event log (alignment slice 3). A workspace that never published from the CMS keeps its earlier one-page Site at `/s/<slug>` unchanged.
+
+| State | Owner | Lifetime |
+|---|---|---|
+| Site settings, pages, collections, items, media entries, submissions, kept revisions (20 + live), slug index | Rodrigo (PostgreSQL) | Until the owner deletes them; older revisions pruned on publish |
+| Media bytes | Rodrigo object storage (`site` objects) | Not yet removed when an entry is deleted |
+| Unconfirmed CMS edits | Site scoped IndexedDB queue | Until Rodrigo confirms or the owner discards |
+| Published manifests; revision pages and items | Hub process memory cache | Manifests until a publish/settings change (≤ 60 s); revision content ≤ 10 min |
+| Form rate-limit windows | Hub process memory | One minute per window, per replica |
+| Draft being edited, editing language, open tab | Site component state | Until the app unmounts |
+
 ## Plans and self-service billing
 
 ```mermaid

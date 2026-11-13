@@ -21,7 +21,7 @@ Detailed reference for every app in the catalog. For platform-wide design, see [
 | Storefront | — | Hub-native | [Storefront](#storefront) |
 | Mail | — | Hub-native | [Mail](#mail) |
 | Drive | — | Hub-native | [Drive](#drive) |
-| Site | — | Hub-native, public section builder | [Site](#site) |
+| Site | — | Hub-native, website builder (CMS) | [Site](#site) |
 | Forms | — | Hub-native, public form builder | [Forms](#forms) |
 | Reports | — | Hub-native, admins only | [Reports](#reports) |
 
@@ -35,7 +35,7 @@ The intended boundary is **app → Hub → Rodrigo**. Hub remains the browser-fa
 |---|---|---|
 | Tasks, Notes, Calendar | Hub v2 actions and reads; app-owned scoped IndexedDB queues; old resource mutation endpoints disabled | Calendar/Notes event notifications still use Hub; end-to-end outage/restart certification remains required |
 | Canvas | Rodrigo v2 board resources and queued mutations | Realtime invalidation remains Hub-owned; nested payload validation and app-specific end-to-end coverage remain |
-| Site | Rodrigo v2 page editing, queued mutations, and anonymous published reads | Relay publish events are not emitted. Unpublished and unknown slugs are 404 |
+| Site | Rodrigo v2 `site.*` CMS families (settings, pages, collections, items, media entries, publish revisions, submissions), media bytes as Rodrigo `site` objects, queued mutations, anonymous reads of the live revision | Form delivery to Messenger/Relay waits for Rodrigo durable events; bytes of deleted media are not removed; the earlier one-page `site.page` stays readable until the first CMS publish |
 | Storefront | Rodrigo v2 product resources, enquiry creates, and queued mutations | Status transitions are not a Hub workflow. Seed products cannot be ordered |
 | Forms | Rodrigo v2 form definitions, slug index, anonymous submissions, queued member mutations | No submission notification or event; no file uploads, quotas or close dates; end-to-end browser coverage remains |
 | Workspace profile | Rodrigo v2 profile read and name update | Membership, app access, team settings, and other account policy remain Hub-owned |
@@ -65,7 +65,7 @@ Each row keeps its workspace id, name, and kind. The UI labels are **Personal** 
 | DevKit and Connections | Embed widgets. The embed iframe still runs only the widget key's workspace. |
 | Mail | Sorye mailbox messages. Connected IMAP stays on the active account and is not synced for every workspace. |
 | Storefront | The signed-in user's orders. The shop catalog stays on the active workspace. |
-| Site | Saved pages. The editor stays on the active workspace and does not invent an empty draft for the other side. |
+| Site | Not listed per workspace: the CMS edits the active workspace's site only. |
 | Studio | Drive files whose `sourceAppId` is `studio`. |
 | Protocolio | Browser drafts keyed by workspace id (`sorye:protocolio:draft:v1:<workspaceId>`). The old unscoped key is copied into the active workspace once. |
 | Contact, Catalog | No member data. They do not render the two sections. |
@@ -783,39 +783,52 @@ Workspace members browse the workspace catalog, add saved products to a cart, an
 
 # Site
 
-**Path:** Hub-native (`apps/hub/components/app-site.tsx`) — not a Vite remote  
+**Path:** Hub-native (`apps/hub/components/app-site.tsx` → `components/site-cms/`) — not a Vite remote  
 **Catalog id:** `site`  
 **Editor:** `/apps/site` (enable Site from the App Library, then open from the launcher)  
-**Public route:** `/s/[slug]` — middleware allows this without Google. Unpublished or unknown slug → 404.
+**Public routes:** `/s/[slug]` (language redirect, or the earlier one-page site), `/s/[slug]/[locale]/[page | collection/item]`, `/s/[slug]/sitemap.xml`, `/s/[slug]/media/[id]` — no sign-in.
 
 ## Purpose
 
-A shareable **section/block** page for **this workspace**. Logged-in owners add, reorder, or remove blocks and toggle **Published**. Visitors with the URL see only those published blocks — never Reports, Mail, members, events, or storefront orders. The public read uses Rodrigo’s slug index and a reserved Hub service assertion.
+A website builder for presentational sites. The workspace owner sets up the site (name, public address, theme, languages, SEO), builds pages from [`@sorye/site-sdk`](../../packages/site-sdk/README.md) sections, keeps repeating content in collections, uploads images and PDFs to a media library, adds contact forms, previews the draft and publishes. Members can read the CMS and submissions; every write is owner-only. Visitors see only the published revision: never drafts, members, workspace ids or form notification targets.
 
-**Block types:** Hero (heading, offer, CTA), About (length-capped text), Links (https), Storefront (this workspace’s product names/prices), Contact (button to `/contact` or mailto). Optional hero image URLs are https-only (`assertSafePublicHttpsUrl`); unsafe URLs are skipped.
+**Sections:** Header & navigation, Hero, Rich text (Markdown subset, no HTML), Features, Image + text, Gallery (popover lightbox), Team, Testimonials, FAQ, Pricing (display only), Call to action, Contact form, Collection list, Collection item, Logo strip, Footer, Links, Product showcase (live Storefront names and prices, no checkout). Links must be `https:`, `mailto:`, a site path or an anchor; images only from the media library, with alt text and intrinsic size.
 
-Starters: Company landing, Shop-front, Hiring. Slug is derived from the workspace name plus a stable id suffix (not user-controlled). `workspaceId` on write comes from `ensureHubUser()` only. The public page loads storefront products on the Hub server from the slug → workspace map — never from a client `workspaceId`.
+**Languages:** en, de, sk, hu, es. Every text field holds per-locale values with fallback to the main language; the CMS shows missing translations. Public URLs carry the locale; `/s/<slug>` redirects (temporary, private, no-store) to the best `Accept-Language` match. Pages are self-canonical with `hreflang` alternates; the sitemap lists every page and detail item per locale.
+
+**Publishing:** one action copies settings, pages, collections, media entries and published items into an immutable revision in Rodrigo and moves the live pointer in the same transaction; restoring moves it back (newest 20 kept). The public renderer serves complete static HTML with no client JavaScript, hashed inline styles and a CSP without `unsafe-inline`; a revision-keyed cache is dropped on publish.
+
+**Forms:** posts work without JavaScript. Hub filters spam (hidden field, HMAC-signed issue time with a 3-second minimum, 5 posts/min per client, 120/min per site) before Rodrigo validates answers against the live section and stores a `site.submission`. The owner picks a Messenger channel and/or Relay; the target is stored with the submission as *pending*. **Delivery is not active yet**: it waits for Rodrigo's durable event log (alignment slice 3). Submissions can be marked handled or spam and exported as CSV.
+
+**Earlier one-page sites:** a workspace that saved the earlier editor keeps `site.page` and its `/s/<slug>` view unchanged until the owner publishes from the CMS. Setup offers to convert it to the home page (`legacy.ts`); an external hero image is not carried over and the CMS asks for a library upload.
+
+Not provided: custom domains, third-party embeds, CAPTCHA, SMTP, checkout, removing bytes of deleted media.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
 | `packages/types/src/apps.ts` | Catalog entry |
-| `packages/types/src/site.ts` | Block types, templates, length caps |
-| `apps/hub/components/app-site.tsx` | Section builder + copy URL |
-| `apps/hub/components/site-public-view.tsx` | Public block renderer |
-| `apps/hub/lib/site.ts` | Public projection and legacy JSON helpers. `/s/[slug]` does not read the JSON store |
-| `apps/hub/app/api/site/route.ts` | `GET/PUT /api/site` |
-| `apps/hub/app/s/[slug]/page.tsx` | Public page |
-| `apps/hub/middleware.ts` | `/s/[slug]` is public |
+| `packages/site-sdk/` | Components, shared schema, theme, renderer, contract export |
+| `packages/types/contracts/site-components.json` | Reviewed component contract (Rodrigo interprets the same file) |
+| `apps/hub/components/site-cms/` | CMS screens, field editors, action queue hook |
+| `apps/hub/lib/site-cms/` | Public client, published cache, renderer orchestration, drafts, form guard |
+| `apps/hub/app/s/[slug]/page.tsx` | Bare URL: language redirect or the earlier one-page view |
+| `apps/hub/app/s/[slug]/[...path]/route.ts` | Public pages, sitemap, media, contact-form POST |
+| `apps/hub/app/api/site/{cms,media,preview,submissions,channels}` | CMS data, uploads, draft preview, CSV, notification channels |
+| `apps/hub/lib/upload-queue.ts` | Shared upload queue (Site media uses its target option) |
+| `apps/hub/test/site-cms.test.ts` | Real-Rodrigo provider and renderer tests (`pnpm --filter @sorye/hub test:site`) |
 
 ## Communications
 
-- `GET /api/site` — Rodrigo page for the session workspace, or a local draft shape when none is saved
-- `PUT /api/site` — disabled (410). Owners queue page edits, including the published flag
-- Public `GET /s/[slug]` — published blocks only; slug lookup is signed with the reserved public-site grant; active USD product cards are attached when a shop block is present. Unknown, unpublished, and unsafe pages are 404. A Rodrigo outage is an unavailable page, not a Hub JSON fallback
-- `sorye.site.published` is not emitted by this save
-- No first-run `AppUsageGuide`
+- Writes: `site.settings`, `site.cmsPage`, `site.collection`, `site.item`, `site.media`, `site.publish`, `site.submission` (status) through the scoped IndexedDB queue and `/api/backend/actions/batch`; Hub validates with the SDK, Rodrigo again from the contract.
+- `GET /api/site/cms` — drafts with revisions, live revision id and queue scope for the session workspace
+- `POST /api/site/media` — upload (Hub upload queue) streamed to a Rodrigo `site` object; `GET /api/site/media/[id]` for members
+- `GET /api/site/preview/...` — draft rendered by the public renderer, noindex, forms disabled
+- `GET /api/site/submissions/csv`, `GET /api/site/channels`
+- Public reads and submissions use Rodrigo `/v2/public/site-cms/` with the reserved public-site grant
+- Legacy `GET /api/site` (earlier page) remains; `PUT /api/site` is disabled (410)
+- No workspace event or notification is emitted on publish or submission yet
 
 ---
 

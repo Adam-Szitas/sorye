@@ -119,15 +119,26 @@ Gaps:
 
 ## Site (`site`)
 
-Public workspace page at /s/<slug>.
+Website builder (CMS) published at /s/<slug>/<locale>; earlier one-page sites stay at /s/<slug> until the first CMS publish.
 
 | Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Page slug, title, published flag, blocks (≤100) (`site.page`) | In the owning app | workspace | Rodrigo site.page | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Earlier one-page site: slug, title, published flag, blocks (≤100) (`site.page`) | In the owning app | workspace | Rodrigo site.page | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Site name, public address, theme (WCAG AA), logo, favicon, social image, languages, SEO, home page (`site.settings`) | In the owning app | workspace | Rodrigo site.settings | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Pages (≤50) with SDK sections (≤40), navigation placement, per-page SEO (`site.cmsPage`) | In the owning app | workspace | Rodrigo site.cmsPage | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Content collections (≤20) and their field schemas (≤30 fields) (`site.collection`) | In the owning app | workspace | Rodrigo site.collection | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Collection items (≤500 per collection), draft or published (`site.item`) | In the owning app | workspace | Rodrigo site.item | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Media library entries (≤500; images ≤10 MB, PDF ≤25 MB, no SVG) (`site.media`) | In the owning app | workspace | Rodrigo site.media | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Publish or restore a revision (newest 20 kept) (`site.publish`) | In the owning app | workspace | Rodrigo site.publish | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Contact-form submission handling status (answers are immutable) (`site.submission`) | In the owning app | workspace | Rodrigo site.submission | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
+| Contact form: honeypot, minimum fill time 3 s, token age 24 h, 5 posts/min per client, 120/min per site (`site.formEdgeLimits`) | Code constant | deployment | apps/hub/lib/site-cms/form-guard.ts | Code release | internal | release | `apps/hub/lib/site-cms/form-guard.ts` |
+| Published-site cache: manifests 60 s (dropped on publish), revision pages and items 10 min (`site.publicCache`) | Code constant | deployment | apps/hub/lib/site-cms/cache.ts | Code release | internal | release | `apps/hub/lib/site-cms/cache.ts` |
 
 Gaps:
 
 - No custom domains.
+- Form submissions record Messenger/Relay targets but are not delivered until Rodrigo durable events (alignment slice 3) land.
+- Bytes of deleted media are not removed yet.
 
 ## Forms (`forms`)
 

@@ -246,13 +246,13 @@ export const APP_CATALOG: AppCatalogEntry[] = [
     id: 'site',
     name: 'Site',
     description:
-      'Section builder for a public workspace page — hero, about, links, shop cards, and contact.',
+      'Website builder: pages from ready-made sections, content collections, media, contact forms and languages, published at /s/….',
     usageIntro: {
-      summary: 'Add sections, publish, and share /s/… — visitors only see those blocks.',
+      summary: 'Build pages from sections, keep repeating content in collections, and publish the whole site at once.',
       steps: [
-        'Pick a starter (Company, Shop-front, or Hiring) or add sections yourself.',
-        'Edit hero, about, https links, this workspace’s shop cards, and a contact button.',
-        'Reorder or remove blocks, turn on Published, and copy the share URL.',
+        'Set up the site name, address, languages and theme; start from a starter page or your earlier one-page site.',
+        'Add pages and sections, collections with items, images in the media library, and a contact form.',
+        'Preview the draft, publish, and restore an earlier version if needed. Form messages appear under Forms.',
       ],
     },
     slug: 'site',

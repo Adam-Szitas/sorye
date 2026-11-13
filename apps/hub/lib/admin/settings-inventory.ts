@@ -118,9 +118,20 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
     gaps: ['No checkout or payment provider (Stripe is not implemented).'],
   },
   {
-    id: 'site', kind: 'app', title: 'Site', summary: 'Public workspace page at /s/<slug>.',
-    settings: [rodrigoFamily('site.page', 'Page slug, title, published flag, blocks (≤100)', 'site.page', owner)],
-    gaps: ['No custom domains.'],
+    id: 'site', kind: 'app', title: 'Site', summary: 'Website builder (CMS) published at /s/<slug>/<locale>; earlier one-page sites stay at /s/<slug> until the first CMS publish.',
+    settings: [
+      rodrigoFamily('site.page', 'Earlier one-page site: slug, title, published flag, blocks (≤100)', 'site.page', owner),
+      rodrigoFamily('site.settings', 'Site name, public address, theme (WCAG AA), logo, favicon, social image, languages, SEO, home page', 'site.settings', owner),
+      rodrigoFamily('site.cmsPage', 'Pages (≤50) with SDK sections (≤40), navigation placement, per-page SEO', 'site.cmsPage', owner),
+      rodrigoFamily('site.collection', 'Content collections (≤20) and their field schemas (≤30 fields)', 'site.collection', owner),
+      rodrigoFamily('site.item', 'Collection items (≤500 per collection), draft or published', 'site.item', owner),
+      rodrigoFamily('site.media', 'Media library entries (≤500; images ≤10 MB, PDF ≤25 MB, no SVG)', 'site.media', owner),
+      rodrigoFamily('site.publish', 'Publish or restore a revision (newest 20 kept)', 'site.publish', owner),
+      rodrigoFamily('site.submission', 'Contact-form submission handling status (answers are immutable)', 'site.submission', owner),
+      { key: 'site.formEdgeLimits', label: 'Contact form: honeypot, minimum fill time 3 s, token age 24 h, 5 posts/min per client, 120/min per site', status: 'constant', scope: 'deployment', store: 'apps/hub/lib/site-cms/form-guard.ts', changedBy: release, sensitivity: 'internal', applies: 'release', source: 'apps/hub/lib/site-cms/form-guard.ts' },
+      { key: 'site.publicCache', label: 'Published-site cache: manifests 60 s (dropped on publish), revision pages and items 10 min', status: 'constant', scope: 'deployment', store: 'apps/hub/lib/site-cms/cache.ts', changedBy: release, sensitivity: 'internal', applies: 'release', source: 'apps/hub/lib/site-cms/cache.ts' },
+    ],
+    gaps: ['No custom domains.', 'Form submissions record Messenger/Relay targets but are not delivered until Rodrigo durable events (alignment slice 3) land.', 'Bytes of deleted media are not removed yet.'],
   },
   {
     id: 'forms', kind: 'app', title: 'Forms', summary: 'Form builder with a public page at /f/<slug>.',
