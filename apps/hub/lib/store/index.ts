@@ -1,58 +1,30 @@
-import { getStoreDriver } from '@/lib/env';
-import * as jsonStore from './json-store';
-import * as postgresStore from './postgres-store';
+/**
+ * Identity facade. Users, workspaces, membership, plan and enabled apps are owned by
+ * Rodrigo (alignment slice 1); Hub keeps no identity store and has no fallback.
+ * The workspace storage summary is still attached from Hub until the storage slice moves.
+ */
+import { setIdentitySessionDecorator } from '@/lib/rodrigo/identity-client';
+import { getWorkspaceStoragePublic, getWorkspaceStorageRecord } from './workspace-storage';
 
-function activeStore() {
-  return getStoreDriver() === 'postgres' ? postgresStore : jsonStore;
-}
+setIdentitySessionDecorator(async (session) => ({
+  ...session,
+  workspace: { ...session.workspace, storage: getWorkspaceStoragePublic(await getWorkspaceStorageRecord(session.workspace.id)) },
+}));
 
-export const getOrCreateUser = (...args: Parameters<typeof jsonStore.getOrCreateUser>) =>
-  activeStore().getOrCreateUser(...args);
-
-export const getUserByEmail = (...args: Parameters<typeof jsonStore.getUserByEmail>) =>
-  activeStore().getUserByEmail(...args);
-
-export const getHubSession = (...args: Parameters<typeof jsonStore.getHubSession>) =>
-  activeStore().getHubSession(...args);
-
-export const getHubSessionForWorkspace = (
-  ...args: Parameters<typeof jsonStore.getHubSessionForWorkspace>
-) => activeStore().getHubSessionForWorkspace(...args);
-
-export const updateWorkspace = (...args: Parameters<typeof jsonStore.updateWorkspace>) =>
-  activeStore().updateWorkspace(...args);
-
-export const switchActiveWorkspace = (
-  ...args: Parameters<typeof jsonStore.switchActiveWorkspace>
-) => activeStore().switchActiveWorkspace(...args);
-
-export const createTeamWorkspace = (
-  ...args: Parameters<typeof jsonStore.createTeamWorkspace>
-) => activeStore().createTeamWorkspace(...args);
-
-export const adminAssignSubscription = (
-  ...args: Parameters<typeof jsonStore.adminAssignSubscription>
-) => activeStore().adminAssignSubscription(...args);
-
-export const assignWorkspacePlan = (
-  ...args: Parameters<typeof jsonStore.assignWorkspacePlan>
-) => activeStore().assignWorkspacePlan(...args);
-
-export const setWorkspaceTier = (
-  ...args: Parameters<typeof jsonStore.setWorkspaceTier>
-) => activeStore().setWorkspaceTier(...args);
-
-export const operatorWorkspaceExists = (
-  ...args: Parameters<typeof jsonStore.operatorWorkspaceExists>
-) => activeStore().operatorWorkspaceExists(...args);
-
-export const listOperatorWorkspaces = (
-  ...args: Parameters<typeof jsonStore.listOperatorWorkspaces>
-) => activeStore().listOperatorWorkspaces(...args);
-
-export const listUsers = (...args: Parameters<typeof jsonStore.listUsers>) =>
-  activeStore().listUsers(...args);
-
-export const getWorkspaceMembers = (
-  ...args: Parameters<typeof jsonStore.getWorkspaceMembers>
-) => activeStore().getWorkspaceMembers(...args);
+export {
+  getOrCreateUser,
+  getUserByEmail,
+  getHubSession,
+  getHubSessionForWorkspace,
+  updateWorkspace,
+  switchActiveWorkspace,
+  createTeamWorkspace,
+  adminAssignSubscription,
+  assignWorkspacePlan,
+  setWorkspaceTier,
+  operatorWorkspaceExists,
+  listOperatorWorkspaces,
+  listUsers,
+  getWorkspaceMembers,
+  resolveLoginSession,
+} from '@/lib/rodrigo/identity-client';

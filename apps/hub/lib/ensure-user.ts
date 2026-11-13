@@ -4,6 +4,7 @@ import {
   getHubSessionForWorkspace,
   getOrCreateUser,
   getUserByEmail,
+  resolveLoginSession,
 } from '@/lib/store';
 import type { HubSession } from '@sorye/types';
 import { auth } from '@/auth';
@@ -60,15 +61,14 @@ export async function ensureHubUser(timings?: ServerTimings) {
     const admins = getAdminEmails();
     const { id, email, name, image } = session.user;
 
-    await measure('profile', () => getOrCreateUser({
+    // One Rodrigo read per request when uncached; the profile is written only when it changed.
+    return measure('hub_session', async () => withDuePlan(await resolveLoginSession({
       id,
       email,
       displayName: name ?? email,
       image: image ?? undefined,
       isAdmin: admins.has(email.toLowerCase()),
-    }));
-
-    return measure('hub_session', async () => withDuePlan(await getHubSession(id)));
+    })));
   }
 
   if (isAuthDevBypass()) {

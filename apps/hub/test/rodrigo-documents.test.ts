@@ -179,34 +179,8 @@ test('real PostgreSQL cutover: parity, concurrent writers, isolation, tombstones
     assert.equal(restored?.revision, 16);
     assert.equal(legacyCalls, 0);
 
-    // Exercise the actual operator command against isolated Hub JSON records.
-    const cliWorkspace = randomUUID();
-    await mkdir(join(directory, '.data'));
-    await writeFile(join(directory, '.data/store.json'), JSON.stringify({
-      users: { 'cli-user': { id: 'cli-user', activeWorkspaceId: cliWorkspace, personalWorkspaceId: cliWorkspace, teamWorkspaceIds: [] } },
-      workspaces: { [cliWorkspace]: { id: cliWorkspace, kind: 'personal', name: 'CLI test', memberIds: ['cli-user'], selectedAppIds: ['tasks'] } },
-    }));
-    await writeFile(join(directory, '.data/workspace-docs.json'), JSON.stringify({ docs: {
-      [`${cliWorkspace}:tasks`]: { workspaceId: cliWorkspace, kind: 'tasks', revision: 8, payload, updatedBy: 'cli-user', updatedAt: new Date().toISOString() },
-    } }));
-    const runCli = (args: string[]) => promisify(execFile)(process.execPath, [
-      resolve('node_modules/tsx/dist/cli.mjs'), '--tsconfig', resolve('tsconfig.json'),
-      resolve('lib/tools/migrate-rodrigo-document.ts'), ...args,
-    ], { cwd: directory, windowsHide: true, timeout: 15000, env: {
-      ...process.env, NODE_ENV: 'test', STORE_DRIVER: 'json', DATABASE_URL: '',
-      AUTH_SECRET: 'test-only-auth-secret', ADMIN_SECRET: 'test-only-admin',
-      RODRIGO_DOCUMENT_OWNERS: JSON.stringify([{ workspaceId: cliWorkspace, kind: 'tasks', owner: 'frozen' }]),
-    } });
-    const exportFile = join(directory, 'export.json');
-    const receiptFile = join(directory, 'receipt.json');
-    await assert.rejects(() => runCli(['export', '--user', 'outsider', '--workspace', cliWorkspace, '--kind', 'tasks', '--file', exportFile]), /workspace member/);
-    await runCli(['export', '--user', 'cli-user', '--workspace', cliWorkspace, '--kind', 'tasks', '--file', exportFile]);
-    await runCli(['import', '--file', exportFile]);
-    assert.equal((await getRodrigoSnapshot({ userId: 'cli-user', workspaceId: cliWorkspace }, 'tasks')).revision, 0);
-    await runCli(['import', '--file', exportFile, '--apply', '--writers-stopped', '--receipt', receiptFile]);
-    const cliReceipt = JSON.parse(await readFile(receiptFile, 'utf8'));
-    assert.equal(cliReceipt.browserRevision, 9);
-    assert.equal(cliReceipt.owner.revisionOffset, 8);
+    // The operator export/import command was retired with the identity slice: legacy Hub
+    // documents are not migrated (product-owner decision, no-migration cutover).
   } finally {
     await stop();
     for (const key of ['RODRIGO_BASE_URL', 'RODRIGO_KEY_ID', 'RODRIGO_PRIVATE_KEY_FILE']) {

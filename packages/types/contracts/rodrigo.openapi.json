@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rodrigo service contract",
-    "version": "2.2.0",
-    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status."
+    "version": "2.3.0",
+    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status. Alignment slice 1 (identity): Rodrigo owns users, workspaces, membership, plan and enabled apps in PostgreSQL (migration 009_identity.sql). Hub verifies the browser login and signs its subject on the reserved rodrigo-identity grant; Rodrigo resolves the session and enforces plan limits. Identity writes append change rows (workspaceId rodrigo-identity, app identity, resourceType session, resourceId = user) so Hub can invalidate cached sessions. With the provider option enforce_membership, every workspace-scoped request is re-verified: the signed subject must be a member of the signed workspace (403 not_member), using a 30-second per-replica cache; reserved grants and service:* actors are exempt."
   },
   "paths": {
     "/v2/resources/{app}/{resourceType}/{resourceId}": {
@@ -4928,6 +4928,1726 @@
           }
         }
       }
+    },
+    "/v2/identity/session/{workspace}": {
+      "get": {
+        "operationId": "identitySession",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_workspace"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "identity_grant_route_mismatch",
+            "identity_actor_forbidden",
+            "not_member"
+          ],
+          "404": [
+            "user_not_found",
+            "workspace_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Resolves the session for the active workspace (\"active\") or a workspace the subject belongs to. Requires workspaceId \"rodrigo-identity\" and a sub that is the login subject Hub verified (not service:* or apikey-*); that reserved workspace is refused on every other route (403 identity_grant_route_mismatch / identity_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, identity_grant_route_mismatch, identity_actor_forbidden, not_member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: user_not_found, workspace_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/identity/profile": {
+      "put": {
+        "operationId": "identityProfile",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "identity:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_profile",
+            "invalid_email",
+            "invalid_display_name",
+            "invalid_image"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "identity_grant_route_mismatch",
+            "identity_actor_forbidden"
+          ],
+          "409": [
+            "email_in_use"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Creates the user with a Personal workspace (free plan, dashboard selected) on first sign-in, or updates the profile when it changed; returns the active session. Concurrent first sign-ins converge on one record. Requires workspaceId \"rodrigo-identity\" and a sub that is the login subject Hub verified (not service:* or apikey-*); that reserved workspace is refused on every other route (403 identity_grant_route_mismatch / identity_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_profile, invalid_email, invalid_display_name, invalid_image",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, identity_grant_route_mismatch, identity_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: email_in_use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityProfile"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/identity/active-workspace": {
+      "post": {
+        "operationId": "identitySwitch",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "identity:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_workspace"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "identity_grant_route_mismatch",
+            "identity_actor_forbidden",
+            "not_member"
+          ],
+          "404": [
+            "user_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Switches the active workspace; the subject must be a member. Requires workspaceId \"rodrigo-identity\" and a sub that is the login subject Hub verified (not service:* or apikey-*); that reserved workspace is refused on every other route (403 identity_grant_route_mismatch / identity_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, identity_grant_route_mismatch, identity_actor_forbidden, not_member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: user_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "workspaceId"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "pattern": "^(?!rodrigo-)[A-Za-z0-9_-]{3,64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/identity/workspaces": {
+      "post": {
+        "operationId": "identityCreateTeam",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "identity:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_name"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "identity_grant_route_mismatch",
+            "identity_actor_forbidden",
+            "plan_limit"
+          ],
+          "404": [
+            "user_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Creates a team workspace owned by the subject, copying the personal plan and apps, and makes it active (201). Plan must allow another team (403 plan_limit). Requires workspaceId \"rodrigo-identity\" and a sub that is the login subject Hub verified (not service:* or apikey-*); that reserved workspace is refused on every other route (403 identity_grant_route_mismatch / identity_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, identity_grant_route_mismatch, identity_actor_forbidden, plan_limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: user_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/identity/workspaces/{workspace}": {
+      "patch": {
+        "operationId": "identityUpdateWorkspace",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "identity:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_workspace",
+            "invalid_workspace_patch",
+            "invalid_name",
+            "invalid_selected_apps",
+            "invalid_connected_apps"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "identity_grant_route_mismatch",
+            "identity_actor_forbidden",
+            "not_member",
+            "plan_limit"
+          ],
+          "404": [
+            "workspace_not_found"
+          ],
+          "409": [
+            "revision_conflict"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Member update of name, enabled apps and connections; optional expectedRevision compare-and-swap (409 revision_conflict). Requires workspaceId \"rodrigo-identity\" and a sub that is the login subject Hub verified (not service:* or apikey-*); that reserved workspace is refused on every other route (403 identity_grant_route_mismatch / identity_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(?!rodrigo-)[A-Za-z0-9_-]{3,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSession"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_workspace, invalid_workspace_patch, invalid_name, invalid_selected_apps, invalid_connected_apps",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, identity_grant_route_mismatch, identity_actor_forbidden, not_member, plan_limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: workspace_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error envelope; codes: revision_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspacePatch"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/identity/workspaces/{workspace}/members": {
+      "get": {
+        "operationId": "identityMembers",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_workspace"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "identity_grant_route_mismatch",
+            "identity_actor_forbidden",
+            "not_member"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Members of a workspace the subject belongs to, sorted by name. Requires workspaceId \"rodrigo-identity\" and a sub that is the login subject Hub verified (not service:* or apikey-*); that reserved workspace is refused on every other route (403 identity_grant_route_mismatch / identity_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(?!rodrigo-)[A-Za-z0-9_-]{3,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembers"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, identity_grant_route_mismatch, identity_actor_forbidden, not_member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/users": {
+      "get": {
+        "operationId": "platformIdentityUsers",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden",
+            "platform_grant_route_mismatch"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Users with their personal plan (at most 10,000). Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden, platform_grant_route_mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/users/by-email/{hex}": {
+      "get": {
+        "operationId": "platformIdentityUserByEmail",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_email"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "user_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Looks up a user by hex-encoded UTF-8 email (case-insensitive). Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "hex",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^([0-9a-f]{2}){1,254}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: user_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/users/plan": {
+      "post": {
+        "operationId": "platformIdentityUserPlan",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_plan"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "user_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Assigns a plan to every workspace of the user (trimmed to the new limits); returns the personal workspace. Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: user_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "email",
+                  "subscriptionId"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "subscriptionId": {
+                    "enum": [
+                      "free",
+                      "starter",
+                      "pro",
+                      "enterprise"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/workspaces": {
+      "get": {
+        "operationId": "platformIdentityWorkspaces",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "All workspaces (at most 10,000). Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/workspaces/{workspace}": {
+      "get": {
+        "operationId": "platformIdentityWorkspace",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_workspace"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "workspace_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "One workspace. Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(?!rodrigo-)[A-Za-z0-9_-]{3,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: workspace_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/workspaces/{workspace}/members": {
+      "get": {
+        "operationId": "platformIdentityMembers",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:read",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_workspace"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Members of any workspace. Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(?!rodrigo-)[A-Za-z0-9_-]{3,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceMembers"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/platform/identity/workspaces/{workspace}/plan": {
+      "put": {
+        "operationId": "platformIdentitySetPlan",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "platform:identity:write",
+        "x-error-codes": {
+          "400": [
+            "query_not_supported",
+            "invalid_plan"
+          ],
+          "401": [
+            "unauthorized"
+          ],
+          "403": [
+            "insufficient_scope",
+            "platform_actor_forbidden"
+          ],
+          "404": [
+            "workspace_not_found"
+          ],
+          "429": [
+            "overloaded"
+          ],
+          "503": [
+            "dependency_unavailable",
+            "identity_provider_unavailable"
+          ],
+          "504": [
+            "deadline_exceeded"
+          ]
+        },
+        "description": "Sets the workspace plan. Appends change rows for every member session. Platform grant (workspaceId \"rodrigo-platform\"); actor is a platform administrator verified by Hub or service:hub (other services: 403 platform_actor_forbidden).",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(?!rodrigo-)[A-Za-z0-9_-]{3,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error envelope; codes: query_not_supported, invalid_plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error envelope; codes: unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error envelope; codes: insufficient_scope, platform_actor_forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error envelope; codes: workspace_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error envelope; codes: overloaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error envelope; codes: dependency_unavailable, identity_provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Error envelope; codes: deadline_exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformPlanAssignment"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9232,6 +10952,307 @@
           "cursor": {
             "type": "string",
             "pattern": "^\\d{1,20}\\.\\d{1,20}$"
+          }
+        }
+      },
+      "HubUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "email",
+          "displayName",
+          "personalWorkspaceId",
+          "teamWorkspaceIds",
+          "activeWorkspaceId",
+          "isAdmin"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "personalWorkspaceId": {
+            "type": "string"
+          },
+          "teamWorkspaceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "activeWorkspaceId": {
+            "type": "string"
+          },
+          "isAdmin": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "ownerId",
+          "memberIds",
+          "subscriptionId",
+          "subscriptionSource",
+          "selectedAppIds",
+          "connectedApps",
+          "revision",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "personal",
+              "team"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subscriptionId": {
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "enterprise"
+            ]
+          },
+          "subscriptionSource": {
+            "type": "string"
+          },
+          "stripeCustomerId": {
+            "type": "string"
+          },
+          "stripeSubscriptionId": {
+            "type": "string"
+          },
+          "selectedAppIds": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string"
+            }
+          },
+          "connectedApps": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object"
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HubSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "user",
+          "workspace",
+          "workspaces"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "user": {
+            "$ref": "#/components/schemas/HubUser"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/Workspace"
+          },
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "kind",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "personal",
+                    "team"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Personal first, then teams by join time."
+          }
+        }
+      },
+      "IdentityProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email",
+          "displayName",
+          "isAdmin"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "isAdmin": {
+            "type": "boolean",
+            "description": "Platform administrator per Hub configuration."
+          }
+        }
+      },
+      "WorkspacePatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Plan limits apply when a write grows past them: apps outside catalog/reports beyond maxApps or connections beyond maxConnections return 403 plan_limit; a downgraded workspace keeps what it has.",
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "selectedAppIds": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{1,31}$"
+            }
+          },
+          "connectedApps": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "WorkspaceMembers": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "members"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "2"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "displayName",
+                "email"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PlatformPlanAssignment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subscriptionId",
+          "mode"
+        ],
+        "properties": {
+          "subscriptionId": {
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "enterprise"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "assign",
+              "tier"
+            ],
+            "description": "assign trims apps and connections over the new limits; tier keeps them."
+          },
+          "source": {
+            "enum": [
+              "admin",
+              "stripe",
+              "billing"
+            ]
           }
         }
       }

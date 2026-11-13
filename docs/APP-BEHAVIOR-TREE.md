@@ -18,7 +18,7 @@ The standalone navbar Hub link uses the configured `VITE_HUB_ORIGIN` for remote 
 ```mermaid
 flowchart TD
     Person[Person in browser] --> SignIn[Sign in / restore session]
-    SignIn --> Identity[Hub resolves user and active workspace]
+    SignIn --> Identity[Hub verifies the login; Rodrigo resolves user, memberships and active workspace]
     Identity --> Split[List APIs partition Personal and Work from session memberships]
     Split --> Shell[Hub shell]
     Shell --> Catalog[App launcher and catalog]
@@ -236,7 +236,7 @@ flowchart TD
     Calendar[Calendar legacy route] --> HubStore[Existing Hub persistence; not yet cut over]
 ```
 
-Tasks has no owner toggle or Hub fallback: v2 reads and writes go to Rodrigo, missing data yields the typed default board, and its legacy PUT is disabled. Calendar and Notes remain Hub-owned and are uncovered by this step. Identity, general events and handoffs remain in Hub.
+Tasks has no owner toggle or Hub fallback: v2 reads and writes go to Rodrigo, missing data yields the typed default board, and its legacy PUT is disabled. Calendar and Notes remain Hub-owned and are uncovered by this step. Identity (users, workspaces, membership, plan and enabled apps) is owned by Rodrigo and resolved per request through the reserved `rodrigo-identity` grant with a 15-second, change-invalidated Hub cache; general events and handoffs remain in Hub.
 
 ## State ownership at a glance
 

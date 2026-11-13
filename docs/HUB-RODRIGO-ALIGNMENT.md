@@ -34,7 +34,7 @@ Rodrigo reports each slice in `capabilities.alignment.slices` (`not_implemented`
 | Slice | Status | Contract | Notes |
 |---|---|---|---|
 | 0. Contract and plumbing | Done | OpenAPI 2.2.0 | Streamed objects, service tokens, service change stream, Hub read cache |
-| 1. Workspace identity | Pending | | |
+| 1. Workspace identity | Done | OpenAPI 2.3.0 | Users, workspaces, membership, plan and enabled apps in Rodrigo; membership re-verified per request |
 | 2. Storage | Pending | | |
 | 3. Events, handoffs, Relay delivery, notifications | Pending | | |
 | 4. Jobs | Pending | | |
@@ -69,6 +69,26 @@ Every v2 action commit and object completion or deletion appends `{workspaceId, 
 ### Hub read cache
 
 `apps/hub/lib/rodrigo/read-cache.ts`: bounded (5,000 entries, 64 MiB), 15-second TTL, keyed by workspace, app and resource type, and dropped by any change to that type in that workspace. It is bypassed whenever the change stream is not healthy, and a read that started before an invalidation is not stored. It is never a write path.
+
+## Slice 1: workspace identity
+
+Rodrigo owns users, workspaces, membership, plan and enabled apps (`009_identity.sql`). Hub keeps only the browser login (Auth.js) and the administrator e-mail list.
+
+- **Session resolution.** `ensureHubUser` calls `resolveLoginSession` (`apps/hub/lib/rodrigo/identity-client.ts`): `GET /v2/identity/session/active` on the reserved `rodrigo-identity` grant, signed with the verified login subject. When the user is unknown or the profile changed, `PUT /v2/identity/profile` creates the user with a free Personal workspace or updates the profile. Concurrent first sign-ins converge on one record. An e-mail held by another login is refused (`email_in_use`).
+- **Writes.** Switching the active workspace, creating a team (plan-checked), and changing name, enabled apps and connections (plan caps apply only to growth; optional revision check) are Rodrigo operations. Administrator plan assignment trims to the new limits; a billing tier change keeps everything and Hub reports extras as locked. Platform routes (`/v2/platform/identity/`) serve the administration console, billing and plan schedules as `service:hub` or a verified administrator.
+- **Cache.** Hub caches resolved sessions for 15 seconds per user and workspace. Every identity write appends a change row per affected user's session in its transaction; the change stream drops the entry, and the cache is bypassed while the stream is unhealthy.
+- **Re-verification.** With the provider option `enforce_membership`, Rodrigo checks on every workspace-scoped request that the signed subject is a member of the signed workspace (403 `not_member`), through a 30-second per-replica cache. Reserved grants and `service:*` actors are exempt.
+- **No migration.** Hub's old identity records (`.data/store.json` or the Hub PostgreSQL users/workspaces tables) are no longer read. After cutover each person gets a new Personal workspace on first sign-in, so records Rodrigo holds under old workspace ids are unreachable (product-owner decision B). The legacy v1 document export/import command (`lib/tools/migrate-rodrigo-document.ts`) was removed for the same reason.
+
+| Measure (slice 1, same local setup) | Result |
+|---|---|
+| Session read, uncached (6 indexed queries, debug build) | p50 12.0 ms, p95 12.8 ms |
+| Session read, cached | under 0.01 ms |
+| Plan change elsewhere visible in Hub sessions | about 200 ms |
+| Database stopped | sign-in fails closed; recovers without restart |
+| 12 concurrent first sign-ins | one user, one workspace |
+
+Tests: `apps/hub/test/rodrigo-identity.test.ts`, Rodrigo `identity` unit tests.
 
 ### Measurements (slice 0, local: debug Rodrigo build, PostgreSQL 16 and RustFS in Docker on the same Windows host)
 

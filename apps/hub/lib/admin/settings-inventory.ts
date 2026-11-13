@@ -224,7 +224,7 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
   {
     id: 'operator', kind: 'retired', title: 'Operator (retired)', summary: 'Removed from the customer Hub. Its health, plans, notices, usage and load views are now console sections.',
     settings: [
-      { key: 'workspace.subscriptionId', label: 'Workspace plan (immediate or scheduled)', status: 'console', scope: 'workspace', store: 'Hub store.json / Postgres', changedBy: admin, sensitivity: 'internal', applies: 'next-request', consoleHref: '/admin/workspaces', source: 'apps/hub/app/api/operator/plan/route.ts' },
+      { key: 'workspace.subscriptionId', label: 'Workspace plan (immediate or scheduled)', status: 'console', scope: 'workspace', store: 'Rodrigo identity (PostgreSQL)', changedBy: admin, sensitivity: 'internal', applies: 'next-request', consoleHref: '/admin/workspaces', source: 'apps/hub/app/api/operator/plan/route.ts' },
       { key: 'operator.notices', label: 'Platform notices (≤40, message ≤400)', status: 'console', scope: 'platform', store: 'Hub operator-notices.json / Postgres', changedBy: admin, sensitivity: 'public', applies: 'next-request', consoleHref: '/admin/workspaces', source: 'apps/hub/app/api/operator/notices/route.ts' },
     ],
     gaps: ['/apps/operator on the customer host redirects to the console.'],
@@ -243,7 +243,7 @@ export const SETTINGS_INVENTORY: SettingsArea[] = [
   {
     id: 'platform.workspaces', kind: 'platform', title: 'Workspaces and plans', summary: 'App selection, profile, plans.',
     settings: [
-      { key: 'workspace.selectedAppIds', label: 'Selected apps and connected apps (plan-capped)', status: 'owner-app', scope: 'workspace', store: 'Hub store.json / Postgres', changedBy: member, sensitivity: 'internal', applies: 'next-request', source: 'apps/hub/app/api/workspace/route.ts' },
+      { key: 'workspace.selectedAppIds', label: 'Selected apps and connected apps (plan-capped)', status: 'owner-app', scope: 'workspace', store: 'Rodrigo identity (PostgreSQL)', changedBy: member, sensitivity: 'internal', applies: 'next-request', source: 'apps/hub/app/api/workspace/route.ts' },
       rodrigoFamily('workspace.settings', 'Name, locale, timezone', 'workspace.settings', owner),
       { key: 'plans', label: 'Plan limits and EUR prices (free 2/1, starter 5/3, pro 12/10, enterprise 999/999; yearly = 10 months)', status: 'constant', scope: 'platform', store: 'packages/types/src/subscription.ts', changedBy: release, sensitivity: 'public', applies: 'release', consoleHref: '/admin/workspaces', source: 'packages/types/src/subscription.ts' },
       { key: 'BILLING_SIMULATOR', label: 'Billing simulator: plan changes and payment events without a provider (local/test only; refused in production)', status: 'deployment', scope: 'deployment', store: 'Environment; state in Hub .data/billing-simulator.json', changedBy: deployer, sensitivity: 'internal', applies: 'restart', source: 'apps/hub/lib/billing/service.ts' },

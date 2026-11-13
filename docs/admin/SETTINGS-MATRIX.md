@@ -315,7 +315,7 @@ Removed from the customer Hub. Its health, plans, notices, usage and load views 
 
 | Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Workspace plan (immediate or scheduled) (`workspace.subscriptionId`) | Console (audited) | workspace | Hub store.json / Postgres | Platform administrator (console, audited) | internal | next-request | `apps/hub/app/api/operator/plan/route.ts` |
+| Workspace plan (immediate or scheduled) (`workspace.subscriptionId`) | Console (audited) | workspace | Rodrigo identity (PostgreSQL) | Platform administrator (console, audited) | internal | next-request | `apps/hub/app/api/operator/plan/route.ts` |
 | Platform notices (≤40, message ≤400) (`operator.notices`) | Console (audited) | platform | Hub operator-notices.json / Postgres | Platform administrator (console, audited) | public | next-request | `apps/hub/app/api/operator/notices/route.ts` |
 
 Gaps:
@@ -346,7 +346,7 @@ App selection, profile, plans.
 
 | Setting | Status | Scope | Stored in | Changed by | Sensitivity | Applies | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Selected apps and connected apps (plan-capped) (`workspace.selectedAppIds`) | In the owning app | workspace | Hub store.json / Postgres | Workspace member (in the app) | internal | next-request | `apps/hub/app/api/workspace/route.ts` |
+| Selected apps and connected apps (plan-capped) (`workspace.selectedAppIds`) | In the owning app | workspace | Rodrigo identity (PostgreSQL) | Workspace member (in the app) | internal | next-request | `apps/hub/app/api/workspace/route.ts` |
 | Name, locale, timezone (`workspace.settings`) | In the owning app | workspace | Rodrigo workspace.settings | Workspace owner (in the app) | internal | next-request | `apps/hub/lib/rodrigo/action-validation.ts` |
 | Plan limits and EUR prices (free 2/1, starter 5/3, pro 12/10, enterprise 999/999; yearly = 10 months) (`plans`) | Code constant | platform | packages/types/src/subscription.ts | Code release | public | release | `packages/types/src/subscription.ts` |
 | Billing simulator: plan changes and payment events without a provider (local/test only; refused in production) (`BILLING_SIMULATOR`) | Deployment input | deployment | Environment; state in Hub .data/billing-simulator.json | Deployer (environment, redeploy) | internal | restart | `apps/hub/lib/billing/service.ts` |
