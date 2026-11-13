@@ -1,3 +1,6 @@
+// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
+import React from 'react';
+void React;
 /**
  * Safe Markdown subset. No HTML: everything that is not one of the constructs
  * below is rendered as literal (escaped) text.

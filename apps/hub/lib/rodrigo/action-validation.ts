@@ -1,4 +1,5 @@
 import { isFormDefinition, isFormSubmission, isTaskAttachmentList, isTaskDriveFileId } from '@sorye/types';
+import { isSectionId, validateCollection, validateMedia, validatePage, validatePublish, validateSettings, validateSubmissionUpdate } from '@sorye/site-sdk';
 import { z } from 'zod';
 import { parseTasksBoard } from '@/lib/workspace-docs-validate';
 
@@ -35,7 +36,7 @@ function taskImagesOk(p: Obj) {
   return true;
 }
 function validPayload(app: string, resource: string, op: string, p: Obj, resourceId: string): boolean {
-  if (op === 'delete') return ['tasks:task', 'notes:note', 'calendar:event', 'canvas:board', 'forms:form', 'forms:submission'].includes(`${app}:${resource}`) && Object.keys(p).length === 0;
+  if (op === 'delete') return ['tasks:task', 'notes:note', 'calendar:event', 'canvas:board', 'forms:form', 'forms:submission', 'site:cmsPage', 'site:collection', 'site:item', 'site:media', 'site:submission'].includes(`${app}:${resource}`) && Object.keys(p).length === 0;
   const upd = () => timestamp(p.updatedAt);
   switch (`${app}:${resource}:${op}`) {
     case 'tasks:task:create': case 'tasks:task:update': return exact(p, ['id','title','body','statusId','createdAt','updatedAt'], ['driveFileId','attachmentIds']) && taskImagesOk(p) && p.id === resourceId && str(p,'title',1,500) && str(p,'body',0,20000) && str(p,'statusId',1,128) && timestamp(p.createdAt) && upd();
@@ -81,6 +82,16 @@ function validPayload(app: string, resource: string, op: string, p: Obj, resourc
     case 'forms:form:create': case 'forms:form:update': return isFormDefinition(p, resourceId) && upd();
     // Submissions are created only by the anonymous public route; members change the status.
     case 'forms:submission:update': return isFormSubmission(p, resourceId) && timestamp(p.submittedAt);
+    // Site CMS: the SDK validators shared with Rodrigo (src/site.rs). Item values are
+    // checked against the stored collection in Rodrigo's write transaction.
+    case 'site:settings:create': case 'site:settings:update': return resourceId === 'site' && validateSettings(p).length === 0;
+    case 'site:cmsPage:create': case 'site:cmsPage:update': return p.id === resourceId && validatePage(p).length === 0;
+    case 'site:collection:create': case 'site:collection:update': return p.id === resourceId && validateCollection(p).length === 0;
+    case 'site:item:create': case 'site:item:update': return exact(p,['id','collectionId','slug','status','order','values','updatedAt']) && p.id === resourceId && isSectionId(p.id) && isSectionId(p.collectionId)
+      && siteSlug(p.slug) && ['draft','published'].includes(String(p.status)) && integer(p,'order',0,100000) && object(p.values) && upd();
+    case 'site:media:create': case 'site:media:update': return p.id === resourceId && validateMedia(p).length === 0;
+    case 'site:publish:create': return p.id === resourceId && validatePublish(p).length === 0;
+    case 'site:submission:update': return validateSubmissionUpdate(p, resourceId).length === 0;
     default: return false;
   }
 }
@@ -89,14 +100,16 @@ const supported: Record<string, string[]> = {
   'tasks:task':['create','update','delete'], 'tasks:taskBoard':['create','update'], 'notes:note':['create','update','delete'], 'calendar:event':['create','update','delete'],
   'workspace:settings':['create','update'], 'messenger:channel':['create','update'], 'messenger:message':['create','update'], 'messenger:reaction':['create'],
   'files:fileMetadata':['create','update'], 'canvas:board':['create','update','delete'], 'mail:account':['create','update'], 'mail:draft':['create','update'],
-  'relay:config':['create','update'], 'site:page':['create','update'], 'storefront:product':['create','update'], 'storefront:order':['create','update'],
+  'relay:config':['create','update'], 'site:page':['create','update'],
+  'site:settings':['create','update'], 'site:cmsPage':['create','update','delete'], 'site:collection':['create','update','delete'], 'site:item':['create','update','delete'],
+  'site:media':['create','update','delete'], 'site:publish':['create'], 'site:submission':['update','delete'], 'storefront:product':['create','update'], 'storefront:order':['create','update'],
   'ocr:analysis':['create','update'], 'ocr:pattern':['create','update'], 'studio:project':['create','update'], 'notifications:notification':['create','update'],
   'events:event':['create'], 'embed:widget':['create','update'], 'protocolio:artifact':['create','update'],
   'forms:form':['create','update','delete'], 'forms:submission':['update','delete'],
 };
 const actionSchema = z.object({
   actionId: z.string().uuid(), appId: z.enum(['tasks','notes','calendar','workspace','messenger','files','canvas','mail','relay','site','storefront','ocr','studio','notifications','events','embed','protocolio','forms']),
-  resourceType: z.enum(['task','taskBoard','note','event','settings','channel','message','reaction','fileMetadata','board','account','draft','config','page','product','order','analysis','pattern','project','notification','widget','artifact','form','submission']), operation: z.enum(['create','update','delete']),
+  resourceType: z.enum(['task','taskBoard','note','event','settings','channel','message','reaction','fileMetadata','board','account','draft','config','page','cmsPage','collection','item','media','publish','product','order','analysis','pattern','project','notification','widget','artifact','form','submission']), operation: z.enum(['create','update','delete']),
   resourceId: z.string().min(1).max(160), expectedRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER - 1).optional(), payloadVersion: z.literal(1), payload: z.record(z.unknown()), occurredAt: z.string().max(64).refine(timestamp),
 }).strict().superRefine((value, ctx) => {
   const key = `${value.appId}:${value.resourceType}`;

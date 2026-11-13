@@ -1,3 +1,6 @@
+// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
+import React from 'react';
+void React;
 import type { ReactNode } from 'react';
 import { resolveHref, t, type RenderContext } from '../context';
 import type { LText } from '../locales';

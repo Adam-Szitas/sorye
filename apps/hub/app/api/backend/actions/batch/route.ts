@@ -44,7 +44,8 @@ export async function POST(req: Request) {
     if (item.appId === 'storefront' && item.resourceType === 'order' && !orderCustomerMatches(item.payload, session.user)) {
       return NextResponse.json({ error: { code: 'order_customer_mismatch' } }, { status: 403 });
     }
-    if (item.appId === 'site' && item.resourceType === 'page' && session.workspace.ownerId !== session.user.id) {
+    // Every Site write (legacy page and CMS) is owner-only.
+    if (item.appId === 'site' && session.workspace.ownerId !== session.user.id) {
       return NextResponse.json({ error: { code: 'operation_forbidden' } }, { status: 403 });
     }
     if (item.appId === 'workspace' && (item.resourceType !== 'settings' || item.resourceId !== 'main' || session.workspace.ownerId !== session.user.id)) {

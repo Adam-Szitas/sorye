@@ -193,6 +193,9 @@ importers:
       '@sorye/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@sorye/site-sdk':
+        specifier: workspace:*
+        version: link:../../packages/site-sdk
       '@sorye/types':
         specifier: workspace:*
         version: link:../../packages/types

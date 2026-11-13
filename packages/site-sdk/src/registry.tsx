@@ -1,3 +1,6 @@
+// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
+import React from 'react';
+void React;
 /**
  * Component definitions: one typed definition per section type.
  * `props` is the shared validation schema, `defaults` the starting props, `render`

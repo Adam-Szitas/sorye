@@ -21,7 +21,8 @@
     "prebuild": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:site": "tsx --test test/site-cms.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1156.0",
@@ -30,6 +31,7 @@
     "@sorye/db": "workspace:*",
     "@sorye/platform": "workspace:*",
     "@sorye/sdk": "workspace:*",
+    "@sorye/site-sdk": "workspace:*",
     "@sorye/types": "workspace:*",
     "drizzle-orm": "^0.44.2",
     "imapflow": "^2.1.0",

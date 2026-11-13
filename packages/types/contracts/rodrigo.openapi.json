@@ -3,7 +3,7 @@
   "info": {
     "title": "Rodrigo service contract",
     "version": "2.4.0",
-    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status. Alignment slice 1 (identity): Rodrigo owns users, workspaces, membership, plan and enabled apps in PostgreSQL (migration 009_identity.sql). Hub verifies the browser login and signs its subject on the reserved rodrigo-identity grant; Rodrigo resolves the session and enforces plan limits. Identity writes append change rows (workspaceId rodrigo-identity, app identity, resourceType session, resourceId = user) so Hub can invalidate cached sessions. With the provider option enforce_membership, every workspace-scoped request is re-verified: the signed subject must be a member of the signed workspace (403 not_member), using a 30-second per-replica cache; reserved grants and service:* actors are exempt. Alignment slice 2 (storage): Rodrigo owns Drive metadata, quota and the upload ledger (rodrigo_files, kept after deletion), each workspace's storage target (Sorye storage, the customer's S3-compatible bucket or the customer's PostgreSQL table) with AES-256-GCM sealed credentials (RODRIGO_SECRET_KEY_FILE, bound to workspace and purpose), and Relay cloud folders (AWS S3 / Cloudflare R2). Customer hosts must resolve to public addresses; object stores check this on every connection. Upload sessions may give size and SHA-256 at completion (streamed multipart bodies); every upload is still verified per part and by read-back before it becomes visible. Hub holds no stored third-party secret and no encryption key. Migration 011_storage.sql."
+    "description": "Backward-compatible signed Hub-to-Rodrigo contract. V2 typed action families are independently committed in PostgreSQL with workspace-scoped idempotency receipts. Collection pages are bounded, keyset ordered by resourceId, and each page reflects one database statement snapshot; later pages are not a frozen multi-page snapshot. Workspace comes exclusively from verified Ed25519 assertions. Anonymous Site reads use a reserved Hub service assertion and a slug index; the browser cannot select the workspace. Blob bytes and external side effects require separate contracts. Platform administration (platform contract version 1) is owned by Rodrigo in PostgreSQL under the reserved assertion workspace rodrigo-platform: compare-and-swap configuration with changeId idempotency, a revision row and an audit row committed atomically per change, rollback as a new revision, applied-version reports from service:hub and service:ocr-worker, and an append-only audit trail. Hub-owned audit appends are not atomic with Hub state. Namespace values are non-secret by contract. Alignment version 1 (slice 0, plumbing): streamed immutable objects up to 2 GiB in 8 MiB parts with per-part signed SHA-256, If-None-Match create-only semantics and read-back SHA-256 verification before an object becomes visible; scoped short-lived service tokens (at most 300 seconds) that Rodrigo issues for compute services; and a service change stream (reserved assertion workspace rodrigo-service, actor service:hub) that Hub uses to invalidate its read cache and fan out live updates. Every v2 action commit and object completion/deletion appends a change row in the same transaction. The alignment capability block reports per-slice status. Alignment slice 1 (identity): Rodrigo owns users, workspaces, membership, plan and enabled apps in PostgreSQL (migration 009_identity.sql). Hub verifies the browser login and signs its subject on the reserved rodrigo-identity grant; Rodrigo resolves the session and enforces plan limits. Identity writes append change rows (workspaceId rodrigo-identity, app identity, resourceType session, resourceId = user) so Hub can invalidate cached sessions. With the provider option enforce_membership, every workspace-scoped request is re-verified: the signed subject must be a member of the signed workspace (403 not_member), using a 30-second per-replica cache; reserved grants and service:* actors are exempt. Alignment slice 2 (storage): Rodrigo owns Drive metadata, quota and the upload ledger (rodrigo_files, kept after deletion), each workspace's storage target (Sorye storage, the customer's S3-compatible bucket or the customer's PostgreSQL table) with AES-256-GCM sealed credentials (RODRIGO_SECRET_KEY_FILE, bound to workspace and purpose), and Relay cloud folders (AWS S3 / Cloudflare R2). Customer hosts must resolve to public addresses; object stores check this on every connection. Upload sessions may give size and SHA-256 at completion (streamed multipart bodies); every upload is still verified per part and by read-back before it becomes visible. Hub holds no stored third-party secret and no encryption key. Migration 011_storage.sql. Site CMS: typed site.settings, site.cmsPage, site.collection, site.item, site.media, site.publish and site.submission payloads; anonymous reads of the live published revision and its media, and contact-form submissions under /v2/public/site-cms/."
   },
   "paths": {
     "/v2/resources/{app}/{resourceType}/{resourceId}": {
@@ -57,6 +57,11 @@
               "draft",
               "config",
               "page",
+              "cmsPage",
+              "collection",
+              "item",
+              "media",
+              "publish",
               "product",
               "order",
               "analysis",
@@ -2252,6 +2257,11 @@
               "draft",
               "config",
               "page",
+              "cmsPage",
+              "collection",
+              "item",
+              "media",
+              "publish",
               "product",
               "order",
               "analysis",
@@ -10208,6 +10218,304 @@
           }
         }
       }
+    },
+    "/v2/public/site-cms/{slug}": {
+      "parameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readSiteManifestV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:read",
+        "description": "Manifest of the live revision: settings, page index, collections, media metadata and, when shown, Storefront cards. Requires read:site.cmsPage. The assertion must be the reserved public-site grant (workspace rodrigo-public-site, actor rodrigo-public-reader) with app:site. The slug selects the site; it never selects a workspace. Responses omit workspace ids, actors, drafts and owner-only props.",
+        "responses": {
+          "200": {
+            "description": "Live manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Path segment is malformed"
+          },
+          "401": {
+            "description": "Invalid signed assertion"
+          },
+          "403": {
+            "description": "Not the reserved public grant or missing scope"
+          },
+          "404": {
+            "description": "Unknown slug, nothing published, or not part of the live revision"
+          },
+          "503": {
+            "description": "Action provider unavailable"
+          }
+        }
+      }
+    },
+    "/v2/public/site-cms/{slug}/revisions/{revision}/{kind}/{id}": {
+      "parameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        },
+        {
+          "name": "revision",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          }
+        },
+        {
+          "name": "kind",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "enum": [
+              "pages",
+              "items"
+            ]
+          }
+        },
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readSiteRevisionV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:read",
+        "description": "One page (kind pages, id = page id) or the published items of one collection (kind items, id = collection id) of the live revision. Requires read:site.cmsPage. A revision that is no longer live answers 409 revision_not_live so the caller re-reads the manifest. The assertion must be the reserved public-site grant (workspace rodrigo-public-site, actor rodrigo-public-reader) with app:site. The slug selects the site; it never selects a workspace. Responses omit workspace ids, actors, drafts and owner-only props.",
+        "responses": {
+          "200": {
+            "description": "Page or items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SiteCmsPagePayload"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SiteRevisionItems"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Path segment is malformed"
+          },
+          "401": {
+            "description": "Invalid signed assertion"
+          },
+          "403": {
+            "description": "Not the reserved public grant or missing scope"
+          },
+          "404": {
+            "description": "Unknown slug, nothing published, or not part of the live revision"
+          },
+          "409": {
+            "description": "revision_not_live"
+          },
+          "503": {
+            "description": "Action provider unavailable"
+          }
+        }
+      }
+    },
+    "/v2/public/site-cms/{slug}/media/{mediaId}": {
+      "parameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        },
+        {
+          "name": "mediaId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readSiteMediaV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:read",
+        "description": "Streams a media file referenced by the live revision. Requires read:site.media. The object must be a ready site object of the resolved workspace. ETag is the SHA-256; If-None-Match answers 304; a single Range is honoured. The assertion must be the reserved public-site grant (workspace rodrigo-public-site, actor rodrigo-public-reader) with app:site. The slug selects the site; it never selects a workspace. Responses omit workspace ids, actors, drafts and owner-only props.",
+        "responses": {
+          "200": {
+            "description": "File bytes"
+          },
+          "206": {
+            "description": "Requested range"
+          },
+          "304": {
+            "description": "Not modified"
+          },
+          "400": {
+            "description": "Path segment is malformed"
+          },
+          "401": {
+            "description": "Invalid signed assertion"
+          },
+          "403": {
+            "description": "Not the reserved public grant or missing scope"
+          },
+          "404": {
+            "description": "Unknown slug, nothing published, or not part of the live revision"
+          },
+          "416": {
+            "description": "invalid_range"
+          },
+          "503": {
+            "description": "Action provider unavailable"
+          }
+        }
+      }
+    },
+    "/v2/public/site-cms/{slug}/forms/{pageId}/{sectionId}/submissions": {
+      "parameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          }
+        },
+        {
+          "name": "pageId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          }
+        },
+        {
+          "name": "sectionId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "submitSiteFormV2",
+        "security": [
+          {
+            "hubAssertion": []
+          }
+        ],
+        "x-required-scope": "actions:write",
+        "description": "Stores one anonymous submission for a contact form section of the live revision. Requires action:site.submission.create. Answers are validated against the stored section in the same transaction; delivery targets come from the stored (not public) props. submissionId is the idempotency key. The assertion must be the reserved public-site grant (workspace rodrigo-public-site, actor rodrigo-public-reader) with app:site. The slug selects the site; it never selects a workspace. Responses omit workspace ids, actors, drafts and owner-only props.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SitePublicSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Duplicate of a stored submission"
+          },
+          "201": {
+            "description": "Submission stored"
+          },
+          "400": {
+            "description": "Path segment is malformed"
+          },
+          "401": {
+            "description": "Invalid signed assertion"
+          },
+          "403": {
+            "description": "Not the reserved public grant or missing scope"
+          },
+          "404": {
+            "description": "Unknown slug, nothing published, or not part of the live revision"
+          },
+          "409": {
+            "description": "submission_id_reused with different answers"
+          },
+          "422": {
+            "description": "required_missing, invalid_answer, unknown_field or invalid_locale"
+          },
+          "503": {
+            "description": "Action provider unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -10724,6 +11032,11 @@
               "draft",
               "config",
               "page",
+              "cmsPage",
+              "collection",
+              "item",
+              "media",
+              "publish",
               "product",
               "order",
               "analysis",
@@ -11234,7 +11547,14 @@
               "properties": {
                 "resourceType": {
                   "enum": [
-                    "page"
+                    "page",
+                    "settings",
+                    "cmsPage",
+                    "collection",
+                    "item",
+                    "media",
+                    "publish",
+                    "submission"
                   ]
                 }
               }
@@ -11684,6 +12004,214 @@
               "properties": {
                 "payload": {
                   "$ref": "#/components/schemas/SitePagePayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "settings"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SiteSettingsPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "cmsPage"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SiteCmsPagePayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "collection"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SiteCollectionPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "item"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SiteItemPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "media"
+                },
+                "operation": {
+                  "enum": [
+                    "create",
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SiteMediaPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "publish"
+                },
+                "operation": {
+                  "enum": [
+                    "create"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SitePublishPayload"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "appId": {
+                  "const": "site"
+                },
+                "resourceType": {
+                  "const": "submission"
+                },
+                "operation": {
+                  "enum": [
+                    "update"
+                  ]
+                }
+              },
+              "required": [
+                "appId",
+                "resourceType",
+                "operation"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/SiteSubmissionPayload"
                 }
               }
             }
@@ -15029,6 +15557,865 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SiteLocalizedText": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Per-locale text. Missing locales fall back to the site default locale. Lengths are counted in Unicode code points per field; control characters are refused.",
+        "properties": {
+          "en": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "de": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "sk": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "hu": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "es": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        }
+      },
+      "SiteSection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "version",
+          "props"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "type": {
+            "type": "string",
+            "description": "Component type from contracts/site-components.json"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "props": {
+            "type": "object",
+            "description": "Exactly the props declared for type@version in contracts/site-components.json; every declared key present, no others."
+          }
+        }
+      },
+      "SiteSettingsPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "theme",
+          "logo",
+          "favicon",
+          "socialImage",
+          "defaultLocale",
+          "locales",
+          "seo",
+          "homePageId",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "const": "site"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "theme": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "preset",
+              "overrides"
+            ],
+            "properties": {
+              "preset": {
+                "enum": [
+                  "paper",
+                  "midnight",
+                  "forest",
+                  "sunset",
+                  "slate"
+                ]
+              },
+              "overrides": {
+                "type": "object",
+                "description": "colors (#rrggbb per token), font, headingFont, scale, radius, spacing. The resolved theme must meet WCAG AA for the pairs in contracts/site-components.json."
+              }
+            }
+          },
+          "logo": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "alt"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  },
+                  "alt": {
+                    "$ref": "#/components/schemas/SiteLocalizedText"
+                  }
+                }
+              }
+            ]
+          },
+          "favicon": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "alt"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  },
+                  "alt": {
+                    "$ref": "#/components/schemas/SiteLocalizedText"
+                  }
+                }
+              }
+            ]
+          },
+          "socialImage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "alt"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]{1,64}$"
+                  },
+                  "alt": {
+                    "$ref": "#/components/schemas/SiteLocalizedText"
+                  }
+                }
+              }
+            ]
+          },
+          "defaultLocale": {
+            "enum": [
+              "en",
+              "de",
+              "sk",
+              "hu",
+              "es"
+            ]
+          },
+          "locales": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "en",
+                "de",
+                "sk",
+                "hu",
+                "es"
+              ]
+            }
+          },
+          "seo": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "description"
+            ],
+            "properties": {
+              "title": {
+                "$ref": "#/components/schemas/SiteLocalizedText"
+              },
+              "description": {
+                "$ref": "#/components/schemas/SiteLocalizedText"
+              }
+            }
+          },
+          "homePageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          }
+        },
+        "description": "Resource id \"site\". Claims the public slug (unique across the legacy and CMS indexes). Media references must exist in the library."
+      },
+      "SiteCmsPagePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "nav",
+          "order",
+          "seo",
+          "sections",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Not one of the reserved slugs in contracts/site-components.json; unique among the site pages."
+          },
+          "title": {
+            "$ref": "#/components/schemas/SiteLocalizedText"
+          },
+          "nav": {
+            "enum": [
+              "header",
+              "footer",
+              "both",
+              "none"
+            ]
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "seo": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "description"
+            ],
+            "properties": {
+              "title": {
+                "$ref": "#/components/schemas/SiteLocalizedText"
+              },
+              "description": {
+                "$ref": "#/components/schemas/SiteLocalizedText"
+              }
+            }
+          },
+          "sections": {
+            "type": "array",
+            "maxItems": 40,
+            "items": {
+              "$ref": "#/components/schemas/SiteSection"
+            }
+          },
+          "updatedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          }
+        },
+        "description": "At most 50 pages per site. Section ids are unique within the page."
+      },
+      "SiteCollectionPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "fields",
+          "titleField",
+          "sort",
+          "sortField",
+          "detailPages",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "name": {
+            "$ref": "#/components/schemas/SiteLocalizedText"
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "label",
+                "kind",
+                "required",
+                "options"
+              ],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$"
+                },
+                "label": {
+                  "$ref": "#/components/schemas/SiteLocalizedText"
+                },
+                "kind": {
+                  "enum": [
+                    "text",
+                    "richtext",
+                    "number",
+                    "date",
+                    "boolean",
+                    "link",
+                    "media",
+                    "select"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "options": {
+                  "type": "array",
+                  "maxItems": 30,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          },
+          "titleField": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "sort": {
+            "enum": [
+              "manual",
+              "dateDesc",
+              "titleAsc"
+            ]
+          },
+          "sortField": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 64
+          },
+          "detailPages": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          }
+        },
+        "description": "At most 20 collections. titleField names a text field; dateDesc sorts by a date field. A collection with items cannot be deleted."
+      },
+      "SiteItemPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "collectionId",
+          "slug",
+          "status",
+          "order",
+          "values",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "collectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "values": {
+            "type": "object",
+            "description": "Exactly one value per collection field, validated against the stored collection in the write transaction."
+          },
+          "updatedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          }
+        },
+        "description": "At most 500 items per collection; slug unique within the collection; the collection cannot change."
+      },
+      "SiteMediaPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "objectId",
+          "name",
+          "contentType",
+          "sizeBytes",
+          "width",
+          "height",
+          "alt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "objectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "contentType": {
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "image/gif",
+              "image/avif",
+              "application/pdf"
+            ]
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 26214400,
+            "description": "At most 10 MiB for images, 25 MiB for PDF."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20000
+          },
+          "alt": {
+            "$ref": "#/components/schemas/SiteLocalizedText"
+          },
+          "updatedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          }
+        },
+        "description": "objectId must be a ready object of the same workspace with purpose site, the same size and type; it never changes. Images carry their intrinsic size (1..20000); documents use 0. At most 500 entries."
+      },
+      "SitePublishPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "note",
+          "restoreOf",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 200
+          },
+          "restoreOf": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          }
+        },
+        "description": "Publishing copies settings, pages, collections, media and published items into an immutable revision named by id and makes it live in the same transaction; every media reference must be in the library. restoreOf makes an earlier kept revision live instead. The newest 20 revisions and the live one are kept."
+      },
+      "SiteSubmissionPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "pageId",
+          "sectionId",
+          "locale",
+          "answers",
+          "submittedAt",
+          "status",
+          "delivery",
+          "source"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "sectionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "de",
+              "sk",
+              "hu",
+              "es"
+            ]
+          },
+          "answers": {
+            "type": "object"
+          },
+          "submittedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "handled",
+              "spam"
+            ]
+          },
+          "delivery": {
+            "type": "object",
+            "description": "messenger and relay targets with their delivery state; written by Rodrigo only."
+          },
+          "source": {
+            "const": "public"
+          }
+        },
+        "description": "Created only by the anonymous route. Members change status; every other field must equal the stored row."
+      },
+      "SiteManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "revisionId",
+          "publishedAt",
+          "settings",
+          "pages",
+          "collections",
+          "media",
+          "products"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "revisionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+          },
+          "publishedAt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "format": "date-time"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SiteSettingsPayload"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "slug",
+                "title",
+                "nav",
+                "order",
+                "seo"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "title": {
+                  "$ref": "#/components/schemas/SiteLocalizedText"
+                },
+                "nav": {
+                  "enum": [
+                    "header",
+                    "footer",
+                    "both",
+                    "none"
+                  ]
+                },
+                "order": {
+                  "type": "integer"
+                },
+                "seo": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "title",
+                    "description"
+                  ],
+                  "properties": {
+                    "title": {
+                      "$ref": "#/components/schemas/SiteLocalizedText"
+                    },
+                    "description": {
+                      "$ref": "#/components/schemas/SiteLocalizedText"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SiteCollectionPayload"
+            }
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "contentType",
+                "sizeBytes",
+                "width",
+                "height",
+                "alt"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40,
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "contentType": {
+                  "type": "string"
+                },
+                "sizeBytes": {
+                  "type": "integer"
+                },
+                "width": {
+                  "type": "integer"
+                },
+                "height": {
+                  "type": "integer"
+                },
+                "alt": {
+                  "$ref": "#/components/schemas/SiteLocalizedText"
+                }
+              }
+            }
+          },
+          "products": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object"
+            },
+            "description": "Live Storefront cards, only when a page shows a productShowcase section."
+          }
+        }
+      },
+      "SiteRevisionItems": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+              "$ref": "#/components/schemas/SiteItemPayload"
+            }
+          }
+        }
+      },
+      "SitePublicSubmission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "submissionId",
+          "locale",
+          "answers"
+        ],
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "de",
+              "sk",
+              "hu",
+              "es"
+            ]
+          },
+          "answers": {
+            "type": "object"
           }
         }
       }

@@ -1,3 +1,6 @@
+// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
+import React from 'react';
+void React;
 /** Server rendering to a complete static HTML document. No client JavaScript is emitted. */
 import { createHash } from 'node:crypto';
 import { Fragment } from 'react';

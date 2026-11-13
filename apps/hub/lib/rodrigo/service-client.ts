@@ -10,7 +10,7 @@ const revision = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const resourceTypes: Record<RodrigoActionAppId, readonly RodrigoActionResourceType[]> = {
   tasks: ['task', 'taskBoard'], notes: ['note'], calendar: ['event'], workspace: ['settings'],
   messenger: ['channel', 'message', 'reaction'], files: ['fileMetadata'], canvas: ['board'],
-  mail: ['account', 'draft'], relay: ['config'], site: ['page'], storefront: ['product', 'order'],
+  mail: ['account', 'draft'], relay: ['config'], site: ['page', 'settings', 'cmsPage', 'collection', 'item', 'media', 'publish', 'submission'], storefront: ['product', 'order'],
   ocr: ['analysis', 'pattern'], studio: ['project'], notifications: ['notification'],
   events: ['event'], embed: ['widget'], protocolio: ['artifact'], forms: ['form', 'submission'],
 };

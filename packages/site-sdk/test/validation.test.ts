@@ -105,3 +105,22 @@ test('the reviewed contract snapshot matches the SDK (and Rodrigo when checked o
   const rodrigo = process.env.RODRIGO_CONTRACTS_DIR ? resolve(process.env.RODRIGO_CONTRACTS_DIR, 'site-components.json') : '';
   if (rodrigo && existsSync(rodrigo)) assert.equal(lf(readFileSync(rodrigo, 'utf8')), generated, 'Rodrigo contract snapshot differs');
 });
+
+test('media records, publish requests and image sizes', async () => {
+  const { validateMedia, validatePublish, mediaRefs, imageSize } = await import('../src/library');
+  const media = { id: 'm1', objectId: '0b0e2f6c-6a1e-4c55-8c1e-2f1a4b7c9d10', name: 'team.jpg', contentType: 'image/jpeg', sizeBytes: 1000, width: 1200, height: 800, alt: { en: 'Team' }, updatedAt: '2026-11-13T10:00:00Z' };
+  assert.deepEqual(validateMedia(media), []);
+  assert.ok(validateMedia({ ...media, contentType: 'image/svg+xml' }).some((i) => i.code === 'unsupported_type'));
+  assert.ok(validateMedia({ ...media, sizeBytes: 10 * 1024 * 1024 + 1 }).some((i) => i.code === 'too_large'));
+  assert.ok(validateMedia({ ...media, contentType: 'application/pdf' }).some((i) => i.code === 'invalid_dimension'));
+  assert.deepEqual(validateMedia({ ...media, contentType: 'application/pdf', width: 0, height: 0 }), []);
+  assert.deepEqual(validatePublish({ id: 'r1', note: '', restoreOf: null, createdAt: '2026-11-13T10:00:00Z' }), []);
+  assert.deepEqual(mediaRefs({ sections: [{ props: { image: { id: 'm1', alt: {} }, items: [{ photo: { id: 'm2', alt: { en: 'x' } } }], heading: { en: 'id' } } }], logo: null }), ['m1', 'm2']);
+  const png = new Uint8Array(24); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 4, 0xb0, 0, 0, 3, 0x20]);
+  assert.deepEqual(imageSize(png), { width: 1200, height: 800 });
+  const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x10, 0x00, 0x20, 0x00]);
+  assert.deepEqual(imageSize(gif), { width: 16, height: 32 });
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x02, 0x58, 0x03, 0x20, 0x03, 0x01]);
+  assert.deepEqual(imageSize(jpeg), { width: 800, height: 600 });
+  assert.equal(imageSize(new Uint8Array([1, 2, 3])), null);
+});

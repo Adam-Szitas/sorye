@@ -7,3 +7,4 @@ export * from './registry';
 export * from './validate';
 export * from './legacy';
 export { Markdown, markdownToText } from './markdown';
+export * from './library';

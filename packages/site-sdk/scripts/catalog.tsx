@@ -1,3 +1,6 @@
+// Explicit React keeps classic-runtime JSX transforms (tests under Hub tsconfig) working.
+import React from 'react';
+void React;
 /**
  * Writes `CATALOG.html`: every component rendered with sample props next to its
  * props table. Run `pnpm --filter @sorye/site-sdk docs:catalog`.

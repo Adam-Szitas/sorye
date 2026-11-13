@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
       '../../node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
     ],
   },
-  transpilePackages: ['@sorye/types', '@sorye/db', '@sorye/sdk', '@sorye/platform'],
+  transpilePackages: ['@sorye/types', '@sorye/site-sdk', '@sorye/db', '@sorye/sdk', '@sorye/platform'],
   serverExternalPackages: ['imapflow', 'nodemailer', 'mailparser', 'pdfjs-dist'],
 };
 

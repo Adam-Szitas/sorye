@@ -25,7 +25,7 @@
       "forms.form.create", "forms.form.update", "forms.form.delete", "forms.submission.update", "forms.submission.delete",
       "site.settings.create", "site.settings.update", "site.cmsPage.create", "site.cmsPage.update", "site.cmsPage.delete",
       "site.collection.create", "site.collection.update", "site.collection.delete", "site.item.create", "site.item.update", "site.item.delete",
-      "site.publish.create", "site.submission.update", "site.submission.delete"
+      "site.media.create", "site.media.update", "site.media.delete", "site.publish.create", "site.submission.update", "site.submission.delete"
     ]
   },
   "platform": {
