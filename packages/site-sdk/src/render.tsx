@@ -2,6 +2,9 @@
 /** @jsx h */
 /** @jsxFrag Fragment */
 import { Fragment, h, renderToString } from './html';
+// Keep the JSX factory imports alive: Turbopack elides imports it sees as unused
+// before it applies the classic JSX transform, leaving `h is not defined` at runtime.
+void h; void Fragment;
 /** Server rendering to a complete static HTML document. No client JavaScript is emitted. */
 import { createHash } from 'node:crypto';
 import { t, ui, type RenderContext } from './context';

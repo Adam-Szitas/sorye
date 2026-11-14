@@ -2,6 +2,9 @@
 /** @jsx h */
 /** @jsxFrag Fragment */
 import { Fragment, h, type Child } from './html';
+// Keep the JSX factory imports alive: Turbopack elides imports it sees as unused
+// before it applies the classic JSX transform, leaving `h is not defined` at runtime.
+void h; void Fragment;
 /**
  * Safe Markdown subset. No HTML: everything that is not one of the constructs
  * below is rendered as literal (escaped) text.
