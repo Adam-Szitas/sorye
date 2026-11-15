@@ -6,7 +6,7 @@
 
 This is a target design for the existing Proxmox environment, not a description of deployed infrastructure. It assumes each service VM uses Docker Compose initially. It deliberately separates hypervisor control, source/build/release, application operations and backup authority. No single internet-facing control panel should have unrestricted root access to every layer.
 
-**Data-plane target:** Sorye browser apps call Hub APIs; Hub forwards protected data operations to Rodrigo's versioned, signed Rust API; Rodrigo alone connects to Sorye product databases and storage. The current Hub still owns direct stores and Rodrigo has no durable adapters. See [RODRIGO.md](./RODRIGO.md) for the required identity-bootstrap and one-writer migration. Protocolio's MongoDB remains a separate exception until redesigned.
+**Data-plane target:** Sorye browser apps call Hub APIs; Hub forwards protected data operations to Rodrigo's versioned, signed Rust API; Rodrigo ultimately owns Sorye product database and storage access. Rodrigo now has durable adapters and owns identity, migrated app records and storage; Hub still owns remaining domains. See [alignment status](HUB-RODRIGO-ALIGNMENT.md) and the [interactive current architecture explorer](SORYE-RODRIGO-EXPLORER.html). The VM/delivery/observability topology proposed here is not evidence of deployed infrastructure. Protocolio's MongoDB remains a separate exception until redesigned.
 
 ## Target structure
 

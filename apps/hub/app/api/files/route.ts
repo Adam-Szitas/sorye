@@ -167,6 +167,7 @@ async function uploadFile(req: Request, session: Session, config: UploadThrottle
     file = await createWorkspaceFileFromStream({
       workspaceId: session.workspace.id,
       displayName: upload.fileName,
+      folderPath: new URL(req.url).searchParams.get('folderPath') ?? '',
       sourceAppId,
       source: upload.file,
       maxBytes: Math.min(maxBytes, declared),

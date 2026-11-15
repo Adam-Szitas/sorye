@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { RodrigoResponseError, RodrigoUnavailableError, type RodrigoContext } from './service-client';
-import { readJson, responseError, signedFetch } from './transport';
+import { readJson, responseError, signedFetch, type SignedFetch } from './transport';
 
 /**
  * Drive in Rodrigo (alignment slice 2): metadata, quota, ledger and bytes. Hub streams the
@@ -10,6 +10,7 @@ import { readJson, responseError, signedFetch } from './transport';
  */
 const sha = z.string().regex(/^[0-9a-f]{64}$/);
 export const driveFileSchema = z.object({
+  folderPath: z.string().max(1024).optional(),
   id: z.string().uuid(), displayName: z.string().max(255), mime: z.string().max(127), sourceAppId: z.string().max(32),
   storedIn: z.enum(['sorye', 'drive', 'database']), status: z.enum(['uploading', 'ready', 'failed', 'deleted']),
   size: z.number().int().min(0), sha256: sha.optional(), errorCode: z.string().max(64).optional(),
@@ -38,6 +39,7 @@ export class DriveUploadError extends Error {
 }
 
 export interface DriveUploadMeta {
+  folderPath?: string;
   fileId: string; displayName: string; mime: string; sourceAppId: string;
   /** Exact size when known, else an upper bound and the size is given at completion. */
   size?: number; maxBytes?: number; sha256?: string;
@@ -58,12 +60,22 @@ export async function uploadDriveFile(
   context: RodrigoContext,
   meta: DriveUploadMeta,
   source: AsyncIterable<Uint8Array>,
-  options: { finalSha256?: () => string | undefined | Promise<string | undefined>; onPart?: (bytesSent: number) => void } = {},
+  options: { finalSha256?: () => string | undefined | Promise<string | undefined>; onPart?: (bytesSent: number) => void; shareHash?: string } = {},
 ): Promise<DriveFile> {
+  const send = (input: SignedFetch) => {
+    if (!options.shareHash) return signedFetch(input);
+    let path = input.path.replace('/v2/files/uploads', '/v2/public-drive/uploads');
+    path = path.replace(/^\/v2\/objects\/uploads\/([^/]+)\/parts\/(\d+)$/, '/v2/public-drive/parts/$1/$2');
+    path = path.replace(/^\/v2\/public-drive\/uploads\/([^/]+)\/complete$/, '/v2/public-drive/complete/$1');
+    return signedFetch({ ...input, path, scope: 'drive-share:access', context: { userId: 'rodrigo-drive-recipient', workspaceId: 'rodrigo-public-drive' }, actionScopes: [`share:${options.shareHash}`] });
+  };
+  const uploadCall = async <T,>(method: string, path: string, schema: z.ZodType<T>, body: unknown, timeoutMs?: number) =>
+    readJson(await send({ context, method, path, scope: 'files:write', appScopes: FILES, body: JSON.stringify(body), timeoutMs }), schema, 1_048_576);
   let session: z.infer<typeof sessionSchema>;
   try {
-    session = await call(context, 'POST', '/v2/files/uploads', 'files:write', sessionSchema, {
+    session = await uploadCall('POST', '/v2/files/uploads', sessionSchema, {
       fileId: meta.fileId, displayName: meta.displayName, mime: meta.mime, sourceAppId: meta.sourceAppId,
+      folderPath: meta.folderPath ?? '',
       ...(meta.size !== undefined ? { size: meta.size } : { maxBytes: meta.maxBytes }), ...(meta.sha256 ? { sha256: meta.sha256 } : {}),
     });
   } catch (error) {
@@ -77,7 +89,7 @@ export async function uploadDriveFile(
   let pending: Buffer[] = [];
   let pendingSize = 0;
   const abort = async (code: string, status = 422): Promise<never> => {
-    await signedFetch({ context, method: 'DELETE', path: `/v2/files/uploads/${meta.fileId}`, scope: 'files:write', appScopes: FILES })
+    await send({ context, method: 'DELETE', path: `/v2/files/uploads/${meta.fileId}`, scope: 'files:write', appScopes: FILES })
       .then((r) => r.body?.cancel()).catch(() => undefined);
     throw new DriveUploadError(code, status);
   };
@@ -88,7 +100,7 @@ export async function uploadDriveFile(
     if (stored.get(partNumber) !== partSha) {
       for (let attempt = 0; ; attempt += 1) {
         try {
-          const response = await signedFetch({
+          const response = await send({
             context, method: 'PUT', path: `/v2/objects/uploads/${session.uploadId}/parts/${partNumber}`, scope: 'objects:write',
             appScopes: FILES, body: pending, bodySha256: partSha, timeoutMs: 30_000,
           });
@@ -128,7 +140,7 @@ export async function uploadDriveFile(
   if ((meta.size !== undefined && received !== meta.size) || (browser && browser !== digest)) await abort('checksum_mismatch');
   if (pendingSize > 0 || partNumber === 1) await flush();
   try {
-    const done = await call(context, 'POST', `/v2/files/uploads/${meta.fileId}/complete`, 'files:write', fileReply, { size: received, sha256: digest }, 300_000);
+    const done = await uploadCall('POST', `/v2/files/uploads/${meta.fileId}/complete`, fileReply, { size: received, sha256: digest }, 300_000);
     return done.file;
   } catch (error) {
     if (error instanceof RodrigoResponseError) throw new DriveUploadError(error.code, error.status);
@@ -138,6 +150,13 @@ export async function uploadDriveFile(
 
 export async function listDriveFiles(context: RodrigoContext): Promise<DriveFile[]> {
   return (await call(context, 'GET', '/v2/files', 'files:read', z.object({ contractVersion: z.literal('2'), files: z.array(driveFileSchema) }).strict())).files;
+}
+export async function listDriveFolders(context: RodrigoContext): Promise<string[]> {
+  const response = await signedFetch({ context, method: 'GET', path: '/v2/files-folders', scope: 'files:read', appScopes: FILES });
+  return (await readJson(response, z.object({ paths: z.array(z.string().max(1024)).max(2000) }).strict(), 4_194_304)).paths;
+}
+export async function createDriveFolder(context: RodrigoContext, path: string): Promise<void> {
+  await call(context, 'POST', '/v2/files-folders', 'files:write', z.object({ path: z.string() }).strict(), { path });
 }
 export async function getDriveFile(context: RodrigoContext, fileId: string): Promise<DriveFile> {
   return (await call(context, 'GET', `/v2/files/${encodeURIComponent(fileId)}`, 'files:read', fileReply)).file;

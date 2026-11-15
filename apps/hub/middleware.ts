@@ -17,6 +17,8 @@ import {
 import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server';
 
 const publicPaths = [
+  '/share',
+  '/api/drive-public',
   '/sitemap.xml',
   '/learn',
   '/login',
@@ -181,6 +183,13 @@ const hubMiddleware = auth((req) => {
   }
 
   const res = NextResponse.next();
+  if (pathname === '/share' || pathname.startsWith('/api/drive-public/')) {
+    res.headers.set('Cache-Control', 'no-store');
+    res.headers.set('Referrer-Policy', 'no-referrer');
+    res.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    res.headers.set('X-Content-Type-Options', 'nosniff');
+    res.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
+  }
 
   // Only the widget's allowlisted origins may frame an embed page. The origins
   // come from the token in the URL; the page itself verifies the signature, so a

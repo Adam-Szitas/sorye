@@ -2,6 +2,8 @@
 
 A one-page map of every app: what it does, where it runs, where its data lives, what it talks to, and its current limits. It describes the integrated code (Hub/Rodrigo alignment slices 0–2 plus the Site builder). Details per app are in [apps/APPS.md](apps/APPS.md); flows are in the [behavior map](APP-BEHAVIOR-TREE.md); migration status is in [HUB-RODRIGO-ALIGNMENT.md](HUB-RODRIGO-ALIGNMENT.md).
 
+Explore the connections, storage, GPU and telemetry in the [interactive Sorye ↔ Rodrigo architecture guide](SORYE-RODRIGO-EXPLORER.html). It works offline and distinguishes implemented, optional, planned and sandbox paths.
+
 ## The shape of the system
 
 ```mermaid
@@ -44,7 +46,7 @@ flowchart LR
 | **Studio** | Opens a 3D model and lets you orbit it (WebGPU) | Micro-frontend, 23109 | Files in Drive (section "studio"); viewing is in the browser | Drive | No STEP/IGES/.blend; needs a WebGPU browser |
 | **DevKit** | API explorer, embed lab, webhook simulator, logs | Micro-frontend, 23110 | Hub stores (embed widgets, logs) | Hub APIs | For developers; not migrated |
 | **Protocolio** | Builds a PDF layout and generates the PDF | Micro-frontend, 23111 | The layout lives in the open editor (not saved by Sorye); PDFs are produced by the separate Protocolio service | Hub `/api/protocolio/*` bridge to the renderer; receives OCR handoffs; emits events | Renderer is a separate service; unavailable on the isolated sandbox network |
-| **Drive** (id `files`) | Workspace files: upload with progress, search, preview, rename, download, delete | Hub-native | Rodrigo (file records, quota, ledger, bytes; or the customer's own bucket/database) | Hub `/api/files`, the shell upload queue | 64 MB per file |
+| **Drive** (id `files`) | Workspace folders, folder-tree uploads, search, safe previews, rename, download, delete; blocks executable files | Hub-native | Rodrigo (folder/file records, quota, ledger; selected object storage owns bytes) | Hub folder/file APIs and shell upload queue | 64 MiB/file, 200 files/workspace; folders up to 2,000 |
 | **Site** | Website builder: pages from sections, collections, media, contact forms, languages; publishes to `/s/<address>` | Hub-native | Rodrigo (`site.*` records, revisions, media bytes) | Hub action batch, `/api/site/*`; public pages read the live revision | Form forwarding to Messenger/Relay **not active**; no custom domains |
 | **Forms** | Build a form, publish at `/f/<address>`, read answers, export CSV | Hub-native | Rodrigo (`forms.form`, `forms.submission`) | Hub action batch; public form routes | No notification on a new answer; no file fields |
 | **Storefront** | Browse workspace products and send an order request | Hub-native | Rodrigo (`storefront.product`, `storefront.order`) | Hub action batch; Site's Product showcase shows its products | No payment; order status changes are not a workflow yet |

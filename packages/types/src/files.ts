@@ -72,6 +72,7 @@ export function isFileInlinePreviewable(
 
 /** Server-side file row. `relativePath` is workspaceId/id — never user-supplied. */
 export interface WorkspaceFile {
+  folderPath?: string;
   id: string;
   workspaceId: string;
   displayName: string;

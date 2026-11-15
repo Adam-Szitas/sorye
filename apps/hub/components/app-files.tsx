@@ -1,4 +1,6 @@
-'use client';
+﻿'use client';
+import { readDriveDrop } from '../lib/drive-drop';
+import { DriveSharing } from './drive-sharing';
 import { TranslatedText, UserLoadSections } from '@sorye/platform/react';
 import { switchAuthorizedWorkspace } from '@sorye/platform';
 
@@ -10,8 +12,6 @@ import {
   FILE_MAX_BYTES,
   FILE_MAX_PER_WORKSPACE,
   FILE_UPLOAD_BATCH_MAX,
-  FILE_UPLOAD_BATCH_TARGET_SECONDS,
-  FILE_UPLOAD_BATCH_UNKNOWN_SPEED,
   type FileQuota,
   type CloudStorageConnection,
   type CloudStorageObject,
@@ -29,7 +29,7 @@ import {
   currentUploadSpeed,
   enqueueUploads,
 } from '@/lib/upload-queue';
-import { formatRate, type SpeedEstimate } from '@/lib/upload-speed';
+import { type SpeedEstimate } from '@/lib/upload-speed';
 import { BatchProgress, UploadProgressList, useUploads } from './upload-progress';
 import {
   useCallback,
@@ -44,10 +44,9 @@ import {
 import { createPortal } from 'react-dom';
 
 const FIELD_CLASS =
-  'mt-1 w-full rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)]/50';
+  'w-full rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)]/50';
 
-const ACCEPT =
-  'image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,text/csv,text/markdown,application/json,.jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.csv,.md,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
+const ACCEPT = undefined; // General storage: authoritative executable checks run on the server.
 
 const TEXT_PREVIEW_MAX = 256 * 1024;
 
@@ -402,19 +401,7 @@ function fallbackQuota(maxBytes: number, fileCount: number, usedBytes: number): 
 
 /** Why the browser queues at most this many files: the measured or reported connection speed. */
 function batchExplanation(speed: SpeedEstimate, quota: FileQuota): string {
-  const minutes = Math.round(FILE_UPLOAD_BATCH_TARGET_SECONDS / 60);
-  const cap = `at most ${quota.maxBatchFiles} at once`;
-  if (speed.bytesPerSecond === null) {
-    return `Drive queues up to ${Math.min(FILE_UPLOAD_BATCH_UNKNOWN_SPEED, quota.maxBatchFiles)} files at a time until it has measured your upload speed.`;
-  }
-  const rate = formatRate(speed.bytesPerSecond);
-  const serverBound = speed.limitedByServer || (speed.source !== 'measured' && quota.throttleBytesPerSecond === speed.bytesPerSecond);
-  const basis = serverBound
-    ? `This server limits uploads to about ${rate}`
-    : speed.source === 'measured'
-      ? `Your recent uploads ran at about ${rate}`
-      : `Your browser reports a connection that should upload about ${rate}`;
-  return `${basis}, so Drive queues as many files as fit in about ${minutes} minutes (${cap}). Select the rest after these finish.`;
+  return `Selected files wait in the queue and upload ${quota.maxConcurrentUploads} at a time. File size and workspace storage limits still apply.`;
 }
 
 function DriveQuota({ quota, speed }: { quota: FileQuota; speed: SpeedEstimate }) {
@@ -451,6 +438,10 @@ function DriveQuota({ quota, speed }: { quota: FileQuota; speed: SpeedEstimate }
 export function AppFiles() {
   const uid = useId();
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderWorkspaceRef = useRef<string | null>(null);
+  const [directoryPath, setDirectoryPath] = useState('');
+  const [directoryPaths, setDirectoryPaths] = useState<string[]>([]);
+  const [newFolder, setNewFolder] = useState<string | null>(null);
   const [files, setFiles] = useState<WorkspaceFile[] | null>(null);
   const [fileLoad, setFileLoad] = useState<UserLoadPartition<WorkspaceFile> | null>(null);
   const [driveWorkspace, setDriveWorkspace] = useState<UserLoadWorkspace | null>(null);
@@ -462,6 +453,7 @@ export function AppFiles() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
   const [renameTarget, setRenameTarget] = useState<WorkspaceFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceFile | null>(null);
@@ -483,6 +475,13 @@ export function AppFiles() {
       throw new Error(data.error ?? 'Could not load Drive');
     }
     setFiles(data.files);
+    if (folderWorkspaceRef.current !== (data.workspace?.id ?? null)) {
+      setDirectoryPath(''); setNewFolder(null);
+      folderWorkspaceRef.current = data.workspace?.id ?? null;
+    }
+    const folderResponse = await fetch('/api/files/folders', { credentials: 'include', cache: 'no-store' });
+    if (!folderResponse.ok) throw new Error('Could not load folders. Please retry.');
+    setDirectoryPaths((await folderResponse.json()).paths);
     setFileLoad(data.load ?? null);
     setDriveWorkspace(data.workspace ?? null);
     setMaxBytes(data.maxBytes ?? FILE_MAX_BYTES);
@@ -582,6 +581,7 @@ export function AppFiles() {
     try {
       for (const item of incoming) {
         const body = new FormData();
+        body.append('prefix', cloudPrefix + (item.webkitRelativePath ? item.webkitRelativePath.split('/').slice(0, -1).join('/') + '/' : ''));
         body.append('file', item);
         if (cloudStorageId) {
           body.append('prefix', cloudPrefix);
@@ -627,7 +627,7 @@ export function AppFiles() {
     setNotice(null);
     if (inputRef.current) inputRef.current.value = '';
     if (!driveWorkspace || !quota) { setError('Drive is still loading. Try again in a moment.'); return; }
-    const result = enqueueUploads(incoming, { workspaceId: driveWorkspace.id, quota });
+    const result = enqueueUploads(incoming, { workspaceId: driveWorkspace.id, quota, folderPath: directoryPath });
     const parts: string[] = [];
     if (result.queued > 0) parts.push(`Uploading ${result.queued} file${result.queued === 1 ? '' : 's'}.`);
     const capped = result.skipped.filter((item) => item.reason === 'Batch limit for your connection');
@@ -765,11 +765,47 @@ export function AppFiles() {
   const searchId = `${uid}-search`;
   const regexId = `${uid}-regex`;
   const searching = query.trim().length > 0;
-  const visible = filtered.files.filter((file) =>
+  const visible = filtered.files.filter((file) => (searching || (file.folderPath ?? '') === directoryPath)).filter((file) =>
     folder
       ? (file.sourceAppId ?? 'files') === folder
       : (file.sourceAppId ?? 'files') === 'files',
   );
+  const childFolderPaths = !folder && !cloudStorageId && !searching
+    ? [...new Set(directoryPaths.filter((path) => path.split('/').slice(0, -1).join('/') === directoryPath))]
+      .sort((a, b) => a.split('/').at(-1)!.localeCompare(b.split('/').at(-1)!, undefined, { sensitivity: 'base', numeric: true }))
+    : [];
+  const folderEntryCount = (path: string) => files.filter((file) => file.folderPath === path).length +
+    directoryPaths.filter((child) => child.split('/').slice(0, -1).join('/') === path).length;
+  const beginDrop = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+    event.preventDefault(); dragDepth.current += 1; setDragOver(true);
+  };
+  const overDrop = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'copy';
+  };
+  const leaveDrop = (event: React.DragEvent) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    dragDepth.current = 0; setDragOver(false);
+  };
+  const dropFiles = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+    event.preventDefault(); event.stopPropagation(); dragDepth.current = 0; setDragOver(false);
+    void readDriveDrop(event.dataTransfer).then(async ({ files: dropped, folders: paths }) => {
+      const base = cloudStorageId ? cloudPrefix.replace(/\/$/, '') : directoryPath;
+      const created = new Set<string>();
+      for (const path of paths.sort((a, b) => a.split('/').length - b.split('/').length)) {
+        const full = [base, path].filter(Boolean).join('/');
+        if (created.has(full)) continue;
+        const response = await fetch('/api/files/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedWorkspaceId: driveWorkspace?.id, path: full, ...(cloudStorageId ? { storageId: cloudStorageId } : {}) }) });
+        if (!response.ok) throw new Error(`Could not create folder “${path}”; files were not queued.`);
+        created.add(full);
+      }
+      if (dropped.length) await uploadList(dropped);
+      if (cloudStorageId) setCloudObjects(await loadCloudObjects(cloudStorageId, cloudPrefix)); else await load();
+      if (!dropped.length && paths.length) setNotice(`Created ${paths.length} folder${paths.length === 1 ? '' : 's'}.`);
+    }).catch((e) => setError(e instanceof Error ? e.message : 'Could not read dropped folder'));
+  };
   const folders = APP_CATALOG.filter(
     (app) => app.id !== 'files' && files.some((file) => file.sourceAppId === app.id),
   );
@@ -780,6 +816,8 @@ export function AppFiles() {
   const cloudStorage = cloudStorages.find((storage) => storage.id === cloudStorageId) ?? null;
   const cloudPath = cloudPrefix.split('/').filter(Boolean);
   const visibleCloudObjects = (cloudObjects ?? []).filter((object) => !query.trim() || object.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const currentCloudFiles = (cloudObjects ?? []).filter((object) => !object.isFolder);
+  const currentCloudBytes = currentCloudFiles.reduce((total, object) => total + object.size, 0);
   const summary = cloudStorage
     ? cloudObjects === null ? `Loading ${cloudStorage.name}…` : `${visibleCloudObjects.length} item${visibleCloudObjects.length === 1 ? '' : 's'} in ${cloudStorage.name}`
     : searching
@@ -788,7 +826,7 @@ export function AppFiles() {
 
   return (
     <div className="@container relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/8 px-4 py-3 sm:px-5">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-white/8 px-4 py-2 sm:px-5">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">Drive</h1>
           <p className="text-xs text-[var(--color-text-muted)]">
@@ -797,8 +835,8 @@ export function AppFiles() {
             up to {maxMb} MB each
           </p>
         </div>
-        <label className="rounded-lg bg-[var(--color-accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-surface)] transition hover:brightness-110">
-          {busy ? 'Working…' : cloudStorage ? `Upload to ${cloudStorage.name}` : 'Upload'}
+        <label className="flex min-h-11 items-center rounded-lg bg-[var(--color-accent)] px-3.5 py-1.5 text-xs font-medium text-[var(--color-surface)] transition hover:brightness-110">
+          {busy ? 'Working…' : cloudStorage ? `Upload to ${cloudStorage.name}` : 'Upload files'}
           <input
             ref={inputRef}
             className="sr-only"
@@ -813,7 +851,70 @@ export function AppFiles() {
         </label>
       </header>
 
-      {!cloudStorage && quota ? <DriveQuota quota={quota} speed={speed} /> : null}
+      <div className="mx-4 mt-1 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs sm:mx-5">
+        <div className="flex flex-wrap items-center gap-1.5">
+        <button type="button" onClick={() => setNewFolder('')} className="min-h-11 rounded-lg border border-white/20 px-2.5 py-1">New folder</button>
+        <label className="flex min-h-11 cursor-pointer items-center rounded-lg border border-white/20 px-2.5 py-1">Upload folder
+          <input type="file" className="sr-only" multiple ref={(node) => { node?.setAttribute('webkitdirectory', ''); }} onChange={(event) => { if (event.target.files) void uploadList(event.target.files); event.target.value = ''; }} />
+        </label>
+        {!cloudStorageId && driveWorkspace && <DriveSharing workspaceId={driveWorkspace.id} kind="folder" root={directoryPath} label={directoryPath || 'Drive root'} />}
+        </div>
+        <div className="flex w-full min-w-0 basis-full flex-wrap items-end justify-end gap-2 @md:basis-auto @md:flex-1">
+          <div className="w-52 max-w-full min-w-0 flex-none">
+            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={searchId}><TranslatedText message="search" /></label>
+            <input id={searchId} className={FIELD_CLASS} type="search" value={query} placeholder={cloudStorage ? 'Search file names' : 'Name, type:pdf, or /regex/'} autoComplete="off" spellCheck={false} onChange={(event) => setQuery(event.target.value)} />
+          </div>
+          {!cloudStorage ? <label className="flex min-h-11 items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]" htmlFor={regexId}>
+            <input id={regexId} type="checkbox" checked={regexMode} onChange={(event) => setRegexMode(event.target.checked)} />Regex
+          </label> : null}
+        </div>
+      </div>
+      {newFolder !== null && <form className="mx-4 flex shrink-0 flex-wrap items-end gap-2 text-xs sm:mx-5" onSubmit={async (event) => {
+        event.preventDefault();
+        if (!newFolder.trim() || /[/\\]/.test(newFolder)) { setError('Enter a folder name without slashes.'); return; }
+        setBusy(true); setError(null);
+        try {
+          const response = await fetch('/api/files/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedWorkspaceId: driveWorkspace?.id, path: [cloudStorageId ? cloudPrefix.replace(/\/$/, '') : directoryPath, newFolder].filter(Boolean).join('/'), ...(cloudStorageId ? { storageId: cloudStorageId } : {}) }) });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error);
+          if (cloudStorageId) setCloudObjects(await loadCloudObjects(cloudStorageId, cloudPrefix)); else await load();
+          setNewFolder(null);
+        } catch (error) { setError(error instanceof Error ? error.message : 'Could not create folder'); }
+        finally { setBusy(false); }
+      }}>
+        <label className="min-w-[10rem] flex-1">Folder name <input autoFocus value={newFolder} maxLength={180} onChange={(event) => setNewFolder(event.target.value)} className="mt-1 min-h-11 w-full rounded border border-white/20 bg-transparent px-2 py-1.5" /></label>
+        <button className="min-h-11 rounded-lg border border-white/20 px-3 py-1.5" disabled={busy} type="submit">Create</button><button className="min-h-11 rounded-lg border border-white/10 px-3 py-1.5" type="button" onClick={() => setNewFolder(null)}>Cancel</button>
+      </form>}
+
+      <section aria-label="Storage destination" className="mx-4 mt-1 flex shrink-0 flex-col gap-1.5 sm:mx-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Storage destination</h2>
+          <a href="/apps/relay" className="text-xs text-[var(--color-accent)] underline underline-offset-2">Manage connections</a>
+        </div>
+        <div className="grid grid-cols-1 gap-1.5 @md:grid-cols-2 @xl:grid-cols-3" role="group" aria-label="Choose where to browse and upload files">
+          <button type="button" aria-pressed={!cloudStorageId} onClick={() => { setCloudStorageId(null); setCloudPrefix(''); setDirectoryPath(''); setNewFolder(null); setFolder(null); setQuery(''); setError(null); }}
+            className={`flex min-h-11 items-center gap-2.5 rounded-xl border px-2.5 py-1.5 text-left font-sans leading-tight transition ${!cloudStorageId ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/30' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.06]'}`}>
+            <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/8"><svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="5" rx="1.5"/><rect x="3" y="14" width="18" height="5" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">Workspace Drive</span><span className="block text-[11px] leading-snug text-[var(--color-text-muted)]">Sorye storage or configured own storage</span></span>
+            {!cloudStorageId && <svg aria-hidden="true" className="size-4 shrink-0 text-[var(--color-accent)]" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="m4 10 4 4 8-8"/></svg>}
+          </button>
+          {cloudStorages.map((storage) => <button key={storage.id} type="button" aria-pressed={cloudStorageId === storage.id}
+            onClick={() => { setCloudStorageId(storage.id); setCloudPrefix(''); setDirectoryPath(''); setNewFolder(null); setFolder(null); setQuery(''); setError(null); }}
+            className={`flex min-h-11 items-center gap-2.5 rounded-xl border px-2.5 py-1.5 text-left font-sans leading-tight transition ${cloudStorageId === storage.id ? 'border-sky-300 bg-sky-300/10 ring-1 ring-sky-300/30' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.06]'}`}>
+            <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-sky-300/10 text-[11px] font-semibold text-sky-200">{storage.provider === 'aws-s3' ? 'S3' : 'R2'}</span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{storage.name}</span><span className="block text-[11px] leading-snug text-[var(--color-text-muted)]">{storage.provider === 'aws-s3' ? 'Amazon S3' : 'Cloudflare R2'} · Connected bucket</span></span>
+            {cloudStorageId === storage.id && <svg aria-hidden="true" className="size-4 shrink-0 text-sky-200" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="m4 10 4 4 8-8"/></svg>}
+          </button>)}
+        </div>
+      </section>
+      {cloudStorage ? <section aria-live="polite" aria-label="Connected storage usage" className="mx-4 mt-2 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-300/15 bg-sky-300/[0.035] px-3 py-2 text-xs sm:mx-5">
+        <p className="m-0"><strong>{cloudObjects === null ? 'Loading folder usage…' : `${currentCloudFiles.length} files · ${formatSize(currentCloudBytes)}`}</strong><span className="text-[var(--color-text-muted)]"> in {cloudPrefix ? cloudPrefix.replace(/\/$/, '') : cloudStorage.name}</span></p>
+        <p className="m-0 text-[11px] text-[var(--color-text-muted)]">Current folder only. This S3-compatible connection does not report total bucket usage or a capacity limit.</p>
+      </section> : null}
+      {!cloudStorage && quota ? <details className="shrink-0 text-xs">
+        <summary className="mx-4 mt-2 cursor-pointer text-[var(--color-text-muted)] sm:mx-5">Storage usage and upload limits · {formatSize(quota.usedBytes)} used</summary>
+        <DriveQuota quota={quota} speed={speed} />
+      </details> : null}
 
       {uploads.reselect ? (
         <div className="mx-4 mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs sm:mx-5" role="status">
@@ -839,11 +940,12 @@ export function AppFiles() {
       ) : null}
 
       {!cloudStorage && uploads.items.length > 0 ? (
-        <section aria-label="Upload progress" className="mx-4 mt-3 shrink-0 rounded-xl border border-white/8 px-4 py-3 sm:mx-5">
+        <section aria-label="Upload progress" className="mx-4 mt-2 shrink-0 rounded-lg border border-white/8 px-3 py-2 sm:mx-5">
           <BatchProgress totals={uploads.totals} />
-          <div className="mt-2 max-h-56 overflow-y-auto pr-1">
-            <UploadProgressList items={uploads.items} />
-          </div>
+          <details className="mt-1 text-xs">
+            <summary className="cursor-pointer py-1 text-[var(--color-text-muted)]">Upload details · retry, cancel or dismiss</summary>
+            <div className="mt-1 max-h-40 overflow-y-auto pr-1"><UploadProgressList items={uploads.items} compact /></div>
+          </details>
         </section>
       ) : null}
 
@@ -861,39 +963,13 @@ export function AppFiles() {
         </p>
       ) : null}
 
-      <div
-        id={dropId}
-        className={`mx-4 mt-3 shrink-0 rounded-xl border border-dashed px-4 py-6 text-center text-sm transition sm:mx-5 ${
-          dragOver
-            ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-text)]'
-            : 'border-white/12 text-[var(--color-text-muted)]'
-        }`}
-        onDragEnter={(event) => {
-          event.preventDefault();
-          setDragOver(true);
-        }}
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragOver(false);
-          void uploadList(event.dataTransfer.files);
-        }}
-      >
-        {cloudStorage ? `Drop files here to upload to ${cloudStorage.name}. ` : 'Drop files here, or use Upload. '}
-        Images, PDF, text, Office, and Studio meshes — no executables.
-      </div>
-
-      <div className="mx-4 mt-3 shrink-0 sm:mx-5">
-        <nav aria-label="Drive location" className="mb-3 flex min-h-10 items-center gap-2 text-sm">
+      <div className="mx-4 mt-1 shrink-0 sm:mx-5">
+        <nav aria-label="Drive location" className="flex min-h-8 flex-wrap items-center gap-1 text-xs">
           <button
             type="button"
-            aria-current={folder === null && !cloudStorageId ? 'page' : undefined}
-            className={`rounded-md px-2 py-1.5 transition ${folder === null && !cloudStorageId ? 'font-semibold text-[var(--color-text)]' : 'text-[var(--color-accent)] hover:bg-white/8'}`}
-            onClick={() => { setFolder(null); setCloudStorageId(null); setCloudPrefix(''); }}
+            aria-current={folder === null && !cloudStorageId && !directoryPath ? 'page' : undefined}
+            className={`rounded-md px-2 py-1 transition ${folder === null && !cloudStorageId && !directoryPath ? 'font-semibold text-[var(--color-text)]' : 'text-[var(--color-accent)] hover:bg-white/8'}`}
+            onClick={() => { setFolder(null); setCloudStorageId(null); setCloudPrefix(''); setDirectoryPath(''); }}
           >
             Drive
           </button>
@@ -914,37 +990,12 @@ export function AppFiles() {
                 {folderName(folder)}
               </span>
             </>
-          ) : null}
+          ) : !cloudStorageId && directoryPath ? directoryPath.split('/').filter(Boolean).map((part, index, all) => {
+            const path = all.slice(0, index + 1).join('/');
+            const current = index === all.length - 1;
+            return <span key={path} className="contents"><span aria-hidden="true" className="px-1 text-[var(--color-text-muted)]">/</span>{current ? <span aria-current="page" className="max-w-48 truncate font-semibold">{part}</span> : <button type="button" className="max-w-40 truncate px-1 text-[var(--color-accent)] hover:underline" onClick={() => setDirectoryPath(path)}>{part}</button>}</span>;
+          }) : null}
         </nav>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[12rem] flex-1">
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={searchId}>
-              <TranslatedText message="search" />
-            </label>
-            <input
-              id={searchId}
-              className={FIELD_CLASS}
-              type="search"
-              value={query}
-              placeholder={cloudStorage ? 'Search file names' : 'Name, type:pdf, or /regex/'}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-          {!cloudStorage ? <label
-            className="flex items-center gap-2 pb-2 text-xs text-[var(--color-text-muted)]"
-            htmlFor={regexId}
-          >
-            <input
-              id={regexId}
-              type="checkbox"
-              checked={regexMode}
-              onChange={(event) => setRegexMode(event.target.checked)}
-            />
-            Regex
-          </label> : null}
-        </div>
         {!cloudStorage && filtered.error ? (
           <p className="mt-1 text-xs text-red-300" role="alert">
             {filtered.error}
@@ -952,7 +1003,9 @@ export function AppFiles() {
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-3 sm:px-5">
+      <div id={dropId} role="region" aria-label="Drive file list and drop target" className={`relative min-h-0 flex-1 overflow-auto px-4 py-2 sm:px-5 ${dragOver ? 'ring-2 ring-inset ring-[var(--color-accent)]' : ''}`} onDragEnter={beginDrop} onDragOver={overDrop} onDragLeave={leaveDrop} onDrop={dropFiles}>
+        {dragOver ? <div className="pointer-events-none absolute inset-2 z-20 grid place-items-center rounded-2xl border-2 border-dashed border-[var(--color-accent)] bg-black/55 text-lg font-semibold text-white" aria-hidden="true">Drop files or folders here</div> : null}
+        <p className="mb-1 text-[10px] leading-4 text-[var(--color-text-muted)]">Drop files or folders anywhere in this list; folder structure is preserved.</p>
         {cloudStorage ? (
           cloudObjects === null ? (
             <p className="py-8 text-sm text-[var(--color-text-muted)]">Loading {cloudStorage.name}…</p>
@@ -963,7 +1016,7 @@ export function AppFiles() {
           ) : (
             <table className="w-full min-w-[30rem] border-collapse text-left text-sm">
               <caption className="sr-only">Files in {cloudStorage.name}</caption>
-              <thead><tr className="border-b border-white/8 text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]"><th className="py-2 pr-3 font-medium">Name</th><th className="py-2 pr-3 font-medium">Size</th><th className="py-2 pr-3 font-medium">Updated</th><th className="py-2 font-medium"><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr className="border-b border-white/8 text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]"><th className="py-2 pr-3 font-medium">Name</th><th className="py-2 pr-3 font-medium">Size</th><th className="py-2 pr-3 font-medium">Uploaded</th><th className="py-2 font-medium"><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>{visibleCloudObjects.map((object) => <tr key={object.key} className="border-b border-white/6">
                 <td className="max-w-[24rem] py-3 pr-3">{object.isFolder ? <button type="button" className="text-left font-medium text-[var(--color-accent)] hover:underline" onClick={() => setCloudPrefix(object.key)}>{object.name}/</button> : <span className="truncate">{object.name}</span>}</td>
                 <td className="py-3 pr-3 text-[var(--color-text-muted)]">{object.isFolder ? '—' : formatSize(object.size)}</td>
@@ -972,17 +1025,17 @@ export function AppFiles() {
               </tr>)}</tbody>
             </table>
           )
-        ) : files.length === 0 && cloudStorages.length === 0 ? (
+        ) : files.length === 0 && childFolderPaths.length === 0 && cloudStorages.length === 0 ? (
           <p className="py-8 text-sm text-[var(--color-text-muted)]">
             No files in this workspace yet.
           </p>
-        ) : visible.length === 0 && (folder !== null || (folders.length === 0 && cloudStorages.length === 0)) ? (
+        ) : visible.length === 0 && childFolderPaths.length === 0 && (folder !== null || (folders.length === 0 && cloudStorages.length === 0)) ? (
           <p className="py-8 text-sm text-[var(--color-text-muted)]">
-            No files match this search.
+            {searching ? 'No files match this search.' : 'This folder has no files yet. Upload files or a folder to get started.'}
           </p>
         ) : (
           <>
-          {!folder && !cloudStorageId && folders.length + cloudStorages.length > 0 ? (
+          {!folder && !cloudStorageId && directoryPath === '' && folders.length + cloudStorages.length > 0 ? (
             <ul aria-label="Drive folders" className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {folders.map((app) => (
                 <li key={app.id}>
@@ -1050,20 +1103,23 @@ export function AppFiles() {
               )}
             />
           ) : null}
-          {visible.length > 0 ? <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
+          {visible.length + childFolderPaths.length > 0 ? <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
             <caption className="sr-only">Workspace files</caption>
             <thead>
               <tr className="border-b border-white/8 text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
                 <th className="py-2 pr-3 font-medium">Name</th>
                 <th className="py-2 pr-3 font-medium">Type</th>
                 <th className="py-2 pr-3 font-medium">Size</th>
-                <th className="py-2 pr-3 font-medium">Updated</th>
+                <th className="py-2 pr-3 font-medium">Uploaded</th>
                 <th className="py-2 font-medium">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
             <tbody>
+              {childFolderPaths.map((path) => { const name = path.split('/').at(-1)!; const count = folderEntryCount(path); return <tr key={`folder:${path}}`} className="border-b border-white/6">
+                <td className="py-3 pr-3"><button type="button" className="flex items-center gap-2 text-left font-medium text-[var(--color-accent)] hover:underline" aria-label={`Open folder ${name}, ${count} items`} onClick={() => setDirectoryPath(path)}><svg aria-hidden="true" className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" /></svg>{name}</button></td>
+                <td className="py-3 pr-3 text-[var(--color-text-muted)]">Folder · {count} {count === 1 ? 'item' : 'items'}</td><td className="py-3 pr-3">—</td><td className="py-3 pr-3" aria-label="Folder date unavailable">—</td><td className="py-3 text-right">{driveWorkspace ? <DriveSharing workspaceId={driveWorkspace.id} kind="folder" root={path} label={name} /> : null}</td></tr>; })}
               {visible.map((file) => {
                 return (
                   <tr key={file.id} className="border-b border-white/6">
@@ -1076,7 +1132,7 @@ export function AppFiles() {
                         {file.displayName}
                       </button>
                       <div className="truncate font-mono text-[10px] text-[var(--color-text-muted)]">
-                        {folderName(file.sourceAppId)} / {file.displayName}
+                        {folderName(file.sourceAppId)} / {file.folderPath ? `${file.folderPath} / ` : ''}{file.displayName}
                       </div>
                     </td>
                     <td className="py-3 pr-3 text-[var(--color-text-muted)]">
@@ -1086,10 +1142,11 @@ export function AppFiles() {
                       {formatSize(file.size)}
                     </td>
                     <td className="py-3 pr-3 text-[var(--color-text-muted)]">
-                      <time dateTime={file.updatedAt}>{formatWhen(file.updatedAt)}</time>
+                      <time dateTime={file.createdAt}>{formatWhen(file.createdAt)}</time>
                     </td>
                     <td className="py-3">
                       <div className="flex flex-wrap justify-end gap-1">
+                        {driveWorkspace && <DriveSharing workspaceId={driveWorkspace.id} kind="file" root={file.id} label={file.displayName} />}
                         {fileOpenAppIds(file.mime).map((appId) => {
                           const app = APP_CATALOG.find((entry) => entry.id === appId)!;
                           return <button key={appId} type="button" disabled={busy}

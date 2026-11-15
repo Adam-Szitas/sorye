@@ -122,6 +122,9 @@ export async function listCloudStorageObjects(actor: RodrigoContext, storageId: 
   return (await call(actor, 'GET', `/v2/cloud-storages/${encodeURIComponent(storageId)}/objects/${hex(prefix)}`,
     z.object({ contractVersion: z.literal('2'), objects: z.array(objectSchema).max(5000) }).strict())).objects;
 }
+export async function createCloudStorageFolder(actor: RodrigoContext, storageId: string, path: string): Promise<void> {
+  await call(actor, 'POST', `/v2/cloud-storages/${encodeURIComponent(storageId)}/folders`, z.object({ path: z.string() }).strict(), { path });
+}
 
 /**
  * Streams an upload into Rodrigo (as a verified `relay` object), then asks Rodrigo to copy

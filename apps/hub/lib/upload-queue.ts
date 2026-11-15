@@ -110,6 +110,7 @@ let concurrency = 2;
 let currentWorkspaceId: string | null = null;
 let pumpTimer: ReturnType<typeof setTimeout> | null = null;
 let emitTimer: ReturnType<typeof setTimeout> | null = null;
+let doneExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 let throttleBytesPerSecond: number | null = null;
 let unloadGuard = false;
 
@@ -118,9 +119,11 @@ function emptyTotals(): UploadTotals {
 }
 
 function computeSnapshot(): UploadSnapshot {
-  const items = entries.map((entry) => entry.item);
+  const allItems = entries.map((entry) => entry.item);
+  const now = Date.now();
+  const items = allItems.filter((item) => item.status !== 'done' || item.finishedAt === null || now - item.finishedAt < 3000);
   const totals = emptyTotals();
-  for (const item of items) {
+  for (const item of allItems) {
     if (item.status === 'canceled') continue;
     totals.total += 1;
     totals.bytes += item.size;
@@ -135,6 +138,10 @@ function computeSnapshot(): UploadSnapshot {
 function emitNow() {
   if (emitTimer) { clearTimeout(emitTimer); emitTimer = null; }
   snapshot = computeSnapshot();
+  if (doneExpiryTimer) clearTimeout(doneExpiryTimer);
+  const nextExpiry = entries.map((entry) => entry.item).filter((item) => item.status === 'done' && item.finishedAt !== null)
+    .reduce<number | null>((next, item) => { const at = item.finishedAt! + 3000; return next === null || at < next ? at : next; }, null);
+  if (nextExpiry !== null) doneExpiryTimer = setTimeout(emitNow, Math.max(0, nextExpiry - Date.now()));
   syncUnloadGuard();
   for (const listener of listeners) listener();
 }
@@ -196,7 +203,7 @@ export function currentUploadSpeed(): SpeedEstimate {
  * the connection estimate (see `planUploadBatch`). The server enforces all
  * limits again on every request.
  */
-export function enqueueUploads(files: File[], context: { workspaceId: string; quota: FileQuota }, target: UploadTarget = DRIVE_TARGET): EnqueueResult {
+export function enqueueUploads(files: File[], context: { workspaceId: string; quota: FileQuota; folderPath?: string }, target: UploadTarget = DRIVE_TARGET): EnqueueResult {
   const { quota } = context;
   concurrency = Math.max(1, Math.min(4, quota.maxConcurrentUploads));
   throttleBytesPerSecond = quota.throttleBytesPerSecond;
@@ -206,15 +213,17 @@ export function enqueueUploads(files: File[], context: { workspaceId: string; qu
 
   const pending = entries.filter((entry) => entry.item.status === 'queued' || ACTIVE.includes(entry.item.status));
   let room = Math.max(0, quota.maxFiles - quota.fileCount - pending.length);
+  let reservedBytes = pending.reduce((sum, entry) => sum + entry.item.size, 0);
   const candidates: File[] = [];
   for (const file of files) {
     if (file.size === 0) { skipped.push({ name: file.name, reason: 'File is empty' }); continue; }
     if (file.size > quota.maxFileBytes) { skipped.push({ name: file.name, reason: `Larger than ${maxMb} MB` }); continue; }
-    if (quota.limitBytes !== null && quota.usedBytes + file.size > quota.limitBytes) {
+    if (quota.limitBytes !== null && quota.usedBytes + reservedBytes + file.size > quota.limitBytes) {
       skipped.push({ name: file.name, reason: 'Not enough space left in your storage' }); continue;
     }
     if (room <= 0) { skipped.push({ name: file.name, reason: `Workspace holds at most ${quota.maxFiles} files` }); continue; }
     room -= 1;
+    reservedBytes += file.size;
     candidates.push(file);
   }
 
@@ -223,7 +232,7 @@ export function enqueueUploads(files: File[], context: { workspaceId: string; qu
     [...pending.map((entry) => Math.max(0, entry.item.size - entry.item.loaded)), ...candidates.map((file) => file.size)],
     { bytesPerSecond: speed.bytesPerSecond, maxBatchFiles: quota.maxBatchFiles },
   );
-  const accepted = Math.max(0, Math.min(candidates.length, plan.accepted - pending.length));
+  const accepted = target.endpoint === '/api/files' ? Math.min(candidates.length, Math.max(0, 2000 - pending.length)) : Math.max(0, Math.min(candidates.length, plan.accepted - pending.length));
   for (const file of candidates.slice(accepted)) skipped.push({ name: file.name, reason: 'Batch limit for your connection' });
 
   const batchId = crypto.randomUUID();
@@ -235,7 +244,8 @@ export function enqueueUploads(files: File[], context: { workspaceId: string; qu
         error: null, code: null, workspaceId: context.workspaceId, canRetry: true, checksummed: false,
         queuedAt: now, finishedAt: null,
       },
-      file, xhr: null, busyRetries: 0, notBefore: 0, target,
+      file, xhr: null, busyRetries: 0, notBefore: 0,
+      target: target.endpoint === '/api/files' ? { ...target, endpoint: `/api/files?${new URLSearchParams({ folderPath: [context.folderPath, file.webkitRelativePath?.split('/').slice(0, -1).join('/')].filter(Boolean).join('/') })}` } : target,
     });
   }
   if (reselect && candidates.slice(0, accepted).some((file) => file.name === reselect?.fileName)) reselect = null;

@@ -12,6 +12,7 @@ import {
 } from '@sorye/types';
 
 const BLOCKED_EXTENSIONS = new Set([
+  '.dmg', '.pkg', '.deb', '.rpm', '.app', '.appimage', '.msix', '.msp', '.psm1', '.psd1', '.vbe', '.jse', '.hta', '.lnk', '.url', '.reg', '.command', '.zsh', '.fish', '.pl', '.cgi', '.so', '.dylib', '.class',
   '.exe',
   '.dll',
   '.bat',
@@ -88,7 +89,7 @@ export function sanitizeDisplayName(raw: string): string {
 }
 
 function extensionOf(name: string): string {
-  const base = name.replace(/^.*[/\\]/, '');
+  const base = name.replace(/^.*[/\\]/, '').replace(/[. ]+$/, '');
   const dot = base.lastIndexOf('.');
   if (dot <= 0) return '';
   return base.slice(dot).toLowerCase();
@@ -113,6 +114,8 @@ function looksLikeText(buf: Buffer): boolean {
 }
 
 function isExecutableMagic(buf: Buffer): boolean {
+  if (buf.subarray(0, 2).toString() === '#!') return true;
+  if (buf.length >= 4 && [0xcefaedfe, 0xbebafeca, 0xcafebabf, 0xbfbafeca, 0x0061736d].includes(buf.readUInt32BE(0))) return true;
   if (buf.length >= 2 && buf[0] === 0x4d && buf[1] === 0x5a) return true;
   if (
     buf.length >= 4 &&
@@ -198,9 +201,10 @@ function detectKind(
 }
 
 function resolveMime(buf: Buffer, displayName: string): string {
+  if (displayName === '.sorye-folder') throw new FileAccessError('This name is reserved for folder metadata.', 400);
   const ext = extensionOf(displayName);
   if (BLOCKED_EXTENSIONS.has(ext) || isExecutableMagic(buf)) {
-    throw new FileAccessError('That file type is not allowed', 400);
+    throw new FileAccessError('Executable files, installers and active scripts are not allowed.', 400);
   }
 
   const kind = detectKind(buf);
@@ -224,14 +228,14 @@ function resolveMime(buf: Buffer, displayName: string): string {
     if (ext === '.pptx') {
       return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     }
-    throw new FileAccessError('That file type is not allowed', 400);
+    return 'application/octet-stream';
   }
 
   if (kind === 'ole') {
     if (ext === '.doc') return 'application/msword';
     if (ext === '.xls') return 'application/vnd.ms-excel';
     if (ext === '.ppt') return 'application/vnd.ms-powerpoint';
-    throw new FileAccessError('That file type is not allowed', 400);
+    return 'application/octet-stream';
   }
 
   if (kind === 'text') {
@@ -239,10 +243,10 @@ function resolveMime(buf: Buffer, displayName: string): string {
     if (ext === '.md' || ext === '.markdown') return 'text/markdown';
     if (ext === '.json') return 'application/json';
     if (ext === '.txt' || ext === '.log' || ext === '') return 'text/plain';
-    throw new FileAccessError('That file type is not allowed', 400);
+    return 'application/octet-stream';
   }
 
-  throw new FileAccessError('That file type is not allowed', 400);
+  return 'application/octet-stream';
 }
 
 /** Shared content sniffing/blocked-type policy for local and cloud Drive uploads. */

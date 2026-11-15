@@ -351,3 +351,5 @@
     }
   }
 }
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; background: rgb(0 0 0 / 65%); }

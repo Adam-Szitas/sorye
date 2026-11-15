@@ -42,6 +42,7 @@ function ctx(actor: FileActor): RodrigoContext {
 function toWorkspaceFile(file: DriveFile, workspaceId: string): WorkspaceFile {
   return {
     id: file.id, workspaceId, displayName: file.displayName, sourceAppId: file.sourceAppId,
+    folderPath: file.folderPath ?? '',
     relativePath: `files/${workspaceId}/${file.id}`, storedIn: file.storedIn, ...(file.sha256 ? { sha256: file.sha256 } : {}),
     mime: file.mime, size: file.size, createdAt: file.createdAt, updatedAt: file.updatedAt,
   };
@@ -134,6 +135,7 @@ export interface FileUploader { userId: string; /** Ignored: Rodrigo checks the 
  * content kind); everything else (quota, ledger, own storage, integrity) is Rodrigo's.
  */
 export async function createWorkspaceFileFromStream(input: {
+  folderPath?: string;
   workspaceId: string; uploader: FileUploader; displayName: string; sourceAppId?: string;
   source: AsyncIterable<Uint8Array>; size?: number; maxBytes?: number; expectedSha256?: string;
   finalSha256?: () => string | undefined | Promise<string | undefined>;
@@ -184,6 +186,7 @@ export async function createWorkspaceFileFromStream(input: {
   try {
     const file = await uploadDriveFile(context, {
       fileId, displayName, mime, sourceAppId,
+      folderPath: input.folderPath ?? '',
       ...(input.size !== undefined ? { size: input.size } : { maxBytes: Math.min(input.maxBytes ?? FILE_MAX_BYTES, FILE_MAX_BYTES) }),
       ...(input.expectedSha256 ? { sha256: input.expectedSha256 } : {}),
     }, replay(), { finalSha256: input.finalSha256 });

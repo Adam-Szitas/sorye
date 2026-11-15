@@ -55,6 +55,32 @@ describe('storage owned by Rodrigo', { skip: !harnessConfigured, concurrency: fa
     assert.equal((await upload.fieldsAfterFile()).get('sha256'), sha256(bytes));
   });
 
+  test('folders persist, concurrent creates converge, paths are scoped and uploads retain hierarchy', async () => {
+    const store = await import('../lib/store');
+    const drive = await import('../lib/rodrigo/drive-client');
+    const files = await import('../lib/files');
+    const session = await store.resolveLoginSession(login());
+    const actor = { userId: session.user.id, workspaceId: session.workspace.id };
+    await Promise.all(Array.from({ length: 8 }, () => drive.createDriveFolder(actor, 'Documents/Empty')));
+    assert.deepEqual(await drive.listDriveFolders(actor), ['Documents', 'Documents/Empty']);
+    for (const path of ['../escape', '/absolute', 'C:/drive', 'a//b', 'a/../b', Array(18).fill('deep').join('/')]) {
+      await assert.rejects(drive.createDriveFolder(actor, path), { status: 400 });
+    }
+    const other = await store.resolveLoginSession(login());
+    assert.deepEqual(await drive.listDriveFolders({ userId: other.user.id, workspaceId: other.workspace.id }), []);
+    await assert.rejects(drive.listDriveFolders({ userId: other.user.id, workspaceId: actor.workspaceId }), { status: 403 });
+    const bytes = Buffer.from('ordinary configuration: true');
+    const created = await files.createWorkspaceFileFromStream({ workspaceId: actor.workspaceId, uploader: { userId: actor.userId }, displayName: 'config.yaml', folderPath: 'Documents/Nested', size: bytes.length, source: (async function* () { yield bytes; })() });
+    assert.equal(created.folderPath, 'Documents/Nested');
+    assert.equal((await drive.getDriveFile(actor, created.id)).folderPath, 'Documents/Nested');
+    const duplicateName = await files.createWorkspaceFileFromStream({ workspaceId: actor.workspaceId, uploader: { userId: actor.userId }, displayName: 'config.yaml', folderPath: 'Documents/Empty', size: bytes.length, source: (async function* () { yield bytes; })() });
+    assert.notEqual(duplicateName.id, created.id);
+    assert.equal(duplicateName.folderPath, 'Documents/Empty');
+    assert.equal(sha256((await files.readWorkspaceFileBytes(actor, created.id)).bytes), sha256(bytes));
+    await rodrigo.restart();
+    assert.deepEqual(await drive.listDriveFolders(actor), ['Documents', 'Documents/Empty', 'Documents/Nested']);
+  });
+
   test('Drive upload through the streamed path: list, read, rename, delete, ledger', async () => {
     const store = await import('../lib/store');
     const files = await import('../lib/files');
