@@ -21,7 +21,7 @@ test('every catalog app and every retired app has an inventory area', () => {
 test('inventory sources exist and console links point at real sections', () => {
   const sections = ['/admin', '/admin/workspaces', '/admin/applications', '/admin/ai', '/admin/integrations', '/admin/releases', '/admin/history'];
   for (const area of SETTINGS_INVENTORY) {
-    assert.ok(area.settings.length > 0, `${area.id} has no settings`);
+    assert.ok(area.settings.length > 0 || (area.kind === 'retired' && area.gaps.length > 0), `${area.id} has no settings or retirement explanation`);
     for (const setting of area.settings) {
       assert.ok(existsSync(resolve(root, setting.source)), `${area.id}/${setting.key}: ${setting.source}`);
       if (setting.consoleHref) assert.ok(sections.includes(setting.consoleHref), setting.consoleHref);

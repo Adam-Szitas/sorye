@@ -60,7 +60,7 @@ Hub must end this work with:
 
 ## Ask the product owner first (do not decide alone)
 
-- Protocolio keeps its own MongoDB today. Ask whether it stays an external product with its own storage or its documents move into Rodrigo.
+- Protocolio decision (2026-11-15): keep its editor built into Sorye's app structure; move server-side MongoDB access and document ownership behind Rodrigo; run the Protocolio Node rendering service on the app VM. Implement this in the compute and deployment slices. This is the approved target, not a completed migration. Preserve existing documents during cutover.
 - Any change that makes existing sandbox or Hub data unreachable or deletes it.
 - Any breaking contract change that cannot be made additive.
 - Sandbox compose changes (for example adding an S3-compatible service such as MinIO for Rodrigo storage, or a second replica). `.local/sandbox/compose.json` is generated and hand-edited; propose the exact diff first.

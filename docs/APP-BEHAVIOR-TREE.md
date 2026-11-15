@@ -474,3 +474,7 @@ Hub remains the browser-facing authentication and API gateway. Apps never bypass
 ### Deployed OCR worker
 
 The separately registered OCR worker image consumes Hub's PostgreSQL job queue and shares Hub's file storage on the same Docker host. It owns no browser session or public API. Its health requires a fresh successful database heartbeat from that worker process; Hub rejects new OCR submissions when no worker heartbeat is live. Gateways allow 65 MiB requests while Hub bounds PDFs to 64 MiB plus multipart overhead. See [worker deployment](../deploy/README.md#ocr-worker-deployment) for volumes, credentials and recovery.
+
+## Admin operations guide
+
+Admin host and platform-admin session -> /admin/operations -> selected tenant, notice, AI or audit tool -> existing guarded APIs. Tenant-ID lookup uses the signed Rodrigo platform identity endpoint. Audit pages come from Rodrigo, are filtered by metadata/outcome in Hub, and can export a bounded metadata-only CSV. Existing plan/notice/AI writes retain their audit and ownership semantics; notices remain Hub-owned. Tool selection and search remain in component memory. Runbooks are a separate view; suspension and durable incident tracking are not implemented.

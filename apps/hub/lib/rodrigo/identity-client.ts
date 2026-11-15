@@ -235,6 +235,16 @@ export async function operatorWorkspaceExists(workspaceId: string): Promise<bool
 }
 
 export interface OperatorWorkspaceRecord { id: string; name: string; kind: WorkspaceKind; subscriptionId: SubscriptionTierId; selectedAppIds: string[] }
+/** Direct authorized platform lookup avoids enumerating every tenant for a support case. */
+export async function getOperatorWorkspace(workspaceId: string): Promise<Workspace | null> {
+  try {
+    const result = await call(asHub, 'GET', `/v2/platform/identity/workspaces/${encodeURIComponent(workspaceId)}`, 'platform:identity:read', platformWorkspace);
+    return result.workspace as unknown as Workspace;
+  } catch (error) {
+    if (refused(error, 'workspace_not_found', 'invalid_workspace')) return null;
+    throw error;
+  }
+}
 export async function listOperatorWorkspaces(): Promise<OperatorWorkspaceRecord[]> {
   const result = await call(asHub, 'GET', '/v2/platform/identity/workspaces', 'platform:identity:read', z.object({
     contractVersion: z.literal('2'),

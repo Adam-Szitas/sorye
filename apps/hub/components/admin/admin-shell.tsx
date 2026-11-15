@@ -7,6 +7,7 @@ import { ADMIN_CONSOLE_CSS } from './admin-styles';
 
 export const ADMIN_SECTIONS = [
   { href: '/admin', label: 'Overview' },
+  { href: '/admin/operations', label: 'Operations' },
   { href: '/admin/workspaces', label: 'Workspaces and access' },
   { href: '/admin/applications', label: 'Applications' },
   { href: '/admin/ai', label: 'AI and workers' },

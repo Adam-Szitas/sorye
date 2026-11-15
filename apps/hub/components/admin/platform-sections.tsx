@@ -192,9 +192,12 @@ function ChangedFields({ event }: { event: PlatformAuditEvent }) {
 }
 
 export function HistorySection() {
+  const [query, setQuery] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [filters, setFilters] = useState('');
   const [cursor, setCursor] = useState<string | null>(null);
   const [trail, setTrail] = useState<string[]>([]);
-  const url = `/api/admin/console/audit?limit=50${cursor ? `&cursor=${cursor}` : ''}`;
+  const url = `/api/admin/console/audit?limit=50${cursor ? `&cursor=${cursor}` : ''}${filters}`;
   const page = useAdminJson<PlatformAuditPage>(url, cursor ? 0 : 30_000);
   return (
     <div className="admin-page">
@@ -203,6 +206,13 @@ export function HistorySection() {
         intro="Append-only audit trail from Rodrigo: configuration revisions with before and after values, stale-write rejections, and console actions such as plan changes, notices and engine stops. Newest first."
       />
       <LoadNotice state={page.state} what="the audit trail" />
+      <form className="admin-actions" onSubmit={event => { event.preventDefault(); setCursor(null); setTrail([]); setFilters(`&q=${encodeURIComponent(query)}&outcome=${encodeURIComponent(outcome)}`); }}>
+        <label>Actor, target, action or reference<input className="admin-input" type="search" maxLength={160} value={query} onChange={event => setQuery(event.target.value)} /></label>
+        <label>Outcome<select className="admin-input" value={outcome} onChange={event => setOutcome(event.target.value)}>{['', 'pending', 'succeeded', 'failed', 'denied', 'committed', 'conflict'].map(value => <option key={value} value={value}>{value || 'All outcomes'}</option>)}</select></label>
+        <button className="admin-button" type="submit">Apply filters</button>
+        {page.state.kind === 'ready' && <a className="admin-button" href={`${url}&format=csv`}>Export matching rows on this page</a>}
+      </form>
+      <p className="admin-hint">Filters apply to each 50-event server page. Use Older to continue searching, even when a page has no matches. CSV exports metadata only and excludes event details.</p>
       {page.state.kind === 'ready' ? (
         <>
           <AdminTable
@@ -274,9 +284,14 @@ function WorkspaceReview({ workspaceId, onClose }: { workspaceId: string; onClos
 
 export function WorkspacesConsole() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [workspaceId, setWorkspaceId] = useState('');
   const platform = useAdminJson<PlatformView>(PLATFORM_URL);
   return (
     <>
+      <form className="admin-page" onSubmit={event => { event.preventDefault(); if (workspaceId.trim()) setSelected(workspaceId.trim()); }}>
+        <label>Open a support case by workspace ID<input className="admin-input" required maxLength={160} value={workspaceId} onChange={event => setWorkspaceId(event.target.value)} /></label>
+        <button type="submit" className="admin-button">Review workspace</button>
+      </form>
       {selected ? <div className="admin-page"><WorkspaceReview workspaceId={selected} onClose={() => setSelected(null)} /></div> : null}
       <OperatorPanels
         sections={['plans', 'notices']}

@@ -151,3 +151,9 @@ Hub-owned actions and their audit records are not one atomic transaction: an out
 Pause prevents new model requests after each consumer applies the configuration. Stop affects Hub requests; it does not cancel requests already running in the OCR worker. Verify worker signing credentials and propagation independently.
 
 Membership editing, price definitions, billing, secret rotation, deployment operations, recent-authentication enforcement, and distributed rate limiting must not be presented as supported merely because an admin page exists. Check the implementation and settings matrix. The removed November 10 handoff was a historical work log, not evidence of deployment or current readiness.
+
+## Operations workflows
+
+/admin/operations opens working tenant support, scheduled service notices, AI response and audit review tools, with runbooks in a separate view. Only the selected tool mounts. Workspace-ID review performs a direct signed Rodrigo lookup instead of listing every workspace. Plan changes, notices and AI controls retain their existing guards and audit semantics. Notices remain Hub-owned; this is not a durable incident tracker.
+
+Audit review supports metadata search and outcome filtering on each bounded 50-event Rodrigo page. An empty filtered page can still have an Older cursor. CSV exports only matching metadata on the requested page, excludes details, and neutralizes spreadsheet formulas. Exports recheck admin authorization and use private/no-store responses. Search, current tool and selection remain in component memory. Rodrigo's existing identity and audit contracts suffice for these features. Suspension, per-tenant feature overrides, durable incidents and payment reconciliation remain unimplemented; see docs/prompts/admin-operations.md.

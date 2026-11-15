@@ -2,7 +2,7 @@
 
 Open [the interactive HTML guide](SORYE-RODRIGO-EXPLORER.html) directly in a browser. It works offline without a server, installation or application credentials. Select a component, inspect its connections, or follow a guided request from browser intent to durable ownership.
 
-The [implementation prompt](prompts/architecture-explorer.md) defines the scope, evidence rules, interactions and acceptance criteria. The page documents existing behavior; it does not change runtime routing or add a customer app.
+The page documents existing behavior; it does not change runtime routing or add a customer app.
 
 ## What you can explore
 

@@ -1,5 +1,7 @@
 # Sorye apps at a glance: who handles what
 
+For a short developer reading path organized by responsibility, open the [developer scope atlas](DEVELOPER-SCOPE-ATLAS.html).
+
 A one-page map of every app: what it does, where it runs, where its data lives, what it talks to, and its current limits. It describes the integrated code (Hub/Rodrigo alignment slices 0–2 plus the Site builder). Details per app are in [apps/APPS.md](apps/APPS.md); flows are in the [behavior map](APP-BEHAVIOR-TREE.md); migration status is in [HUB-RODRIGO-ALIGNMENT.md](HUB-RODRIGO-ALIGNMENT.md).
 
 Explore the connections, storage, GPU and telemetry in the [interactive Sorye ↔ Rodrigo architecture guide](SORYE-RODRIGO-EXPLORER.html). It works offline and distinguishes implemented, optional, planned and sandbox paths.

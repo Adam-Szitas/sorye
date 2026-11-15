@@ -1,6 +1,7 @@
 import { adminAccess, adminDenied, adminNoStore } from '@/lib/admin/access';
 import { listPlanSchedules } from '@/lib/operator/schedules';
-import { getWorkspaceMembers, listOperatorWorkspaces } from '@/lib/store';
+import { getWorkspaceMembers } from '@/lib/store';
+import { getOperatorWorkspace } from '@/lib/rodrigo/identity-client';
 import { APP_CATALOG, SUBSCRIPTION_PLANS, getPlanById, getSelectedApps, selectableAppCount } from '@sorye/types';
 import { NextResponse } from 'next/server';
 
@@ -20,8 +21,7 @@ export async function GET(_req: Request, context: { params: Promise<{ workspaceI
   if (!workspaceId || workspaceId.length > 160) {
     return NextResponse.json({ error: 'invalid_workspace' }, { status: 400, headers: adminNoStore });
   }
-  const [workspaces, schedules] = await Promise.all([listOperatorWorkspaces(), listPlanSchedules()]);
-  const workspace = workspaces.find((entry) => entry.id === workspaceId);
+  const [workspace, schedules] = await Promise.all([getOperatorWorkspace(workspaceId), listPlanSchedules()]);
   if (!workspace) return NextResponse.json({ error: 'workspace_not_found' }, { status: 404, headers: adminNoStore });
   const members = await getWorkspaceMembers(workspace.id);
   const plan = getPlanById(SUBSCRIPTION_PLANS, workspace.subscriptionId);

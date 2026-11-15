@@ -1,5 +1,7 @@
 ﻿# Protocolio integration
 
+Approved alignment target (15 November 2026): Protocolio remains integrated into Sorye's app structure. Rodrigo will own its server-side MongoDB access and persistent documents. The Protocolio Node service will run on the app VM as an independently limited rendering service, using Rodrigo-issued scoped authorization. Browser document operations go through Hub and Rodrigo. Preserve existing MongoDB documents during migration and verify parity before switching writers. This target is not implemented yet; the following describes the current integration.
+
 Engine and SDK ownership: ../protocolio (SDK under packages/sdk). Editor ownership: apps/protocolio in Sorye. The former protocolio-dashboard checkout is no longer needed to install or build Sorye. vendor/protocolio-sdk-1.0.0.tgz is the built SDK artifact; pnpm-lock.yaml pins its integrity. Never edit the archive: release a new SDK version from the engine repository.
 
 Local service: `docker compose -f compose.protocolio.yml up -d --build --wait`. This starts a separately limited PDF engine on loopback port 3100 and a private MongoDB with its own volume. PROTOCOLIO_SOURCE_DIR can override the local engine checkout. The current local image tag is sorye-protocolio:1.0.0; production must publish and pin the reviewed image digest before rollout.
