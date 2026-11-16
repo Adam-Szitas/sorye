@@ -851,22 +851,20 @@ export function AppFiles() {
         </label>
       </header>
 
-      <div className="mx-4 mt-1 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs sm:mx-5">
-        <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" onClick={() => setNewFolder('')} className="min-h-11 rounded-lg border border-white/20 px-2.5 py-1">New folder</button>
-        <label className="flex min-h-11 cursor-pointer items-center rounded-lg border border-white/20 px-2.5 py-1">Upload folder
-          <input type="file" className="sr-only" multiple ref={(node) => { node?.setAttribute('webkitdirectory', ''); }} onChange={(event) => { if (event.target.files) void uploadList(event.target.files); event.target.value = ''; }} />
-        </label>
-        {!cloudStorageId && driveWorkspace && <DriveSharing workspaceId={driveWorkspace.id} kind="folder" root={directoryPath} label={directoryPath || 'Drive root'} />}
-        </div>
-        <div className="flex w-full min-w-0 basis-full flex-wrap items-end justify-end gap-2 @md:basis-auto @md:flex-1">
-          <div className="w-52 max-w-full min-w-0 flex-none">
-            <label className="text-[11px] font-medium text-[var(--color-text-muted)]" htmlFor={searchId}><TranslatedText message="search" /></label>
-            <input id={searchId} className={FIELD_CLASS} type="search" value={query} placeholder={cloudStorage ? 'Search file names' : 'Name, type:pdf, or /regex/'} autoComplete="off" spellCheck={false} onChange={(event) => setQuery(event.target.value)} />
-          </div>
-          {!cloudStorage ? <label className="flex min-h-11 items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]" htmlFor={regexId}>
+      <div className="mx-4 mt-1 flex shrink-0 flex-wrap items-center gap-2 text-xs sm:mx-5 @md:flex-nowrap">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <label className="sr-only" htmlFor={searchId}><TranslatedText message="search" /></label>
+          <input id={searchId} className={`${FIELD_CLASS} min-w-0 flex-1 @md:max-w-80`} type="search" value={query} placeholder={cloudStorage ? 'Search file names' : 'Name, type:pdf, or /regex/'} autoComplete="off" spellCheck={false} onChange={(event) => setQuery(event.target.value)} />
+          {!cloudStorage ? <label className="flex min-h-11 shrink-0 items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]" htmlFor={regexId}>
             <input id={regexId} type="checkbox" checked={regexMode} onChange={(event) => setRegexMode(event.target.checked)} />Regex
           </label> : null}
+        </div>
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <button type="button" onClick={() => setNewFolder('')} className="min-h-11 rounded-lg border border-white/20 px-2.5 py-1">New folder</button>
+          <label className="flex min-h-11 cursor-pointer items-center rounded-lg border border-white/20 px-2.5 py-1">Upload folder
+            <input type="file" className="sr-only" multiple ref={(node) => { node?.setAttribute('webkitdirectory', ''); }} onChange={(event) => { if (event.target.files) void uploadList(event.target.files); event.target.value = ''; }} />
+          </label>
+          {!cloudStorageId && driveWorkspace && <DriveSharing workspaceId={driveWorkspace.id} kind="folder" root={directoryPath} label={directoryPath || 'Drive root'} />}
         </div>
       </div>
       {newFolder !== null && <form className="mx-4 flex shrink-0 flex-wrap items-end gap-2 text-xs sm:mx-5" onSubmit={async (event) => {

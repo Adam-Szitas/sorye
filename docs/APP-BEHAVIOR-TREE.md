@@ -478,3 +478,11 @@ The separately registered OCR worker image consumes Hub's PostgreSQL job queue a
 ## Admin operations guide
 
 Admin host and platform-admin session -> /admin/operations -> selected tenant, notice, AI or audit tool -> existing guarded APIs. Tenant-ID lookup uses the signed Rodrigo platform identity endpoint. Audit pages come from Rodrigo, are filtered by metadata/outcome in Hub, and can export a bounded metadata-only CSV. Existing plan/notice/AI writes retain their audit and ownership semantics; notices remain Hub-owned. Tool selection and search remain in component memory. Runbooks are a separate view; suspension and durable incident tracking are not implemented.
+
+## Read-only Rodrigo MCP gateway
+
+Authenticated Hub session -> POST /api/mcp/read-only -> workspace membership and enabled-app checks -> fixed read tools -> signed GET to Rodrigo -> typed records or Drive metadata/content. Rodrigo owns persistence and storage access. The gateway exposes no mutations, arbitrary queries, caller-selected workspace or Hub-store fallback. Stateless MCP 2025-11-25; file content is capped at 128 KiB. Legacy assistant MCP routes remain separate. See [contract and limits](MCP-READ-ONLY.md).
+
+## Rodrigo memory admission
+
+Hub request -> Rodrigo bounded admission wait (32 waiting requests, one second maximum) -> authenticated domain operation -> response stream -> release capacity. Linux cgroup memory at 80% pauses new work; 70% resumes it. Health probes have separate bounded capacity. Sustained overload returns 429 with Retry-After; waiting does not buffer request bodies. Data ownership is unchanged. See [plan and rollout](RODRIGO-MEMORY-ADMISSION.md).
